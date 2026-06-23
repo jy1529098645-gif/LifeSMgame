@@ -290,7 +290,8 @@
   }
   // —— 行动结算：扣时间 + 排进日历 + 标记本周已做（真正「做了」才调用）——
   function commitAction(a) {
-    s.hours -= a.hours;
+    s.hours -= a.hours;                       // hours 退为次级成本（体力/过劳），不再决定能否结束本周
+    if (C._util.spendSlots) C._util.spendSlots(s, a);   // ★行动格：真正的周回合currency（doc §2）
     placeAction(a);
     s._actCount = s._actCount || {}; s._actCount[a.id] = (s._actCount[a.id] || 0) + 1;   // 本周做了几次（可多次行动用）
     if (!a.repeatWeek) { s._weekActs = s._weekActs || {}; s._weekActs[a.id] = true; }     // 可多次的不上「本周已做」锁
@@ -661,6 +662,7 @@
       if (occ > 0) { s.hours = Math.max(8, s.hours - occ); s._commuteReserved = occ; }
       else s._commuteReserved = 0;
     } else s._commuteReserved = 0;
+    if (C._util.initWeekSlots) C._util.initWeekSlots(s);   // ★新一周：重置行动格（doc §2.2）
     rollWeekPlan(s);                  // 生成新一周的天气与空排程
     refreshNews(s);
     tickMs();
@@ -668,11 +670,12 @@
     // 结局判定（每周一次，概率性）
     if (checkEndings()) return false;
     // 环境/随机事件：先按「本周做了什么」走因果路由（pickWeeklyEvent），无命中再回退旧 drawAmbient（doc §7.2）
-    const routed = C._util.pickWeeklyEvent
-      ? C._util.pickWeeklyEvent(s, { lastActions: s._lastPlan || (s._weekActs ? Object.keys(s._weekActs) : []) })
-      : null;
+    const _ctx = { lastActions: s._lastPlan || (s._weekActs ? Object.keys(s._weekActs) : []) };
+    const routed = C._util.pickWeeklyEvent ? C._util.pickWeeklyEvent(s, _ctx) : null;
     const amb = routed || drawAmbient();
     if (amb) { enterEvent(amb); screen = "event"; return true; }
+    // 没有事件 → 本周小结，避免空过（doc §4.4）。只进周日志，不弹事件页。
+    if (C._util.buildWeeklyReflection) { const refl = C._util.buildWeeklyReflection(s, _ctx); if (refl) weekLog.push(refl); }
     return true;
   }
 
@@ -1471,26 +1474,32 @@
         ? C._util.routeFilterActions(s, C.actions, st)
         : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })()));
     const done = s._weekActs || {};
-    // 本周是否已排满：只要还塞得进至少一件「日常」行动（排除辞职/搬家/旅行/留学/投资/全职创业这些决策类），就算没满，不许结束本周
-    const FILL_EXCLUDE = { quit: 1, relocate: 1, travel: 1, abroad: 1, venture: 1, invest: 1 };
-    const weekFull = s.hours <= 0 || !avail.some(a => !done[a.id] && !FILL_EXCLUDE[a.id] && a.hours <= Math.max(0, s.hours));
-    const usedSum = s.weekPlan ? s.weekPlan.used.reduce((a, b) => a + b, 0) : (st.weeklyHours - s.hours);
-    const physRemain = (s.weekPlan ? s.weekPlan.cap * 7 : 112) - usedSum;          // 物理上还能塞多少（每天16h上限）
-    const schedCap = s._overtimeMode ? physRemain : Math.max(0, s.hours);          // 开了硬撑才允许挤占休息
+    // ★行动格（slots）真正接管周回合（doc §2）：用完格子即可结束本周；hours 退为体力/过劳的次级成本。
+    if (C._util.ensureWeekSlots) C._util.ensureWeekSlots(s);
+    const slotsTotal = (s.weekSlots && s.weekSlots.total) || 0;
+    const slotsUsed = (s.weekSlots && s.weekSlots.used) || 0;
+    const slotsLeft = Math.max(0, slotsTotal - slotsUsed);
+    const slotCostOf = (a) => C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;
+    const weekFull = C._util.weekSlotsFull ? C._util.weekSlotsFull(s) : (slotsLeft <= 0);
     const rows = avail.map(a => {
       const didThis = !a.repeatWeek && done[a.id];                                  // 可多次的行动(repeatWeek)不被「本周已做」锁住
-      const fits = a.hours <= schedCap; const dis = !fits || didThis;
-      const over = s._overtimeMode && fits && a.hours > Math.max(0, s.hours);       // 这件会挤占吃饭休息
+      const sc = slotCostOf(a);
+      const noSlot = sc > 0 && slotsLeft < sc;                                       // 格子不够 → 禁用
+      const dis = noSlot || didThis;
+      const scLabel = sc === 0 ? "决策·不占格" : sc === 1 ? "1 格" : `${sc} 格`;
+      const prev = a.preview || a.hint || "";
       const cost = didThis ? `<span class="ap-cost">✓ 本周已做</span>`
-        : `<span class="ap-cost${over ? " ap-over" : ""}">${over ? "⏰" : ""}${a.hours}h${a.repeatWeek && (s._actCount && s._actCount[a.id]) ? ` · 本周已 ${s._actCount[a.id]} 次` : a.repeatWeek ? " · 可多次" : ""}</span>`;
-      return `<div class="track ${dis ? "dis" : ""}${over ? " tk-over" : ""}" data-id="${a.id}">
+        : `<span class="ap-cost ap-slot">${scLabel}${a.hours ? ` · ${a.hours}h` : ""}${a.repeatWeek && (s._actCount && s._actCount[a.id]) ? ` · 已 ${s._actCount[a.id]} 次` : a.repeatWeek ? " · 可多次" : ""}</span>`;
+      return `<div class="track ${dis ? "dis" : ""}" data-id="${a.id}">
       <div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span>${cost}</div>
-      <div class="tk-desc">${a.desc}</div>${a.hint ? `<div class="tk-hint">${a.hint}</div>` : ""}</div>`; }).join("");
+      <div class="tk-desc">${a.desc}</div>${prev ? `<div class="tk-hint">${prev}</div>` : ""}</div>`; }).join("");
     const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
-    const tipHtml = (s.age <= 20 && !has(s, "employed") && !has(s, "startup")) ? `<div class="tip">💡 新手提示：想有收入，得<b>主动</b>点下面的「💼上班搬砖」或「📨找工作」——光按「结束本周/快进」会坐吃山空。攒钱、搞事业、追目标，全看你每周怎么分配时间。</div>` : "";
-    const allocHtml = `<div class="alloc-h">${s.hours >= 0
-        ? `本周精力：剩余 <b>${s.hours}</b> / ${st.weeklyHours} 小时 —— 排满才能结束本周；每天正常 ${DAY_SOFT}h，剩下到 16h 是吃饭/休息区，<b style="color:var(--red)">只有硬撑才填得进（变红）</b>`
-        : `本周精力：<b style="color:var(--red)">已挤占吃饭/休息 ${-s.hours}h</b> —— 硬撑一时爽，周末身体会找你算账（健康/心情↓、压力↑）`}</div>`;
+    const tipHtml = (s.age <= 20 && !has(s, "employed") && !has(s, "startup")) ? `<div class="tip">💡 新手提示：每周只有有限的<b>行动格</b>——想清楚把它花在哪。想有收入就去「找工作/兼职」，光按「结束本周」会坐吃山空。</div>` : "";
+    // 行动格条：本回合还能安排几件事（doc §2.4）
+    const slotPips = "▰".repeat(slotsUsed) + "▱".repeat(slotsLeft);
+    const allocHtml = `<div class="alloc-h">${slotsTotal > 0
+        ? `本周行动格 <b class="alloc-slots">${slotPips}</b>　已用 <b>${slotsUsed}</b> / ${slotsTotal} —— 用完即可结束本周（旧时间 ${Math.max(0, s.hours)}h 仅影响体力/过劳）`
+        : `<b style="color:var(--amber2)">本周被工作/通勤/重病占满，几乎没有可自由支配的时间</b> —— 直接结束本周吧`}</div>`;
     // ★场景图随当前场景变化（学校/公司/通勤/公园/出租屋…），缺图回退到阶段氛围图（doc §6.4/§12.1）
     const _sm = C._util.sceneMeta ? C._util.sceneMeta(s) : null;
     const _sKey = (_sm && C.images.sceneKey) ? C.images.sceneKey(_sm.artKey) : null;
@@ -1513,7 +1522,7 @@
       const mss = C._util.mainStageSummary(s);
       if (mss) {
         const dots = mss.beats.map(b => `<span class="msb-dot${b.done ? " on" : ""}"></span>`).join("");
-        const goalsHtml = (mss.goals && mss.goals.length) ? `<div class="msb-goals">${mss.goals.map(g => `<div class="msb-goal${g.done ? " done" : ""}"><span class="gck">${g.done ? "✅" : "⬜"}</span>${g.label}</div>`).join("")}</div>` : "";
+        const goalsHtml = (mss.goals && mss.goals.length) ? `<div class="msb-goals">${mss.goals.map(g => `<div class="msb-goal${g.done ? " done" : ""}${g.required ? " req" : ""}"><span class="gck">${g.done ? "✅" : g.required ? "🔲" : "⬜"}</span>${g.label}${g.required && !g.done ? ' <span class="goal-req">必做</span>' : ""}</div>`).join("")}</div>` : "";
         mainStageHtml = `<div class="mainstage-banner"><div class="msb-top"><span class="msb-tag">🧭 创业主线 ${mss.index + 1}/${mss.total}</span><b class="msb-title">${mss.emoji} ${mss.title}</b></div><div class="msb-quest">${mss.quest}</div>${goalsHtml}<div class="msb-beats">${dots}<span class="msb-cnt">目标 ${mss.beatsDone}/${mss.beatsTotal}</span></div></div>`;
       }
     }
@@ -1533,10 +1542,9 @@
           ${tipHtml}
           ${allocHtml}
           ${weekBudgetHtml}
-          <button class="btn otbtn${s._overtimeMode ? " on" : ""}" id="overtime">${s._overtimeMode ? "💪 硬撑模式已开 · 可突破上限挤占休息（点此关闭）" : "💪 挤时间硬撑 —— 突破上限多塞事，代价是吃饭睡觉的时间"}</button>
           <div class="tracks">${rows}</div>
           ${lockedHtml}
-          <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary ${weekFull ? "" : "dis"}" id="endweek" ${weekFull ? "" : "disabled"} title="${weekFull ? "" : "本周还有空闲时间没安排，排满了才能过完这周"}">${weekFull ? "结束本周 →" : "⏳ 时间没排满"}</button></div>
+          <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary ${weekFull ? "" : "dis"}" id="endweek" ${weekFull ? "" : "disabled"} title="${weekFull ? "" : "本周还有行动格没用，安排满了才能过完这周"}">${weekFull ? "结束本周 →" : `⏳ 还剩 ${slotsLeft} 格`}</button></div>
         </section>
         <aside class="play-side">
           ${dashboard()}
@@ -1550,10 +1558,11 @@
     bindNav();
     document.querySelectorAll(".track").forEach(el => el.onclick = () => {
       const a = C.actions.find(x => x.id === el.dataset.id);
-      const _used = s.weekPlan ? s.weekPlan.used.reduce((x, y) => x + y, 0) : (stageOf(s.age).weeklyHours - s.hours);
-      const _cap = s._overtimeMode ? ((s.weekPlan ? s.weekPlan.cap * 7 : 112) - _used) : Math.max(0, s.hours);
-      if (a.hours > _cap) return;                          // 默认受舒适上限保护；开了硬撑才能塞进休息时间
-      if (!a.repeatWeek && s._weekActs && s._weekActs[a.id]) return;   // 默认每周一次；repeatWeek 行动(如投简历)可反复做，仅受时间预算限制
+      // ★行动格门槛：格子不够就不能点（决策类 slotCost=0 不受限）
+      const _sc = C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;
+      const _left = C._util.weekSlotsLeft ? C._util.weekSlotsLeft(s) : 99;
+      if (_sc > 0 && _left < _sc) return;
+      if (!a.repeatWeek && s._weekActs && s._weekActs[a.id]) return;   // 默认每周一次；repeatWeek 行动(如投简历)可反复做
       // 先看这件事会通向哪——这些「打开子界面」的行动 resolve 本身无副作用，可先试探再决定是否计时
       let r; try { r = a.resolve(s) || {}; } catch (e) { r = {}; }
       // —— 会打开「可取消子界面」的行动（换城市/旅行/找乐子）：先挂起不计时间，等真在里面落地了再结算；
@@ -1576,7 +1585,7 @@
       if (r.log) { weekLog.push(`${a.emoji} ${r.log}`); if (r.mark) s.timeline.push({ age: s.age, text: r.log }); }
       render();
     });
-    document.getElementById("overtime").onclick = () => { s._overtimeMode = !s._overtimeMode; render(); };
+    const _ot = document.getElementById("overtime"); if (_ot) _ot.onclick = () => { s._overtimeMode = !s._overtimeMode; render(); };
     document.getElementById("endweek").onclick = () => { if (!weekFull) return; weekLog = []; endWeek(); render(); };
     // 快进：自动延续「上周那套日常」连续推进，直到触发事件/结局，或最多一年——
     // 不再是空耗：上班/副业/养生这类常规行动会被自动重做，让平淡的日子一笔带过却仍有进展。
@@ -1589,7 +1598,9 @@
         const plan = (s._lastPlan || []).filter(id => SKIP_SAFE[id]);
         for (const id of plan) {
           const a = C.actions.find(x => x.id === id); if (!a) continue;
-          if (a.hours > Math.max(0, s.hours)) continue;
+          if (C._util.weekSlotsFull && C._util.weekSlotsFull(s)) break;             // ★行动格用完即停（doc §2）
+          const _sc = C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;
+          if (_sc > 0 && C._util.weekSlotsLeft && C._util.weekSlotsLeft(s) < _sc) continue;
           if (!a.repeatWeek && s._weekActs && s._weekActs[id]) continue;
           if (a.require && !(() => { try { return a.require(s); } catch (e) { return false; } })()) continue;
           let r; try { r = a.resolve(s) || {}; } catch (e) { r = {}; }

@@ -674,3 +674,9 @@ h2{font-size:26px;margin-bottom:6px}
 .msb-goal{font-size:12px;color:var(--dim);line-height:1.5}
 .msb-goal.done{color:var(--green)}
 .msb-goal .gck{display:inline-block;width:14px}
+
+/* 阶段必做目标标记 */
+.msb-goal.req{color:var(--amber2)}
+.msb-goal.req.done{color:var(--green)}
+.goal-req{font-size:10px;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:0 4px;margin-left:4px}
+.ap-slot{color:var(--amber2);font-weight:700}

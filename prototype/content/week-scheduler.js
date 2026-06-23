@@ -42,9 +42,9 @@ function computeWeekBudget(s) {
   } else if (s.study && s.study.active) {
     fixed += 30; blocks.push({ id: "class", label: "上课", hours: 30 });
   }
-  // 生病 / 住院 / 严重健康问题：强制占用，压缩自由行动
-  if ((s.health || 100) <= 8 || s._hospitalized) { fixed += 30; blocks.push({ id: "hospital", label: "住院/卧床", hours: 30 }); }
-  else if ((s.health || 100) <= 25) { fixed += 12; blocks.push({ id: "sick", label: "抱恙休养", hours: 12 }); }
+  // 生病 / 住院 / 严重健康问题：强制占用，压缩自由行动（重病几乎占满本周 → 0-1 格，doc §2.5）
+  if ((s.health || 100) <= 8 || s._hospitalized) { fixed += 52; blocks.push({ id: "hospital", label: "住院/卧床", hours: 52 }); }
+  else if ((s.health || 100) <= 25) { fixed += 22; blocks.push({ id: "sick", label: "抱恙休养", hours: 22 }); }
   // 找工作本身：占用一周主要行动（doc §3.2）——记为可见固定块（实际仍走 jobhunt 行动消耗）
   const free = Math.max(0, stageHours - fixed);
   // 自由行动「格子」数：把自由小时折算成 0-3 个行动位（学生多、加班/住院少）
@@ -67,6 +67,32 @@ function weekBudgetSummary(s) {
     blocks: b.blocks,
     line: `本周可支配约 ${b.free}h（固定占用 ${b.fixed}h｜${b.blocks.map(x => x.label + x.hours + "h").join(" · ") || "无"}）`
   };
+}
+
+/* ===== 行动格（slots）：真正的周回合currency（下一轮·第一刀，doc §2）=====
+ * 每周 total = computeWeekBudget(s).slots（学生~3、上班~1、重病0）。每个行动消耗
+ * slotCost（默认1；辞职/搬城/旅行/投资/全职创业等「决策/转场类」记0，不吃回合）。
+ * 用完即可结束本周——不再靠旧 hours 把一周「填满」。hours 退为体力/过劳的次级成本。 */
+function initWeekSlots(s) {
+  const wb = computeWeekBudget(s);
+  s.weekSlots = { total: wb.slots, used: 0, actions: [] };
+  return s.weekSlots;
+}
+function ensureWeekSlots(s) { if (!s.weekSlots || typeof s.weekSlots.total !== "number") initWeekSlots(s); return s.weekSlots; }
+// 决策/转场类行动不吃回合（打开子界面或切换状态，不算「安排了一件事」）
+const ZERO_SLOT_ACTIONS = { quit: 1, relocate: 1, travel: 1, invest: 1, venture: 1, abroad: 1, startup: 1, move_near_office: 0 };
+function actionSlotCost(a) {
+  if (!a) return 1;
+  if (a.slotCost != null) return a.slotCost;
+  if (ZERO_SLOT_ACTIONS[a.id] === 1) return 0;
+  return 1;
+}
+function weekSlotsLeft(s) { const ws = ensureWeekSlots(s); return Math.max(0, ws.total - ws.used); }
+function weekSlotsFull(s) { const ws = ensureWeekSlots(s); return ws.total <= 0 || ws.used >= ws.total; }
+function spendSlots(s, a) {
+  const ws = ensureWeekSlots(s); const cost = actionSlotCost(a);
+  if (cost > 0) { ws.used += cost; ws.actions.push(a && a.id); }
+  return ws;
 }
 
 if (typeof window !== "undefined") window.WEEK_BASE_HOURS = WEEK_BASE_HOURS;

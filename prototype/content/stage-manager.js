@@ -56,6 +56,18 @@ const BEAT_LABELS = {
   resign_choice: "做出离职的决断", mvp: "做出第一版 MVP", first_customer: "拿下第一个客户", first_funding: "拿到第一笔融资"
 };
 
+// 每阶段「必做」目标（required）：全部完成才能自然推进（doc §5.2）。其余 beats 为可选。
+// 这些 required beat 都能通过当前阶段的精选行动可靠拿到，避免软锁；身份硬变化(入职/创业)另有兜底放行。
+const REQUIRED_BEATS = {
+  college_junior: ["first_intern"],
+  job_search: ["first_resume"],
+  first_job: ["first_paycheck"],
+  work_grind: ["industry_insight"],
+  opportunity_build: ["first_opportunity"],
+  resign_or_stay: ["resign_choice"],
+  startup_survival: []
+};
+
 function mainStageDef(id) { return MAIN_STAGES[_STAGE_INDEX[id]] || null; }
 
 function ensureMainStage(s) {
@@ -97,11 +109,12 @@ function mainStageOf(s) {
   return "college_junior";
 }
 
-// 当前阶段的目标(beat)是否至少完成一个（软门槛：完成目标才推进，doc §5.3）
-function _stageGoalStarted(s, stageId) {
-  const def = mainStageDef(stageId); if (!def) return true;
-  return def.beats.some(b => hasBeat(s, b));
+// 当前阶段的【必做目标】是否全部完成（硬门槛：完成关键目标才推进，doc §5.2/§5.3）
+function _stageGoalsMet(s, stageId) {
+  const req = REQUIRED_BEATS[stageId] || [];
+  return req.every(b => hasBeat(s, b));
 }
+function canAdvanceStage(s) { return _stageGoalsMet(s, mainStageId(s)); }
 // 身份硬变化（拿到/失去工作、公司成立/收束）→ 强制推进，不受目标门槛限制
 function _hardStateChanged(s) {
   const emp = !!s.job; const su = !!(s.startup && !_hasFlag(s, "startup_failed"));
@@ -122,8 +135,8 @@ function mainStageTick(s) {
     const prev = ms.id;
     const def = mainStageDef(target);
     const forward = prev == null || (_STAGE_INDEX[target] > (_STAGE_INDEX[prev] != null ? _STAGE_INDEX[prev] : -1));
-    // ★软门槛：向前推进（且非身份硬变化）时，要求当前阶段至少完成一个目标——避免「条件一到就跳关」
-    if (forward && prev != null && !hardChange && !_stageGoalStarted(s, prev)) return ms.id;
+    // ★硬门槛：向前推进（且非身份硬变化）时，要求当前阶段【必做目标】全部完成——「完成关键目标才推进」
+    if (forward && prev != null && !hardChange && !_stageGoalsMet(s, prev)) return ms.id;
     ms.id = target;
     ms.sinceWk = s.week || 0;
     ms.log.push({ id: target, age: s.age, week: s.week, from: prev });
@@ -162,7 +175,8 @@ function mainStageSummary(s) {
     id, title: def.title, emoji: def.emoji, desc: def.desc, quest: def.quest,
     index: _STAGE_INDEX[id], total: MAIN_STAGES.length,
     beats: def.beats.map(b => ({ name: b, done: hasBeat(s, b) })),
-    goals: def.beats.map(b => ({ label: BEAT_LABELS[b] || b, done: hasBeat(s, b) })),   // ★带标签的阶段目标
+    goals: def.beats.map(b => ({ label: BEAT_LABELS[b] || b, done: hasBeat(s, b), required: (REQUIRED_BEATS[id] || []).indexOf(b) >= 0 })),   // ★带标签+必做标记的阶段目标
+    canAdvance: _stageGoalsMet(s, id),
     beatsDone, beatsTotal: def.beats.length
   };
 }

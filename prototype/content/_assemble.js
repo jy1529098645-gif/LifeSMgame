@@ -25,7 +25,7 @@ window.CONTENT = {
     MAJORS, majorById, majorName, majorFit, majorBlocks,
     generateOpportunities, oppCardFor,
     getWeekActions, getActionPreview, canRunAction, STAGE_ACTIONS, SCENE_ACTIONS,
-    pickWeeklyEvent, ACTION_EVENT_BIAS,
+    pickWeeklyEvent, buildWeeklyReflection, ACTION_EVENT_BIAS,
     REVEAL, HIDDEN_NPCS, npcDef, meetPerson, personReveal, personKnown, personMet, personLabel,
     COMPANIES, companyById, companyJob, companiesForCity, sampleCompanies, grantRSU, jobReachable, companyPositions,
     countryById, cityById, citiesByCountry, citiesOf, cityPickerNode, cityFull, genName, genCNName, genPerson,
@@ -48,6 +48,8 @@ window.CONTENT = {
     // —— 大框架改造·批次1：主线阶段 / 周时间 / 场景 / 记忆 / 提醒 ——
     MAIN_STAGES, mainStageDef, ensureMainStage, mainStageTick, mainStageOf, mainStageId, mainStageTitle, recordBeat, hasBeat, mainStageSummary,
     computeWeekBudget, freeSlots, weekBudgetSummary, commuteHoursOf,
+    initWeekSlots, ensureWeekSlots, actionSlotCost, weekSlotsLeft, weekSlotsFull, spendSlots,
+    canAdvanceStage,
     SCENES, sceneById, sceneMeta, sceneAmbient, sceneEventTags,
     ensureNotices, notify, notifyMoney, notifyCost, drainNotices, peekNotices,
     rememberFact, recallMemories, recallOne, memoryHas, memoryCount, memoryDigest,

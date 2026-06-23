@@ -37,49 +37,54 @@ function _byPrefix(s, prefixes) {
 }
 
 // 引擎在 endWeek 里优先调用；返回事件则触发它，返回 null 则回退 drawAmbient()
+function _roll(p) { return (typeof rnd === "function") ? rnd(p) : Math.random() < p; }
+
 function pickWeeklyEvent(s, ctx) {
   ctx = ctx || {};
-  // 与 drawAmbient 同款 pity-gate：本周是否触发「因果事件」。不触发则交还引擎（drawAmbient 自有 gate）。
-  // 保证因果事件总频率与旧版相当，只是把「随机抽」换成「按你做的事抽」，不会刷屏（doc §7.4）。
-  const dry = s._evDry || 0;
-  const baseP = Math.min(0.16, 0.06 + Math.max(0, dry - 8) * 0.006);
-  if (typeof rnd === "function" ? !rnd(baseP) : Math.random() >= baseP) return null;
+  // 不再用「低概率总闸」压制——改为【分层强响应】：你做了什么，就更可能演绎什么（doc §4.2/§4.3）。
+  // 没命中也不空过：引擎会用 buildWeeklyReflection 给一段本周小结。drawAmbient 退到最后兜底。
   const did = ctx.lastActions || (s._weekActs ? Object.keys(s._weekActs) : []) || [];
 
-  // ① 行动 hook：你这周做了什么，就更容易遇到对应的事（中国式家长式因果）
+  // ① 未完成事件链续推：手头有进行中的链（通勤/职场/电诈/健康）→ 高优先（70%）
+  const chainPool = _byPrefix(s, ["ev_commute_", "ev_wc_", "ev_fraud_", "ev_hc_"]).filter(e => _chainActive(s, e));
+  if (chainPool.length && _roll(0.65)) return _pickOne(chainPool);
+
+  // ② 行动 hook：你这周做了什么，就更容易遇到对应的事（45%）
   const hookPool = [];
-  for (const id of did) {
-    const pre = ACTION_EVENT_BIAS[id];
-    if (pre) hookPool.push(..._byPrefix(s, pre));
-  }
-  if (hookPool.length && (typeof rnd === "function" ? rnd(0.5) : Math.random() < 0.5)) {
-    return _pickOne(hookPool);
-  }
+  for (const id of did) { const pre = ACTION_EVENT_BIAS[id]; if (pre) hookPool.push(..._byPrefix(s, pre)); }
+  if (hookPool.length && _roll(0.45)) return _pickOne(hookPool);
 
-  // ② 事件链下一节点：手头有未结的链（通勤/职场/电诈/健康），优先续推
-  const chainPre = ["ev_commute_", "ev_wc_", "ev_fraud_", "ev_hc_"];
-  const chainPool = _byPrefix(s, chainPre).filter(e => _chainActive(s, e));
-  if (chainPool.length && (typeof rnd === "function" ? rnd(0.4) : Math.random() < 0.4)) {
-    return _pickOne(chainPool);
-  }
-
-  // ③ 人物主动邀请：关系网会主动找上你（doc §6.4/§9.3）
+  // ③ 人物主动邀请：关系网会主动找上你（35%）
   const invitePool = _byPrefix(s, ["ev_cn_invite", "ev_cn_chess_meet", "ev_cn_reveal"]);
-  if (invitePool.length && (typeof rnd === "function" ? rnd(0.3) : Math.random() < 0.3)) {
-    return _pickOne(invitePool);
-  }
+  if (invitePool.length && _roll(0.35)) return _pickOne(invitePool);
 
-  // ④ 当前场景事件：在公司更易遇到职场事，在公园更易遇到棋友
+  // ④ 当前场景 flavor 事件（25%）
   const tags = (typeof sceneEventTags === "function") ? sceneEventTags(s) : [];
   if (tags.length) {
     const scenePool = (typeof EVENTS !== "undefined" ? EVENTS : []).filter(e =>
       _routerEligible(s, e) && (e.sceneTags ? e.sceneTags.some(t => tags.includes(t)) : (e.module && tags.includes(_moduleTag(e.module)))));
-    if (scenePool.length && (typeof rnd === "function" ? rnd(0.22) : Math.random() < 0.22)) {
-      return _pickOne(scenePool);
-    }
+    if (scenePool.length && _roll(0.25)) return _pickOne(scenePool);
   }
 
-  return null;   // 交还给引擎的 drawAmbient（世界/新闻/通用/脊柱）
+  return null;   // 无因果事件 → 引擎做「本周小结」，仅在更稀有时回退 drawAmbient
+}
+
+/* —— 本周小结：没触发事件时也给一段有数值的短反馈，避免空过（doc §4.4）。返回字符串或 null。 —— */
+function buildWeeklyReflection(s, ctx) {
+  ctx = ctx || {};
+  const did = ctx.lastActions || (s._weekActs ? Object.keys(s._weekActs) : []) || [];
+  const had = (arr) => arr.some(id => did.indexOf(id) >= 0);
+  // 只在「确实安排了事」的周给小结；完全空过的周不强行加戏
+  if (!did.length) return null;
+  let line = null;
+  if (had(["work", "overtime_perf"])) { if (typeof add === "function") { add(s, "stress", 1); } line = "📋 这一周在公司和地铁之间来回。没什么大事，但绩效记录稳了一点，疲惫也攒了一点。"; }
+  else if (had(["study", "prep_interview", "learn_industry", "ask_senior"])) { line = "📖 平静的一周，你把时间花在了让自己更值钱的事上——回报看不见，却在悄悄累积。"; }
+  else if (had(["jobhunt"])) { line = "📨 又投了一圈简历。没有回音的日子有点磨人，但海投本就是个概率游戏，再等等。"; }
+  else if (had(["leisure", "exercise", "rest"])) { if (typeof add === "function") { add(s, "stress", -1); } line = "🍵 难得松快的一周，把自己交还给生活。压力卸了一点，明天才有力气继续。"; }
+  else if (had(["socialize", "coworker_lunch", "talk_to_mentor"])) { line = "🤝 一周在饭桌与寒暄里过去。人情这东西看不见摸不着，关键时刻却能值千金。"; }
+  else if (had(["validate_need", "calculate_runway", "side_project"])) { line = "🔎 你在为那个念头默默铺路。没人看见，但属于你自己的东西，正在一点点成形。"; }
+  else line = "🌧️ 平平无奇的一周，日子在指缝里又溜走了一点。";
+  return line;
 }
 
 // 链是否「进行中」：用各链自己的 stage/state 字段判断
