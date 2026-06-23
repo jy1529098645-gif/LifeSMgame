@@ -24,6 +24,7 @@ window.CONTENT = {
     jobSalary, jobById, applyJob, hireJob,
     MAJORS, majorById, majorName, majorFit, majorBlocks,
     generateOpportunities, oppCardFor,
+    generateLifeOpportunities, lifeOppApply, LIFE_OPP_TYPE_NAME,
     getWeekActions, getActionPreview, canRunAction, STAGE_ACTIONS, SCENE_ACTIONS,
     pickWeeklyEvent, buildWeeklyReflection, ACTION_EVENT_BIAS,
     REVEAL, HIDDEN_NPCS, npcDef, meetPerson, personReveal, personKnown, personMet, personLabel,

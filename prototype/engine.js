@@ -1049,6 +1049,7 @@
         <div><div class="age">${s.age}<small>岁</small> <span class="wk">第${s.week % 52 + 1}周</span></div><div class="cls">${s.playerName || "无名之人"} · ${st.name} · ${cls}</div>
           <div class="profile-grid">
             ${locChips}<span>${jobTxt}</span>
+            ${s.major && C._util.majorName ? `<span title="你大学读的专业">🎓 ${(s.education && s.education.degree) || "本科"}·${C._util.majorName(s)}</span>` : ""}
             <span>${relTxt}</span><span>${healthStatus()}</span><span>🧠 压力 ${Math.round(s.stress)}</span><span>🏠 ${homeStatus()}</span>
           </div>
           <div class="res">籍贯：${birthTxt}</div>${familyStatus()}</div>
@@ -1063,7 +1064,7 @@
       ${(() => { const ps = C._util.profileSummary ? C._util.profileSummary(s) : ""; return ps ? `<div class="profile-line" title="社会画像：解释你为什么在某些场合顺、某些场合难">🪪 ${ps}</div>` : ""; })()}
       ${(() => { const inf = C._util.influenceSummary ? C._util.influenceSummary(s) : ""; const arc = (C._util.mainArcOf && C._util.mainArcOf(s)); const arcTxt = arc ? `📖 ${arc.name}${s.mainArc ? `·第${(s.mainArc.act || 0) + 1}幕` : ""}` : ""; return (inf || arcTxt) ? `<div class="arc-line">${arcTxt}${inf ? `${arcTxt ? "　" : ""}🏛️ 影响力：${inf}` : ""}</div>` : ""; })()}
       ${(() => { if (!s.cast) return ""; const crisis = Object.keys(s.cast).map(k => s.cast[k]).filter(c => c.crisis); if (!crisis.length) return ""; const labels = { debt: "陷入债务", illness: "家中有人病了", startup_invite: "想拉你合伙", layoff: "被裁了", reunite: "想和你复合" }; return `<div class="cast-line">👥 ${crisis.slice(0, 2).map(c => `${c.name}(${c.role})${labels[c.crisis] || "有事找你"}`).join("　")}</div>`; })()}
-      ${(() => { if (!C._util.founderReadiness) return ""; if (has(s, "startup_done") || (s.startup && s.startup.fulltime)) return ""; const r = C._util.founderReadiness(s); const v = C._util.readinessVerdict ? C._util.readinessVerdict(s) : ""; const col = r >= 70 ? "var(--green)" : r >= 40 ? "var(--amber)" : "var(--dim)"; return `<div class="founder-line"><div class="fl-bar-row"><span class="fl-lbl">🚀 创业准备度</span><span class="fl-bar"><i style="width:${r}%;background:${col}"></i></span><span class="fl-v">${r}</span></div>${v ? `<div class="fl-verdict">${v}</div>` : ""}</div>`; })()}
+      ${(() => { if (!C._util.founderReadiness) return ""; if (has(s, "startup_done") || (s.startup && s.startup.fulltime)) return ""; const r = C._util.founderReadiness(s); const v = C._util.readinessVerdict ? C._util.readinessVerdict(s) : ""; const col = r >= 70 ? "var(--green)" : r >= 40 ? "var(--amber)" : "var(--dim)"; return `<div class="founder-line"><div class="fl-bar-row"><span class="fl-lbl" title="离职创业/跳槽/单干/仲裁……翻身的本钱">💪 翻身底牌</span><span class="fl-bar"><i style="width:${r}%;background:${col}"></i></span><span class="fl-v">${r}</span></div>${v ? `<div class="fl-verdict">${v}</div>` : ""}</div>`; })()}
       ${goalBarHTML()}
       <div class="ail-row">${ailmentText()}</div></div>`;
   }
@@ -1523,7 +1524,7 @@
       if (mss) {
         const dots = mss.beats.map(b => `<span class="msb-dot${b.done ? " on" : ""}"></span>`).join("");
         const goalsHtml = (mss.goals && mss.goals.length) ? `<div class="msb-goals">${mss.goals.map(g => `<div class="msb-goal${g.done ? " done" : ""}${g.required ? " req" : ""}"><span class="gck">${g.done ? "✅" : g.required ? "🔲" : "⬜"}</span>${g.label}${g.required && !g.done ? ' <span class="goal-req">必做</span>' : ""}</div>`).join("")}</div>` : "";
-        mainStageHtml = `<div class="mainstage-banner"><div class="msb-top"><span class="msb-tag">🧭 创业主线 ${mss.index + 1}/${mss.total}</span><b class="msb-title">${mss.emoji} ${mss.title}</b></div><div class="msb-quest">${mss.quest}</div>${goalsHtml}<div class="msb-beats">${dots}<span class="msb-cnt">目标 ${mss.beatsDone}/${mss.beatsTotal}</span></div></div>`;
+        mainStageHtml = `<div class="mainstage-banner"><div class="msb-top"><span class="msb-tag">📖 职场沉浮 · 人生剧本 ${mss.index + 1}/${mss.total}</span><b class="msb-title">${mss.emoji} ${mss.title}</b></div><div class="msb-quest">${mss.quest}</div>${goalsHtml}<div class="msb-beats">${dots}<span class="msb-cnt">目标 ${mss.beatsDone}/${mss.beatsTotal}</span></div></div>`;
       }
     }
     if (C._util.weekBudgetSummary) {

@@ -76,8 +76,11 @@ function ensureMainStage(s) {
   }
   if (!s.mainStage.beats) s.mainStage.beats = {};
   if (!s.mainStage.log) s.mainStage.log = [];
+  // —— 语义层（§1）：当前人生剧本（第一条主线=职场沉浮）。创业只是后期分岔之一。
+  if (!s.lifeRoute) s.lifeRoute = "career_absurd";
   return s.mainStage;
 }
+const LIFE_ROUTE_NAME = { career_absurd: "职场沉浮" };
 
 function _readinessSafe(s) { return (typeof founderReadiness === "function") ? founderReadiness(s) : 0; }
 function _hasFlag(s, f) { return (typeof has === "function") ? has(s, f) : !!(s.flags && s.flags[f]); }
@@ -131,6 +134,7 @@ function mainStageTick(s) {
   if (!s.job && s._jobSinceWk != null && !(s.startup && s.startup.fulltime)) s._jobSinceWk = null;
   const hardChange = _hardStateChanged(s);
   const target = mainStageOf(s);
+  s.lifeStage = target;   // 语义层：当前人生阶段（§1）
   if (target && target !== ms.id) {
     const prev = ms.id;
     const def = mainStageDef(target);
