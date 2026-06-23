@@ -1,0 +1,2 @@
+# 纯 Python 标准库，无第三方依赖。
+# 此文件存在 → Railway/Nixpacks 会识别为 Python 项目并安装 Python 运行时。

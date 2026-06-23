@@ -1,0 +1,2919 @@
+/* =====================================================================
+ * 《荒诞人生模拟器》原型 —— 引擎 engine.js  (v0.3)
+ * ---------------------------------------------------------------------
+ * 周推进 / 行动驱动 / VN 事件 / 隐藏风口靠新闻推断 / 概率结局。
+ * 设计核心：多维属性(6维+人脉+声誉+阶级)决定【叙事走向】(哪些事件出现、NPC态度、成败概率)；
+ *          健康【只】进入死亡概率判定，不是用来换钱的资源。
+ * ===================================================================== */
+(function () {
+  "use strict";
+  const C = window.CONTENT;
+  const { add, flag, has, pick, rnd, classTier } = C._util;
+
+  let s = null;
+  let screen = "title";   // title | cohort | create | play | event | dead
+  let draft = null;       // 创建中暂存 {cohort, birthYear, stepIndex, stats, picks[], assetTier, flags[]}
+  let pendingEvent = null;
+  let eventNode = null;   // 当前事件节点（支持多级分支）
+  let _vnTimer = null;    // VN 逐句浮现动画计时器（切场景前清掉，防泄漏）
+  let mapPurpose = null, mapCountry = null;   // 全球地图：用途(relocate/travel) + 当前展开的国家
+  let bpSel = null;                            // 出生地选择：{provinceId, city, county, village}
+  let mgId = null, mg = null;                  // 小游戏：当前游戏 id + 对局状态 {round,wins,flashy,done,result}
+  let bgId = null, bgGame = null, bgBoard = null, bgOver = false, bgResult = "", bgLast = null, bgSel = null, bgTargets = [], bgKo = null, bgPasses = 0;  // 真·棋盘游戏
+  let mktRange = 52;                            // 理财页 K 线显示窗口（周）：26/52/156/0=全部
+  let mktChartType = "candle";                  // 理财页图表类型：candle=蜡烛图 / line=折线图
+  // 难度档：影响开局家底、生活成本、死亡率（收入侧靠生活成本反向体现）
+  const DIFFS = {
+    "休闲": { cashMul: 2.0, costMul: 0.65, deathMul: 0.7, emoji: "🛋️", label: "家底厚、花销省、命更硬——专心看剧情" },
+    "标准": { cashMul: 1.0, costMul: 1.0, deathMul: 1.0, emoji: "⚖️", label: "原汁原味的平衡体验" },
+    "硬核": { cashMul: 0.55, costMul: 1.35, deathMul: 1.35, emoji: "🔥", label: "白手起家、花销高、阎王催得紧——老手的挑战" }
+  };
+  let gameDiff = "标准";                        // 当前选定难度（标题页可改）
+  // 留学周推进的行动表（参考《留学模拟器》：学业/打工/语言/思乡/旅行）。run(st,s) 即时结算，返回中文日志
+  const _cl = (v) => Math.max(0, Math.min(100, v));
+  // 学位进阶链：本科 → 硕士 → 博士 →（毕业后）学术职业。研究型阶段(research)看论文/导师，本科看绩点/学分。
+  const DEGREE_LEVELS = {
+    "本科": { next: "硕士", years: 4, gradCredits: 60, emoji: "🎓", research: false },
+    "硕士": { next: "博士", years: 3, gradCredits: 40, emoji: "📘", research: true, needPapers: 35 },
+    "博士": { next: null,  years: 4, gradCredits: 24, emoji: "🔬", research: true, needPapers: 62 }
+  };
+  const STUDY_ACTIONS = [
+    { id: "lecture", name: "上课 · 刷绩点", emoji: "📚", hours: 18, hint: "📈绩点+ 🎓学分+", desc: "按时上课、记笔记、跟教授混脸熟。绩点是留学的命根子。",
+      run: (st, s) => { st.gpa = _cl(st.gpa + 3); st.credits = _cl(st.credits + 2.4); st.lang = _cl(st.lang + 1); return "你坐在前排认真听讲，绩点稳住了，学分也往前挪了一格。"; } },
+    { id: "cram", name: "泡图书馆赶 due", emoji: "☕", hours: 16, hint: "📈绩点++ 😣压力+ ❤️健康-", desc: "通宵赶论文、刷题、磨 presentation。爆肝，但绩点蹭蹭涨。",
+      run: (st, s) => { st.gpa = _cl(st.gpa + 5); st.credits = _cl(st.credits + 1.6); add(s, "stress", 6); add(s, "health", -2); add(s, "knowledge", 1); return "咖啡续到第三杯，图书馆闭馆才走。东西学进去了，黑眼圈也挂上了。"; } },
+    { id: "ptjob", name: "打工攒生活费", emoji: "🍜", hours: 16, hint: "💰进账 📈绩点略- 🗣️语言+", desc: "中餐馆后厨、代购、发传单、当助教。钱是自己挣的，腰也是自己累弯的。",
+      run: (st, s) => { const m = Math.round(1200 + st.lang * 9 + Math.random() * 800); add(s, "cash", m); st.lang = _cl(st.lang + 1.5); st.gpa = _cl(st.gpa - 1); add(s, "health", -2); st._worked = (st._worked || 0) + 1; if (st._worked >= 6) flag(s, "study_worked_hard"); return `你颠了一周勺 / 接了一周代购单，攒下 ¥${m.toLocaleString()}。累，但每一分都踏实。`; } },
+    { id: "langx", name: "练语言 · 融入", emoji: "🗣️", hours: 10, hint: "🗣️语言++ 🤝融入+ 🏠思乡-", desc: "语言交换、社团活动、和 local 唠嗑。脸皮厚一点，世界就宽一点。",
+      run: (st, s) => { st.lang = _cl(st.lang + 4); st.social = _cl(st.social + 4); add(s, "charm", 1); st.homesick = _cl(st.homesick - 2); return "你硬着头皮开口，磕磕绊绊地聊。语言和圈子，都在一次次尴尬里长出来。"; } },
+    { id: "explore", name: "周边旅行 · 探索", emoji: "🗺️", hours: 12, hint: "🙂心情++ 🏠思乡-- 💸花钱", desc: "趁假期看看这个陌生的国度。花钱，但治愈。",
+      run: (st, s) => { const cost = Math.round(2000 + Math.random() * 3000); add(s, "cash", -cost); add(s, "mood", 8); add(s, "insight", 1); st.homesick = _cl(st.homesick - 9); return "你背上包把课本丢一边，看了不一样的风景。异乡也有了几分可爱。"; } },
+    { id: "callhome", name: "视频通话 · 解思乡", emoji: "📞", hours: 4, hint: "🏠思乡-- 🙂心情+", desc: "和爸妈、老友视频。报喜不报忧，挂了电话还是会红眼眶。",
+      run: (st, s) => { st.homesick = _cl(st.homesick - 13); add(s, "mood", 4); return "屏幕那头是熟悉的乡音和唠叨。你笑着说一切都好，挂了电话，房间忽然很安静。"; } },
+    { id: "campuslove", name: "校园恋爱 · 约会", emoji: "❤️", hours: 8, hint: "🤝融入+ 🙂心情+ 🏠思乡-", desc: "异国的心动，可能是孤独的解药，也可能是新的烦恼。",
+      run: (st, s) => { st.social = _cl(st.social + 5); add(s, "mood", 6); st.homesick = _cl(st.homesick - 5); if (rnd(0.25)) flag(s, "abroad_romance"); return "图书馆偶遇、社团搭话、深夜食堂的那盏灯——异乡的心动，来得猝不及防。"; } },
+    { id: "srest", name: "休息 · 自我调节", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力- 🏠思乡-", desc: "睡到自然醒、做顿家乡菜、追剧。给紧绷的神经松松绑。",
+      run: (st, s) => { add(s, "health", 4); add(s, "stress", -8); st.homesick = _cl(st.homesick - 3); add(s, "mood", 2); return "你给自己放了个假，煮了碗面追了部剧。留学不只是赶 due，也得好好活着。"; } },
+    { id: "visa", name: "学期注册 · 续签证", emoji: "🛂", hours: 6, hint: "🛂 维持合法学籍（每学期初必办）", desc: "跑学生处、移民局、银行盖章。枯燥的手续，却是你合法身份的命脉。",
+      run: (st, s) => { st.visaOk = st.weeksDone; add(s, "stress", 2); return "你排了半天队、盖了一摞章，学籍和签证总算续上了。手续繁琐，但身份踏实。"; } },
+    // —— 以下三项仅研究型阶段（硕士/博士）可做：科研产出与导师关系是毕业的命根子 ——
+    { id: "research", name: "泡实验室 · 推进课题", emoji: "🔬", hours: 20, hint: "📄论文+ 🧑‍🏫导师+ 😣压力+ ❤️健康-", desc: "跑数据、调实验、改了又改的方案。坐得住冷板凳，才熬得出成果。", avail: (st) => st.level && st.level !== "本科",
+      run: (st, s) => { st.papers = _cl((st.papers || 0) + 3); st.advisor = _cl((st.advisor || 50) + 2); st.gpa = _cl(st.gpa + 1); add(s, "knowledge", 1); add(s, "stress", 5); add(s, "health", -1); return "实验跑了一整周，数据终于有了点眉目。论文的拼图，又凑上一块。"; } },
+    { id: "paper", name: "写论文 · 投稿冲刺", emoji: "📄", hours: 18, hint: "📄论文++（中稿/被拒看运气） 😣压力++", desc: "改到第八版的 introduction、被审稿人按在地上摩擦。学术圈的硬通货，就是它。", avail: (st) => st.level && st.level !== "本科",
+      run: (st, s) => { add(s, "knowledge", 1); add(s, "stress", 6); const p = 0.4 + (st.advisor || 50) / 400 + (st.papers || 0) / 500 + (typeof luckBias === "function" ? luckBias(s) : 0); if (rnd(p)) { st.papers = _cl((st.papers || 0) + 9); st.advisor = _cl((st.advisor || 50) + 4); add(s, "reputation", 2); add(s, "mood", 7); return "邮箱里躺着一封 Accepted——审稿人那句「has merit」，你反复读了五遍。熬的夜，值了。"; } st.papers = _cl((st.papers || 0) + 2); add(s, "mood", -6); add(s, "stress", 4); return "Reject。三位审稿人把你的稿子批得体无完肤。你深吸一口气，存好意见，改完再投——学术就是这么一次次磨出来的。"; } },
+    { id: "meetadvisor", name: "见导师 · 组会汇报", emoji: "🧑‍🏫", hours: 6, hint: "🧑‍🏫导师++ 📄论文+ 🗣️语言+", desc: "汇报进度、聊聊方向、混个脸熟。导师的一句话，可能省你半年弯路。", avail: (st) => st.level && st.level !== "本科",
+      run: (st, s) => { st.advisor = _cl((st.advisor || 50) + 6); st.papers = _cl((st.papers || 0) + 1); st.lang = _cl(st.lang + 1); add(s, "stress", 2); st.advisorAnger = 0; return "组会上你把进展讲清楚，导师点了点头，还顺手指了条新路子。师生这层关系，得常走动才暖。"; } }
+  ];
+  // 创业「全职经营」模式的周行动表（产品/用户/团队/融资/降本/顾自己）
+  const VENTURE_ACTIONS = [
+    { id: "vproduct", name: "打磨产品 · 写代码", emoji: "💻", hours: 18, hint: "🛠️产品++ 😣压力+", desc: "迭代功能、修 bug、抠体验。产品是 1，其它都是后面的 0。",
+      run: (su, s) => { su.product = _cl(su.product + 4 + s.stats.knowledge / 40); add(s, "stress", 4); add(s, "health", -1); add(s, "knowledge", 1); return "你和团队闷头死磕了一周需求和 bug，产品又顺手了一截。"; } },
+    { id: "vgrowth", name: "跑市场 · 拉新获客", emoji: "📣", hours: 16, hint: "👥用户++ 📢口碑+ 💸投放", desc: "地推、投放、找渠道、蹭热点。没用户，再好的产品也是孤芳自赏。",
+      run: (su, s) => { const spend = Math.round(3000 + Math.random() * 6000); add(s, "cash", -spend); su.users = _cl(su.users + 4 + s.stats.charm / 30); su.buzz = _cl(su.buzz + 2); su.runway = Math.max(0, su.runway - 0.5); return `你砸了 ¥${spend.toLocaleString()} 做投放和地推，用户曲线往上拐了一下。`; } },
+    { id: "vteam", name: "招人 · 团队建设", emoji: "🧑‍💼", hours: 12, hint: "🤝团队++ 💸发薪", desc: "招大牛、稳军心、画饼也得画得真心。团队散了，公司就散了。",
+      run: (su, s) => { su.team = _cl(su.team + 5); add(s, "network", 1); su.runway = Math.max(0, su.runway - 0.5); return "你面了几个候选人、和核心成员促膝长谈。队伍的心气，被你一点点拢住。"; } },
+    { id: "vfund", name: "见投资人 · 融资", emoji: "🤝", hours: 14, hint: "💰拿钱续命 估值↑但稀释", desc: "做 BP、跑路演、和 VC 斗智斗勇。融到钱续命，融不到只能勒紧裤腰带。",
+      run: (su, s) => { add(s, "stress", 5); const stages = ["种子", "天使轮", "A轮", "B轮", "Pre-IPO"]; const score = su.product * 0.3 + su.users * 0.5 + su.buzz * 0.4 + s.stats.charm * 0.6 + (su.track === s.eraWind ? 30 : 0); if (rnd(Math.min(0.85, 0.2 + score / 300))) { const idx = Math.min(stages.length - 1, stages.indexOf(su.stage) + 1); su.stage = stages[idx]; su.runway += 30 + idx * 8; su.buzz = _cl(su.buzz + 8); return `路演打动了投资人！${su.stage}融资到账，账上一下子宽裕了，跑道续上 30+ 周——代价是又稀释了一些股份。`; } add(s, "mood", -4); return "你跑断了腿、讲到口干，投资人却一个个『再看看』。这年头的钱，越来越难拿了。"; } },
+    { id: "vcut", name: "降本增效 · 过冬", emoji: "✂️", hours: 8, hint: "🛣️跑道+ 🤝团队-", desc: "砍开支、关业务线、能省则省。寒冬里，活下去比什么都重要。",
+      run: (su, s) => { su.runway += 6; su.team = _cl(su.team - 3); return "你砍掉几项烧钱的业务、搬去更便宜的办公室。团队有点人心惶惶，但跑道续上了。"; } },
+    { id: "vself", name: "喘口气 · 顾自己", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力-", desc: "创始人也是人。给自己放半天假，别把命搭进去。",
+      run: (su, s) => { add(s, "health", 4); add(s, "stress", -10); add(s, "mood", 3); return "你难得关掉电脑睡了个好觉。公司垮了还能再来，人垮了就什么都没了。"; } }
+  ];
+  let weekLog = [];       // 本周行动产生的日志
+
+  /* ---------- 阶段 ---------- */
+  function stageOf(age) { for (const st of C.lifeStages) if (age >= st.min && age <= st.max) return st; return C.lifeStages[C.lifeStages.length - 1]; }
+
+  /* ---------- 创建：骑砍式成长经历，净零重分配 + 归一保证总属性恒等 ---------- */
+  function startDraft(cohort) {
+    const stats = {}; C.STAT_KEYS.forEach(k => stats[k] = C.BASE_STAT);
+    draft = { cohort, birthYear: cohort.year, gender: "男", orientation: "异", playerName: "", stepIndex: 0, stats, picks: [], assetTier: "worker", flags: [], difficulty: gameDiff };
+  }
+  function defaultPlayerName(gender) {
+    const a = gender === "女" ? ["林小满", "许知夏", "周南乔", "陈念念"] : ["林一舟", "许星河", "周嘉树", "陈远山"];
+    return pick(a);
+  }
+  function cohortForBirthYear(y) {
+    let best = C.cohorts[0], dist = 9999;
+    C.cohorts.forEach(c => { const d = Math.abs((c.year || y) - y); if (d < dist) { dist = d; best = c; } });
+    return best;
+  }
+  function startLegacyChildDraft(child) {
+    const M = C._util.loadMeta ? C._util.loadMeta() : {};
+    const lg = M.legacy || {};
+    const by = child.birthYear || ((lg.fromBirthYear || 1980) + 28);
+    const cohort = cohortForBirthYear(by);
+    const stats = {}; C.STAT_KEYS.forEach(k => stats[k] = C.BASE_STAT);
+    const edu = child.education || 0;
+    stats.knowledge += Math.min(12, edu * 2);
+    stats.mind += child.trait === "supported" ? 6 : child.trait === "arranged" ? -3 : 3;
+    stats.strategy += child.trait === "independent" ? 6 : lg.trait === "founder" ? 4 : 0;
+    stats.insight += lg.trait === "fallen" ? 4 : 0;
+    draft = {
+      cohort, birthYear: by, gender: child.gender || "男", orientation: "异", playerName: child.name || "",
+      stepIndex: C.creationSteps.length - 1, stats, picks: ["上一代的孩子", child.note || "在上一代人生的阴影和余温里成年"],
+      assetTier: (lg.cash || 0) > 150000 ? "upper" : (lg.cash || 0) > 20000 ? "worker" : "poor",
+      flags: ["lineage_second_life", "lineage_child_" + (child.trait || "ordinary")],
+      difficulty: gameDiff, birthplace: lg.birthplace || null, legacyChild: child
+    };
+  }
+  // 选项实际生效的属性变化：捏人改为「加点制」——多数选项【只加不减】(忽略负值)；
+  // 只有少数标了 tradeoff:true 的「取舍/冒险」选项，才保留减项，构成真正的代价。
+  const TRADEOFF_BONUS = 6;   // 取舍项的风险溢价：补偿减项之外，再额外多给的净加点
+  function optDeltas(opt) {
+    const rl = (opt && opt.realloc) || {}; const out = {};
+    if (opt && opt.tradeoff) {
+      // 取舍项：减项是真实代价，保留；但正向加点要放大到「净收益高于普通项」作为冒险奖励——
+      // 把减项的绝对值全额补偿回正项，再额外加一份风险溢价(TRADEOFF_BONUS)，按正项比例分配。
+      let pos = 0, neg = 0;
+      for (const k in rl) { if (rl[k] > 0) pos += rl[k]; else neg -= rl[k]; }
+      const lift = neg + TRADEOFF_BONUS;
+      for (const k in rl) { out[k] = rl[k] > 0 ? rl[k] + (pos > 0 ? Math.round(lift * rl[k] / pos) : 0) : rl[k]; }
+    } else {
+      for (const k in rl) { if (rl[k] > 0) out[k] = rl[k]; }
+    }
+    return out;
+  }
+  function applyOption(opt) {
+    const step = C.creationSteps[draft.stepIndex];
+    const d = optDeltas(opt);
+    for (const k in d) draft.stats[k] = (draft.stats[k] || 0) + d[k];
+    // 越选越强：每一步都给全维度一点基础成长，让 4 步后总和≈170-185(配合 BASE_STAT=22)，
+    // 与游戏其余按 ~30-35 基准的数值校准(statEdge/岗位门槛/薪资)对齐——否则角色腰斩、处处吃瘪、慢慢穷死。
+    // 取舍项同样吃这份普涨（其代价已体现在 realloc 的减项里），避免「选了取舍反而总属性更低」。
+    const grow = 1;
+    C.STAT_KEYS.forEach(k => draft.stats[k] = (draft.stats[k] || 0) + grow);
+    if (opt.assetTier) draft.assetTier = opt.assetTier;
+    if (opt.flags) draft.flags.push(...opt.flags);
+    if (step && step.id && opt.id) draft.flags.push("bg_" + step.id + "_" + opt.id);
+    draft.picks.push(opt.name);
+  }
+  function normalizeStats(stats) {
+    // 只钳制到 [5,95]，不再强行把总和拉回固定值——捏人是「越选越强」的加点制，总和随选择增长。
+    C.STAT_KEYS.forEach(k => stats[k] = Math.max(5, Math.min(95, Math.round(stats[k]))));
+    return stats;
+  }
+  function birthGeo() {
+    const bp = (draft && draft.birthplace) || {};
+    const origin = bp.origin || {};
+    return {
+      provinceId: bp.provinceId || "",
+      provinceName: bp.provinceName || "",
+      cityName: bp.cityName || "",
+      countyName: bp.countyName || "",
+      villageName: bp.villageName || "",
+      region: bp.region || "",
+      econ: bp.econ || "",
+      tags: origin.tags || [],
+      note: origin.note || ""
+    };
+  }
+  function hasAnyGeo(g, words) {
+    const hay = [g.provinceId, g.provinceName, g.cityName, g.countyName, g.villageName, g.region, g.econ].concat(g.tags || []).join(" ");
+    return words.some(w => hay.indexOf(w) >= 0);
+  }
+  function geoIsCoastal(g) {
+    const coastalIds = ["tianjin", "liaoning", "hebei", "shandong", "jiangsu", "shanghai", "zhejiang", "fujian", "guangdong", "guangxi", "hainan", "hongkong", "macau", "taiwan"];
+    if (hasAnyGeo(g, ["海港", "码头", "渔村", "渔港", "海滨", "海岛", "港城", "盐场", "滩涂", "商埠", "侨乡", "洋楼"])) return true;
+    if (hasAnyGeo(g, ["山村", "旱塬", "黄土", "煤城", "矿区", "油田", "汽车", "重工", "黑土", "牧区", "古都", "古城", "江河源", "灌区", "县城", "高原", "戈壁"])) return false;
+    return coastalIds.indexOf(g.provinceId) >= 0;
+  }
+  function geoIsInland(g) {
+    if (hasAnyGeo(g, ["山村", "旱塬", "黄土", "煤城", "矿区", "油田", "汽车", "重工", "黑土", "牧区", "古都", "古城", "江河源", "灌区", "县城", "高原", "戈壁"])) return true;
+    if (geoIsCoastal(g)) return false;
+    return hasAnyGeo(g, ["中原", "华北", "关东", "塞北", "西北", "西域", "高原", "陇右", "三线", "欠发达"]);
+  }
+  function regionalCreationOptions(step) {
+    const g = birthGeo();
+    const localName = g.cityName || g.countyName || g.provinceName || "本地";
+    const ruralName = g.villageName || g.countyName || "老家";
+    const defs = {
+      childhood: [
+        { id: "region_core_city", name: "大城夹缝", desc: `${localName}的写字楼很亮，你家的窗户很小。你从小就知道，体面和窘迫只隔一条马路。`, realloc: { insight: 9, strategy: 6, charm: 3, body: -6, mind: -6, knowledge: -6 }, flags: ["regional_core_city"], match: ["一线", "核心", "权贵", "新贵"] },
+        { id: "region_hard_village", name: "山塬留守", desc: `${ruralName}的路不好走，水也不总够用。大人外出谋生，你很早就学会自己扛事。`, realloc: { body: 9, mind: 6, strategy: 3, knowledge: -9, charm: -6, insight: -3 }, flags: ["regional_hard_village"], match: ["寒门", "山村", "旱塬", "缺水", "断水", "高寒", "边陲", "苦瘠"] },
+        { id: "region_port_child", name: "码头口岸孩子", desc: `${localName}的货车、船哨和外地口音混在一起。你小时候就知道，东西换个地方能卖出另一个价。`, realloc: { strategy: 9, charm: 6, insight: 3, knowledge: -6, mind: -6, body: -6 }, flags: ["regional_port_child"], match: ["海港", "码头", "口岸", "边贸", "丝路", "巴扎"] },
+        { id: "region_coast_typhoon_shop", name: "台风天的小店", desc: `你家在${localName}守着一间临街小店。台风来前抢胶带、搬货、囤水，台风走后第一时间开门做生意。`, realloc: { strategy: 9, mind: 6, body: 3, knowledge: -6, charm: -6, insight: -6 }, flags: ["regional_coast_typhoon_shop"], pred: geoIsCoastal },
+        { id: "region_coast_export_uncle", name: "外贸亲戚", desc: `家里总有亲戚在港口、货代、工厂或外贸公司跑单。饭桌上聊的是汇率、尾款、柜子和客户临时改需求。`, realloc: { strategy: 9, charm: 6, knowledge: 3, body: -6, mind: -6, insight: -6 }, flags: ["regional_coast_export_uncle"], pred: geoIsCoastal },
+        { id: "region_coast_fishmarket", name: "渔港早市", desc: `${ruralName}天不亮就有鱼腥味和摩托声。你跟着大人看秤、讲价、抢摊位，很早知道现金流比面子实在。`, realloc: { body: 6, strategy: 9, charm: 3, knowledge: -6, mind: -6, insight: -6 }, flags: ["regional_coast_fishmarket"], pred: geoIsCoastal },
+        { id: "region_inland_transfer_station", name: "内陆转运站", desc: `${localName}不靠海，但车站、货场、县道把四面八方的人和货拧在一起。你从小看懂了谁在中间赚差价。`, realloc: { strategy: 9, insight: 6, body: 3, knowledge: -6, charm: -6, mind: -6 }, flags: ["regional_inland_transfer_station"], pred: geoIsInland },
+        { id: "region_inland_harvest_home", name: "农忙假期", desc: `暑假不是补课，是收麦、掰玉米、晒枸杞、搬葡萄筐。你知道一年的收入，有时就压在几天晴天里。`, realloc: { body: 12, mind: 3, insight: 3, knowledge: -9, charm: -6, strategy: -3 }, flags: ["regional_inland_harvest_home"], pred: geoIsInland },
+        { id: "region_inland_resource_yard", name: "矿厂边长大", desc: `你家的窗台常年落灰，远处是矿车、井架、烟囱或厂房。资源能养活一城人，也能把一城人的退路绑住。`, realloc: { body: 9, strategy: 6, mind: 3, knowledge: -6, charm: -6, insight: -6 }, flags: ["regional_inland_resource_yard"], match: ["煤城", "矿区", "油田", "重工", "钢城", "汽车", "稀土"] },
+        { id: "region_factory_child", name: "厂矿子弟", desc: `你在汽笛、班车和家属院里长大。谁家下岗、谁家分房，都是饭桌上的大事。`, realloc: { body: 9, mind: 3, insight: 3, knowledge: -6, charm: -6, strategy: -3 }, flags: ["regional_factory_child"], match: ["重工", "煤城", "矿区", "油田", "汽车", "钢城", "老工业"] },
+        { id: "region_oldtown_child", name: "古城老街", desc: `${localName}的城墙、寺庙、老宅和传说太多，你从小听故事长大，也学会了看人看事的来龙去脉。`, realloc: { insight: 9, knowledge: 6, mind: 3, body: -6, strategy: -6, charm: -6 }, flags: ["regional_oldtown_child"], match: ["古都", "古城", "寺庙", "帝陵", "石窟", "壁画", "晋商"] },
+        { id: "region_tour_child", name: "景区院落", desc: `游客一到旺季就挤满街巷。你见过太多人把故乡当滤镜，也学会了怎样把故事讲得值钱。`, realloc: { charm: 9, insight: 6, strategy: 3, knowledge: -6, mind: -6, body: -6 }, flags: ["regional_tour_child"], match: ["旅游", "古城", "雪山大湖", "热带", "扎染", "葡萄酒"] }
+      ],
+      teen: [
+        { id: "region_keyschool", name: "重点校卷王", desc: `${localName}的好学校像筛子，筛掉睡眠、爱好和闲聊。你在排名表上认识自己。`, realloc: { knowledge: 12, mind: 6, body: -6, charm: -6, strategy: -6 }, flags: ["regional_keyschool"], match: ["一线", "核心", "富庶", "省会", "通衢"] },
+        { id: "region_county_boarding", name: "县中寄宿", desc: `宿舍灯熄了，走廊还有人在背书。你知道县城孩子想出去，只能把青春押在一张卷子上。`, realloc: { knowledge: 9, mind: 6, strategy: 3, body: -6, charm: -6, insight: -6 }, flags: ["regional_county_boarding"], match: ["县城", "三线", "寒门", "欠发达", "旱塬", "山村"] },
+        { id: "region_local_sport", name: "地方绝活", desc: `别人上兴趣班，你练的是骑马、滑冰、下水、跑山或扛货。文化课一般，但身体先长成了。`, realloc: { body: 12, insight: 6, knowledge: -9, mind: -6, charm: -3 }, flags: ["regional_local_sport"], match: ["牧区", "草原", "冰雪", "海港", "高原", "渔村", "赛马"] },
+        { id: "region_coast_trade_english", name: "外贸英语班", desc: `你被送去学英语，不是为了诗和远方，是为了将来能回客户邮件、接展会电话、听懂老外砍价。`, realloc: { knowledge: 9, charm: 6, strategy: 3, body: -6, mind: -6, insight: -6 }, flags: ["regional_coast_trade_english"], pred: geoIsCoastal },
+        { id: "region_coast_workshop_teen", name: "暑假进厂看单", desc: `暑假你在亲戚的加工厂帮忙贴标签、点库存、赶货期。机器一开，订单、工价和加班费都变得具体。`, realloc: { strategy: 9, body: 6, mind: 3, knowledge: -6, charm: -6, insight: -6 }, flags: ["regional_coast_workshop_teen"], pred: geoIsCoastal },
+        { id: "region_coast_ferry_school", name: "渡船上学", desc: `你每天看潮水和班船脸色。迟到不是因为赖床，而是风浪太大、码头停航。你很早就学会给人生留备选路线。`, realloc: { mind: 9, body: 6, insight: 3, knowledge: -6, charm: -6, strategy: -6 }, flags: ["regional_coast_ferry_school"], pred: geoIsCoastal },
+        { id: "region_inland_province_exam", name: "省会借读", desc: `家里咬牙把你送到省会借读，租房、转学、饭卡都贵。你知道这不是享福，是全家把筹码压到你身上。`, realloc: { knowledge: 12, mind: 6, charm: -6, body: -6, strategy: -6 }, flags: ["regional_inland_province_exam"], pred: geoIsInland },
+        { id: "region_inland_fair_skill", name: "庙会练摊", desc: `逢集、庙会、县城大集，你帮家里卖吃食、农货或小百货。你不一定成绩最好，但很会看人下菜碟。`, realloc: { charm: 9, strategy: 9, knowledge: -9, mind: -6, body: -3 }, flags: ["regional_inland_fair_skill"], pred: geoIsInland },
+        { id: "region_inland_commute_school", name: "通村车求学", desc: `去学校要等通村车，雨雪一来路就断。你背着书包走过泥路，也走过很多“差一点就放弃”的早晨。`, realloc: { mind: 9, body: 6, knowledge: 3, charm: -6, strategy: -6, insight: -6 }, flags: ["regional_inland_commute_school"], pred: geoIsInland },
+        { id: "region_market_teen", name: "市场里学外语", desc: `你在巴扎、口岸或批发市场里混熟了几句外语和行话，知道笑脸也能当本钱。`, realloc: { strategy: 9, charm: 6, insight: 6, knowledge: -6, mind: -6, body: -9 }, flags: ["regional_market_teen"], match: ["口岸", "边贸", "巴扎", "丝路", "码头", "商埠"] },
+        { id: "region_vocational", name: "技校实训", desc: `普通高中不是唯一出路。你摸过机床、焊枪、汽修台，早早知道手艺也能吃饭。`, realloc: { body: 6, knowledge: 6, strategy: 6, charm: -6, insight: -3, mind: -9 }, flags: ["regional_vocational"], match: ["重工", "汽车", "矿区", "钢城", "老工业", "机床"] }
+      ],
+      youth: [
+        { id: "region_cafe_startup", name: "咖啡馆创业沙龙", desc: `${localName}的咖啡馆里人人都在聊融资、风口和 BP。你还没成年，已经听会了几句黑话。`, realloc: { strategy: 9, charm: 6, insight: 3, knowledge: -6, mind: -6, body: -6 }, flags: ["regional_cafe_startup"], match: ["一线", "新贵", "核心", "富庶", "孵化器"] },
+        { id: "region_early_migrant", name: "早早外出打工", desc: `同龄人还在纠结社团，你已经背着包去了远方。车站那晚，你第一次觉得自己真的离开了家。`, realloc: { strategy: 9, body: 6, mind: 3, knowledge: -9, charm: -6, insight: -3 }, flags: ["regional_early_migrant"], match: ["寒门", "山村", "旱塬", "缺水", "欠发达", "空心村"] },
+        { id: "region_tour_hustle", name: "导游民宿摊", desc: `旺季一来，你帮人带路、拍照、卖特产，也见识了游客的钱包和脾气。`, realloc: { charm: 9, insight: 6, strategy: 3, knowledge: -6, mind: -6, body: -6 }, flags: ["regional_tour_hustle"], match: ["旅游", "古城", "古都", "雪山大湖", "扎染", "石窟"] },
+        { id: "region_coast_crossborder_first", name: "跨境电商第一单", desc: `你用蹩脚英语上架小商品，第一单利润不多，却让你突然明白：故乡的工厂和世界之间，只差一张网页。`, realloc: { strategy: 12, knowledge: 3, charm: 3, body: -6, mind: -6, insight: -6 }, flags: ["regional_coast_crossborder_first", "startup_seed_trade"], pred: geoIsCoastal },
+        { id: "region_coast_factory_lead", name: "进厂当小组长", desc: `你没有立刻读远方的诗，而是进了沿海工厂。流水线很累，但你学会了排班、控损耗、和老板谈加班费。`, realloc: { strategy: 9, body: 9, mind: 3, knowledge: -9, charm: -6, insight: -6 }, flags: ["regional_coast_factory_lead"], pred: geoIsCoastal },
+        { id: "region_coast_bay_party", name: "湾区饭局", desc: `你跟着亲戚去过几次商务饭局：货代、主播、厂二代、投资人坐一桌，话题从清关跳到短视频。你听得头晕，也听见了机会。`, realloc: { charm: 9, strategy: 9, insight: 3, knowledge: -6, mind: -6, body: -9 }, flags: ["regional_coast_bay_party"], pred: geoIsCoastal },
+        { id: "region_inland_province_hustle", name: "省城第一份工", desc: `你从县里挤进省城，住隔断间，跑招聘会，白天上班晚上摆摊。城市不温柔，但它至少给人一点缝隙。`, realloc: { strategy: 9, body: 6, mind: 6, knowledge: -9, charm: -6, insight: -6 }, flags: ["regional_inland_province_hustle"], pred: geoIsInland },
+        { id: "region_inland_agri_live", name: "把土货卖出去", desc: `你盯上了家乡的苹果、枸杞、茶叶、菌子或牛羊肉。别人嫌土，你觉得这也许是第一门真正属于你的生意。`, realloc: { strategy: 12, charm: 3, insight: 3, knowledge: -6, mind: -6, body: -6 }, flags: ["regional_inland_agri_live", "startup_seed_agri"], pred: geoIsInland },
+        { id: "region_inland_resource_window", name: "资源窗口期", desc: `煤、油、矿、风电、文旅或算力园区突然成了本地热词。你看见一波人围着政策和资源转，心里也开始盘算入口。`, realloc: { insight: 9, strategy: 9, mind: 3, charm: -6, body: -6, knowledge: -6 }, flags: ["regional_inland_resource_window"], pred: geoIsInland },
+        { id: "region_crossborder_hustle", name: "跨境倒货", desc: `你跟着熟人跑过口岸和批发市场，知道一箱货从这头到那头，价格能翻出荒诞的花。`, realloc: { strategy: 12, charm: 3, insight: 3, knowledge: -6, mind: -6, body: -6 }, flags: ["regional_crossborder_hustle"], match: ["口岸", "边贸", "丝路", "巴扎", "瓜果", "商埠"] },
+        { id: "region_mountain_vow", name: "转山与寺院义工", desc: `高处的风把人吹得很安静。你在转山、寺院或长路上想过很多事，也暂时没那么想赢。`, realloc: { mind: 9, insight: 9, strategy: -6, charm: -3, body: -3, knowledge: -6 }, flags: ["regional_mountain_vow"], match: ["高原", "雪域", "寺庙", "虔诚", "经幡", "荒原"] }
+      ],
+      adult: [
+        { id: "region_coast_trade_family", name: "沿海外贸家庭", desc: `家里不算豪门，但有人做过货代、工厂、档口或跨境小生意。你成年时拿到的不只是钱，还有一串真假难辨的客户名片。`, assetTier: "upper", realloc: { strategy: 9, charm: 6, knowledge: -6, mind: -6 }, flags: ["regional_coast_trade_family", "startup_seed_trade"], pred: geoIsCoastal },
+        { id: "region_coast_factory_debt", name: "订单砸手里", desc: `家里曾接过一笔大单，结果尾款拖欠、库存压仓。你成年时背着一点债，也背着对生意风险的早熟。`, assetTier: "worker", realloc: { strategy: 9, mind: 6, charm: -6, body: -6 }, flags: ["regional_coast_factory_debt", "fallen"], pred: geoIsCoastal },
+        { id: "region_coast_returnee_path", name: "侨乡留学路", desc: `亲戚朋友散在海外，家里咬牙给你铺出一条留学或交换的路。饭桌上常说：出去看看，别只守着这一片海。`, assetTier: "upper", realloc: { knowledge: 6, charm: 6, strategy: -6, body: -6 }, flags: ["can_abroad", "regional_coast_returnee_path"], match: ["侨乡", "海港", "商埠", "富庶"] },
+        { id: "region_inland_county_bet", name: "全家供你进城", desc: `成年那年，家里把积蓄、亲戚借款和期待都塞进你的行李箱。你不是一个人进城，是带着一整个家的赌注。`, assetTier: "poor", realloc: { mind: 9, knowledge: 6, charm: -6, body: -6 }, flags: ["regional_inland_county_bet"], pred: geoIsInland },
+        { id: "region_inland_relocation_comp", name: "搬迁补偿款", desc: `老村搬迁、棚改或采空区安置，让家里突然多了一笔钱。它不够让你躺平，却足够让你第一次敢想创业。`, assetTier: "upper", realloc: { strategy: 6, mind: 6, insight: -6, knowledge: -6 }, flags: ["nouveau_riche", "regional_inland_relocation_comp"], pred: geoIsInland },
+        { id: "region_inland_old_unit", name: "老单位余荫", desc: `父母在厂矿、林场、油田或事业单位耗了半辈子。资源不大，但熟人多、规矩多，你成年时已经懂得求人办事的重量。`, assetTier: "worker", realloc: { insight: 9, strategy: 6, charm: 3, knowledge: -6, body: -6, mind: -6 }, flags: ["regional_inland_old_unit"], pred: geoIsInland }
+      ]
+    };
+    const base = step.options || [];
+    // 本省专属选项（content/creation-regional.js）——每个省独一份，排在最前
+    const provDefs = (typeof window !== "undefined" && window.REGION_CREATION && window.REGION_CREATION[g.provinceId]) || {};
+    const provExtra = (provDefs[step.id] || []).map(o => Object.assign({ regional: true }, o));
+    // 通用池：一旦有本省专属项，就不再叠「沿海/内陆」一刀切项（各地雷同的根源）；只留按地标/经济(match)命中的“同类共有”项
+    let pool = defs[step.id] || [];
+    if (provExtra.length) pool = pool.filter(o => !o.pred);
+    const tagExtra = pool.filter(o => o.pred ? o.pred(g) : hasAnyGeo(g, o.match || [])).map(o => Object.assign({ regional: true }, o));
+    const seen = {};
+    const maxExtra = step.id === "childhood" ? 6 : step.id === "adult" ? 4 : 5;
+    const merged = provExtra.concat(tagExtra).filter(o => {
+      if (seen[o.id]) return false;
+      seen[o.id] = true;
+      return true;
+    }).slice(0, maxExtra);
+    return base.concat(merged);
+  }
+  function creationOptions(step) {
+    if (!draft || !draft.birthplace) return step.options || [];
+    return regionalCreationOptions(step);
+  }
+
+  /* ---------- 每周「按天排程」+ 每日天气 ---------- */
+  const DAY_CAP = 16;                                   // 每天物理上限 16h（含挤占吃饭/休息）
+  const DAY_SOFT = 12;                                  // 每天「正常」可安排上限；12~16h 是吃饭/休息区，只有硬撑模式才填得进（进度条变红）
+  const WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+  function _fallbackWx() { return pick([{ id: "clear", name: "晴", emoji: "☀️", effect: { mood: 1 } }, { id: "cloudy", name: "多云", emoji: "⛅", effect: {} }, { id: "rain", name: "小雨", emoji: "🌧️", effect: { mood: -1 } }]); }
+  // 生成下一周的天气与空排程（每天一个天气；总精力仍受本阶段 weeklyHours 限制）
+  function rollWeekPlan(st) {
+    const gen = C._util.genDayWeather;
+    st.weekPlan = { cap: DAY_CAP, used: [0, 0, 0, 0, 0, 0, 0], days: WEEKDAY_NAMES.map(n => ({ name: n, wx: (gen ? gen(st) : _fallbackWx()), acts: [] })) };
+    st.weekWx = st.weekPlan.days.map(d => d.wx ? d.wx.id : "clear");
+  }
+  // 把一个行动按小时自动填入各天：当天填不下就顺延到下一天（每天上限 16h）
+  function placeAction(a) {
+    if (!s.weekPlan) rollWeekPlan(s);
+    let need = a.hours; const wp = s.weekPlan;
+    // 正常只填到每天软上限(12h)，留出吃饭/休息区；开了硬撑才允许塞进 12~16h 那段
+    const dayCap = s._overtimeMode ? wp.cap : DAY_SOFT;
+    for (let d = 0; d < 7 && need > 0; d++) { const free = dayCap - wp.used[d]; if (free <= 0) continue; const put = Math.min(free, need); wp.used[d] += put; need -= put; wp.days[d].acts.push({ emoji: a.emoji, h: put }); }
+  }
+  // —— 行动结算：扣时间 + 排进日历 + 标记本周已做（真正「做了」才调用）——
+  function commitAction(a) {
+    s.hours -= a.hours;
+    placeAction(a);
+    s._actCount = s._actCount || {}; s._actCount[a.id] = (s._actCount[a.id] || 0) + 1;   // 本周做了几次（可多次行动用）
+    if (!a.repeatWeek) { s._weekActs = s._weekActs || {}; s._weekActs[a.id] = true; }     // 可多次的不上「本周已做」锁
+  }
+  // 打开「可取消子界面」(地图/找乐子)的行动：先挂起，等真正在子界面落地了再结算，半途退出不计时间
+  function deferAction(a) { s._pendingAct = { id: a.id, hours: a.hours, emoji: a.emoji }; }
+  function commitPendingAct() { const pa = s._pendingAct; if (!pa) return false; s._pendingAct = null; commitAction(pa); return true; }
+  function clearPendingAct() { s._pendingAct = null; }
+  // 结算本周天气对身心的累积影响（温和封顶 ±6）
+  function applyWeekWeather(st) {
+    if (!st.weekPlan) return;
+    let m = 0, h = 0, sx = 0;
+    for (const d of st.weekPlan.days) { const e = d.wx && d.wx.effect; if (e) { m += e.mood || 0; h += e.health || 0; sx += e.stress || 0; } }
+    const cap = v => Math.max(-6, Math.min(6, Math.round(v)));
+    const ch = cap(h), cm = cap(m), cs = cap(sx);
+    if (cm) add(st, "mood", cm); if (ch) add(st, "health", ch); if (cs) add(st, "stress", cs);
+    // 天气不再是「隐形扣血」：明显伤身/添堵时给一句提示，让玩家看懂自己为啥莫名其妙就虚了。
+    if (ch <= -2 || cm <= -3 || cs >= 3) {
+      const sev = st.weekPlan.days.find(d => d.wx && d.wx.severe);
+      const nm = sev ? sev.wx.name : "连日坏天气";
+      weekLog.push(`🌧️ ${nm}这一周不太好过——${ch <= -2 ? "身子被折腾得有点虚，" : ""}${cm <= -3 ? "心情也跟着低沉，" : ""}${cs >= 3 ? "莫名烦躁，" : ""}注意保养。`);
+    }
+  }
+
+  function newState(d) {
+    const stats = normalizeStats(Object.assign({}, d.stats));
+    const st = {
+      cohort: d.cohort.id, cohortName: d.cohort.name, birthYear: d.birthYear, bg: d.picks.join(" · "),
+      playerName: (d.playerName && d.playerName.trim()) || defaultPlayerName(d.gender),
+      gender: d.gender || "男", orientation: d.orientation || "异", civilRank: 0, partnerGender: null,
+      week: 0, startAge: 18, age: 18, year: d.birthYear + 18, stageId: "youth",
+      stats: stats, network: 10, reputation: 0,
+      cash: C.assetTierCash[d.assetTier] || 20000, assets: 0,
+      health: 70 + Math.round((stats.body - 30) * 0.4), mood: 60, stress: 10, overdraft: 0,
+      ailmentIds: [], flags: {}, startup: null, news: [],
+      crush: null, commitment: null, _pendingDecision: C.stageDecisions.youth,
+      goal: null, milestones: [], _goalDone: false,
+      alive: true, ending: null, endingTitle: null, timeline: []
+    };
+    st.health = Math.max(30, Math.min(100, st.health));
+    // 出生地：影响起手家底/人脉/风土（不动六维，保持平衡）
+    if (d.birthplace) {
+      const o = d.birthplace.origin || {};
+      if (o.cashMul) st.cash = Math.round(st.cash * o.cashMul);
+      if (o.network) add(st, "network", o.network);
+      (o.tags || []).forEach(t => flag(st, "origin_" + t));
+      st.birthplace = d.birthplace;
+    }
+    // 跨局解锁：把已解锁的新内容以 flag 注入本局，供目标/职业/事件线 gate
+    st.unlocks = C._util.metaUnlocked ? C._util.metaUnlocked() : {};
+    for (const uid in st.unlocks) flag(st, "unlock_" + uid);
+    st.drift = Math.floor(Math.random() * 100);   // 多周目平行世界漂移种子（历史事件用）
+    st.difficulty = draft.difficulty || "标准";   // 难度档（默认标准）
+    if (DIFFS[st.difficulty]) st.cash = Math.round(st.cash * DIFFS[st.difficulty].cashMul);
+    if (d.cohort.cashMul) st.cash = Math.round(st.cash * d.cohort.cashMul);   // 解锁出身的家底差异
+    if (d.cohort.originFlag) flag(st, d.cohort.originFlag);
+    // 性别带来的轻微差异（总量相等、无优劣，仅起手风格不同）：男+体魄/谋略，女+魅力/心智
+    if (st.gender === "男") { add(st, "body", 2); add(st, "strategy", 2); }
+    else { add(st, "charm", 2); add(st, "mind", 2); }
+    d.flags.forEach(f => flag(st, f));
+    if (d.legacyChild) { st.legacyParentName = (d.legacyChild.parentName || (C._util.loadMeta().legacy || {}).fromName || "上一代"); st.legacyChild = d.legacyChild; }
+    C._util.initSocial(st);           // 生成社交圈
+    C._util.initWorld(st);            // 初始化动态世界（物价/景气/风口/势头）+ 城市/工作
+    C._util.initStocks(st);           // 初始化股市/理财组合
+    if (C._util.ensureRuntime) C._util.ensureRuntime(st);   // 行业/影响力/社会画像/记忆/cast 等新结构
+    if (C._util.pickMainArc) C._util.pickMainArc(st);       // 依出身/地区/求学/目标，挑一条人生核心剧本
+    // 传承：上一世留下的家底 + 血脉特质（封顶，不滚雪球）。在出身/难度倍率之后注入。
+    let lg = null; if (C._util.applyLegacy) { try { lg = C._util.applyLegacy(st); } catch (e) { } }
+    st._intro = true;                 // 开场「老祖宗的话」
+    st.eraWind = C.windAt(st.year);
+    st.hours = stageOf(18).weeklyHours;
+    rollWeekPlan(st);                 // 初始化第一周的天气与排程
+    refreshNews(st);
+    const bpTxt = d.birthplace ? `生于${d.birthplace.path}。${(d.birthplace.origin && d.birthplace.origin.note) || ""} ` : "";
+    const lgTxt = lg ? `家族传承：${lg.note}${lg.cash ? `（继承家底 ¥${lg.cash.toLocaleString()}）` : ""} ` : "";
+    const lineTxt = d.legacyChild ? `你是上一代的孩子「${d.legacyChild.name}」，在${st.legacyParentName || "上一代"}的人生余波里成年。` : "";
+    st.timeline.push({ age: 18, text: `${d.birthYear} 年，${st.playerName}的人生正式开始（${d.cohort.name}·${st.gender}）。${bpTxt}${lgTxt}${lineTxt}成长轨迹：${d.picks.join("、")}。18 岁，故事开始。` });
+    return st;
+  }
+
+  /* ---------- 手机新闻流：风口藏在多条同向新闻里，玩家自己嗅 ---------- */
+  function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; }
+  // 下一轮风口及其登场年份（用于"更早期的征兆"——风口正式确立前先冒苗头）
+  function upcomingWind(year) {
+    const tl = C.windTimeline; if (!tl) return null;
+    for (let i = 0; i < tl.length; i++) {
+      const w = tl[i];
+      const inRange = (w.from === undefined || year >= w.from) && (w.to === undefined || year <= w.to);
+      if (inRange) { const nx = tl[i + 1]; return nx ? { wind: nx.wind, from: nx.from } : null; }
+    }
+    return null;
+  }
+  function newsFits(n, st) {
+    const y = st.year || 0;
+    return (n.from == null || y >= n.from) && (n.to == null || y <= n.to);
+  }
+  function buildFeed(st, full) {
+    const allNews = C.newsArticles.filter(n => newsFits(n, st));
+    const signals = allNews.filter(n => n.signal && n.wind === st.eraWind);
+    const decoys = allNews.filter(n => n.signal && n.wind !== st.eraWind); // 别的风口的"信号"，是诱饵
+    const noise = allNews.filter(n => !n.signal);
+    const macro = allNews.filter(n => n.kind === "policy" || n.kind === "international" || n.kind === "regulation" || n.kind === "crisis");
+    const feed = [];
+    const addNews = (a, extra) => {
+      const row = extra ? Object.assign({}, a, extra) : a;
+      if (!feed.some(x => x.headline === row.headline)) feed.push(row);
+    };
+    // 真信号：平时露 1-2 条，深扒(full)露全部 → 越读越能看出趋势
+    const sigCount = full ? signals.length : (rnd(0.85) ? Math.min(2, signals.length) : 1);
+    shuffle(signals).slice(0, sigCount).forEach(a => addNews(a));
+    // 诱饵 + 噪音
+    shuffle(decoys).slice(0, full ? 2 : 1).forEach(a => addNews(a));
+    shuffle(noise).slice(0, full ? 4 : 3).forEach(a => addNews(a));
+    // 宏观/政策/国际：创业者必须看，平时至少冒出一条，深扒时更多。
+    shuffle(macro).slice(0, full ? 3 : 1).forEach(a => addNews(a));
+    // 更早期的征兆：临近换风口时（≤2 年），按概率冒出下一赛道的"苗头"新闻——
+    // 深扒(full)更容易挖到。读懂的人能在风口正式起来前埋伏对应板块。
+    const up = upcomingWind(st.year);
+    if (up && up.from != null) {
+      const yearsTo = up.from - st.year;
+      if (yearsTo >= 0 && yearsTo <= 2) {
+        const prox = yearsTo === 0 ? 1 : yearsTo === 1 ? 0.7 : 0.4;
+        if (rnd((full ? 0.85 : 0.32) * prox)) {
+          const pool = allNews.filter(n => n.signal && n.wind === up.wind);
+          if (pool.length) addNews(pick(pool), { early: true });
+        }
+      }
+    }
+    return shuffle(feed);
+  }
+  function refreshNews(st) {
+    st.news = buildFeed(st, false);
+    // 新闻 → 盘面：这一屏新闻形成下一周的板块催化（一周后开盘兑现）
+    if (C._util.applyNewsToMarket) C._util.applyNewsToMarket(st, st.news);
+    if (C._util.applyNewsSignals) C._util.applyNewsSignals(st);   // 新闻 → 行业信号（读新闻能预判风向）
+  }
+
+  function netWorth(st) { return Math.round(st.cash + st.assets + (C._util.stockValue ? C._util.stockValue(st) : 0) + (st.startup && !has(st, "startup_done") ? st.startup.valuation * 0.3 : 0)); }
+
+  /* ---------- 周推进结算 ---------- */
+  function endWeek() {
+    if (C._util.ensureRuntime) C._util.ensureRuntime(s);   // 幂等兜底：保证新结构齐全
+    s.week += 1;
+    // 疏忽计数（在清空本周行动前结算）：长期不顾家/不养生 → 后果事件读取（强制取舍）
+    const _acts = s._weekActs || {};
+    s.neglect = s.neglect || { fam: 0, self: 0 };
+    s.neglect.fam = (_acts.family || _acts.date || _acts.socialize || _acts.parenting || _acts.grandkids) ? 0 : s.neglect.fam + 1;
+    s.neglect.self = (_acts.rest || _acts.exercise || _acts.hobby) ? 0 : s.neglect.self + 1;
+    // 被动收入：有正式工作但这周没主动「上班」时，仍发约四成基础周薪（你照常去上了班，只是没主动操作）。
+    // 目的只是「快进/遇事即停」时不饿死、不被生活成本拖破产——而非躺着致富（故远低于主动上班）。
+    if (has(s, "employed") && s.job && !_acts.work && !_acts.startup && typeof jobSalary === "function") {
+      const baseWk = Math.round(jobSalary(s) * 12 / 52 * 0.4);
+      if (baseWk > 0) add(s, "cash", baseWk);
+    }
+    if (Object.keys(_acts).length) s._lastPlan = Object.keys(_acts);  // 记下上周做了什么 → 「快进」自动延续这套routine
+    s._weekActs = {};                 // 新的一周：清空「本周已做」记录，行动重新可用
+    s._actCount = {};                 // 清空本周行动次数（可多次行动用）
+    s._pendingAct = null;             // 跨周清掉未落地的挂起行动，避免脏数据
+    s.away = null;                    // 旅行结束，回到定居城市
+    const newAge = s.startAge + Math.floor(s.week / 52);
+    const aged = newAge !== s.age;
+    s.age = newAge; s.year = s.birthYear + s.age;
+    if (typeof familyNudge === "function") {
+      const hasBond = has(s, "married") || has(s, "partner");
+      if (hasBond) {
+        if (_acts.family || _acts.date || _acts.companion) familyNudge(s, { bond: 1, conflict: -1 });
+        else if (s.week % 4 === 0) familyNudge(s, { bond: -1, conflict: 1 });
+      }
+      if (has(s, "has_kid")) {
+        if (_acts.parenting || _acts.family || _acts.grandkids) familyNudge(s, { coParent: 1 });
+        else if (s.week % 6 === 0) familyNudge(s, { coParent: -1, conflict: 1 });
+      }
+      if (aged && has(s, "married") && typeof familyEnsure === "function") familyEnsure(s).yearsMarried += 1;
+    }
+    s.eraWind = C.windAt(s.year);
+    C._util.tickWorld(s);             // 推进动态世界（物价/景气/风口/势头/卷度）
+    if (C._util.tickNarrativeSystems) C._util.tickNarrativeSystems(s);   // 季度推进行业/影响力写回/cast
+    if (s._weekNotes && s._weekNotes.length) { for (const n of s._weekNotes) weekLog.push(n); s._weekNotes = []; }  // 延迟兑现等内容层周记 → 本周日志
+    // 泡沫破裂播报：让玩家看见「风口崩了、接盘者被埋」
+    if (s.world && s.world.crash && s.world.crash.fresh) {
+      s.world.crash.fresh = false;
+      const sec = s.world.crash.sector;
+      weekLog.push(`📉 泡沫破了！「${sec}」赛道一夜退潮，股价雪崩、估值打骨折——追高的接盘者被深深埋住。`);
+      s.timeline.push({ age: s.age, text: `「${sec}」泡沫破裂，市场一片狼藉。` });
+    }
+    C._util.tickStocks(s);            // 股市每周开盘，价格随世界波动
+
+    // 每周轻度恢复/衰减：避免「压力一旦升高就回不来」的二元悬崖（过劳惩罚平滑化）
+    add(s, "stress", -2);                                   // 自然喘息
+    if (s.stress < 42 && s.health < 92 && !has(s, "starving")) add(s, "health", 1); // 不太高压时身体慢慢回血；但断炊挨饿时养不回来
+    if (s.stress < 30 && s.overdraft > 0) add(s, "overdraft", -1); // 低压可慢慢养回透支额度（防新暗伤）
+    // 心情自然回弹：人有韧性，再难也会慢慢爬起来 → 避免「一跌到谷底就永远出不来」的死亡螺旋
+    // 抬高回弹地板（38→46），让「认真打拼」时心情稳在 40+ 而非长期钉在抑郁线（15-20）。
+    if (s.mood < 46) add(s, "mood", 1);
+    if (s.mood < 30) add(s, "mood", 1);                     // 谷底额外托一把，给足恢复窗口
+    if (s.stress < 25) add(s, "mood", 1);                   // 难得清闲的一周，心也松快一点
+    // 持续心境低谷计数（供「心力枯竭」结局判定：必须长期深陷才致命）
+    s._moodLowWeeks = (s.mood < 18) ? (s._moodLowWeeks || 0) + 1 : 0;
+
+    // ★健康危急强制干预★：健康跌破临界(≤8)必定住院/强制休养——杜绝「健康0还正常推进十几年」。
+    // 半年冷却防刷屏；花钱(或欠债)换命、工作中断、压力释放，把健康抬回安全线上。健康从此是
+    // 真实的硬约束：你可以透支，但透支到极限会被一次次拽进医院、掏空钱包，而不是当数字摆设。
+    if (s.health <= 8 && (s.week - (s._lastHospital || -9999)) >= 26) {
+      s._lastHospital = s.week;
+      const piH = s.world ? s.world.priceIndex : 1;
+      const cost = Math.round((2200 + 480 * Math.max(0, (s.age || 30) - 30)) * piH);
+      add(s, "cash", -cost);                         // 没钱就先欠着，月度结算时变卖/挨饿处理
+      add(s, "health", 24); add(s, "stress", -12); add(s, "mood", -3);
+      if (s.job) s._monthWork = 0;                   // 工作中断：本月出勤清零，月薪大打折扣
+      s.timeline.push({ age: s.age, text: `身体彻底垮了——你被送进医院。一通检查、输液、卧床，花了 ¥${cost.toLocaleString()}（${s.cash < 0 ? "钱不够，先欠着" : "积蓄又少一截"}）。${s.job ? "工作也被迫中断了大半个月。" : ""}医生撂下一句：「再这么糟蹋身子，下次未必抢得回来。」` });
+      weekLog.push(`🏥 健康亮红灯，你被强制送医休养——医药费 ¥${cost.toLocaleString()}，元气勉强续回来一点。`);
+    }
+
+    // 每 4 周 ≈ 一个月：月度收支结算（先发工资收入，再扣账单），生成「月度结算单」弹窗
+    if (s.week % 4 === 0) {
+      const income = [];   // 本月收入项（月底发薪 + 年终奖 + 已即时到账的零工）
+      // 💼 月薪：在职就月底发（按本月出勤比例，满 4 周拿满，保底 60%）
+      if (s.job) {
+        const ratio = Math.max(0.6, Math.min(1, (s._monthWork || 0) / 4));
+        const salary = Math.round(C._util.jobSalary(s) * ratio);
+        if (salary > 0) { add(s, "cash", salary); income.push({ emoji: "💼", label: `${s.job.name}·月薪${ratio < 1 ? `(出勤${Math.round(ratio * 100)}%)` : ""}`, amount: salary }); }
+      }
+      s._monthWork = 0;
+      // 🧹 零工等已当周即时到账的零散收入（只汇总展示，不重复发）
+      const gigPay = s._monthPay || 0; s._monthPay = 0;
+      if (gigPay > 0) income.push({ emoji: "🧹", label: "打零工 / 零散收入", amount: gigPay });
+      // 🎉 年终奖：跨年的那个月，高薪岗(tier≥2)按级别发 N 个月年终（年度高收入，当场到账）
+      if (aged && s.job && (s.job.tier || 0) >= 2) {
+        const mult = (s.job.tier - 1) * (0.6 + Math.random() * 0.9) * (1 + (s.job._raise || 0));
+        const bonus = Math.round(C._util.jobSalary(s) * mult);
+        if (bonus > 0) { add(s, "cash", bonus); income.push({ emoji: "🎉", label: `年终奖(${mult.toFixed(1)} 个月)`, amount: bonus }); s.timeline.push({ age: s.age, text: `年底了，「${s.job.name}」发了 ¥${bonus.toLocaleString()} 年终奖。` }); }
+      }
+      const totalIncome = income.reduce((a, b) => a + b.amount, 0);
+
+      // —— 月度账单（支出）：逐项 → 扣现金 → 资产填窟窿 → 耗光断炊 ——
+      const bill = C._util.monthlyBill(s);
+      const total = Math.round(bill.total * ((DIFFS[s.difficulty] || DIFFS["标准"]).costMul));
+      add(s, "cash", -total);
+      if (has(s, "has_loan") && !has(s, "startup_done")) add(s, "stress", 2);
+
+      // 创始人手握有估值的公司 = 有底气撑着（押公司借钱、吃泡面也饿不死），不被判断炊、公司也不强卖
+      const founderCushion = s.startup && !has(s, "startup_done") && (s.startup.valuation || 0) > 500000;
+      let soldAsset = 0;
+      if (s.cash < 0 && (s.assets || 0) > 0) { soldAsset = Math.min(s.assets, -s.cash); s.assets -= soldAsset; s.cash += soldAsset; }
+      // 资金链断裂：没资产兜底、公司也不值钱 → 公司清零破产
+      if (s.cash < 0 && (s.assets || 0) <= 0 && s.startup && !has(s, "startup_done") && !founderCushion) {
+        s.startup = null; delete s.flags.startup; delete s.flags.chase_ipo; flag(s, "startup_failed"); flag(s, "been_bankrupt");
+      }
+      const broke = s.cash < 0 && (s.assets || 0) <= 0 && !founderCushion;
+      if (founderCushion && s.cash < -80000) s.cash = -80000;   // 创始人押公司能多借点，封底 -8万
+      if (broke) {
+        s._brokeMonths = (s._brokeMonths || 0) + 1;
+        flag(s, "starving");
+        const m = s._brokeMonths;
+        // 标准/休闲模式 + 年轻(<28)：有老家和父母兜底，断炊不至于几年内贫病而死——伤害减半。
+        const youthNet = (s.age || 18) < 28 && s.difficulty !== "硬核";
+        add(s, "health", -(youthNet ? Math.min(8, 1 + m) : Math.min(15, 2 + m * 2)));
+        add(s, "mood", -Math.min(12, 3 + m)); add(s, "stress", 7);
+        if (s.cash < -50000) s.cash = -50000;
+        // ★早期生存兜底★：年轻人断炊满 2 个月，回老家/父母接济一次（约 3 年冷却一次）。
+        // 换来活路与一笔过渡钱，代价是啃老的自尊折损——避免「20 出头就贫病交加死」这种不合理。
+        if (youthNet && m >= 2 && (s.week - (s._lastBailout || -99999)) >= 156) {
+          s._lastBailout = s.week;
+          const aid = Math.max(3000, Math.round(total * 2 - s.cash));   // 补到约能再撑两个月
+          add(s, "cash", aid);
+          s._brokeMonths = 0; delete s.flags.starving;
+          add(s, "health", 10); add(s, "mood", -4); add(s, "reputation", -2);
+          s.timeline.push({ age: s.age, text: `实在撑不下去，你灰头土脸地回了趟老家。父母没多责备，往你卡里打了 ¥${aid.toLocaleString()}，又把后备箱塞满了米面腊肉。啃老的滋味不好受，但日子总得先过下去——歇口气，再出来拼。` });
+        }
+      } else if (has(s, "starving")) {
+        delete s.flags.starving; s._brokeMonths = 0;
+        s.timeline.push({ age: s.age, text: "缓过一口气：账上终于有了钱，不用再挨饿。" });
+      } else if (s.cash < 0) {
+        add(s, "mood", s.cash < -30000 ? -2 : -1);
+      }
+      const scene = monthlyScene(s, { total, soldAsset, broke, brokeMonths: s._brokeMonths });
+      if (broke) { const m = s._brokeMonths; if (m === 1 || m === 3 || m >= 5) s.timeline.push({ age: s.age, text: scene }); }
+      else if (soldAsset > 0) s.timeline.push({ age: s.age, text: `月底入不敷出，变卖了 ¥${soldAsset.toLocaleString()} 的家当填账。资产又缩水了一截。` });
+
+      // ★月度结算单★：只在「值得一看」的月份弹全屏（断炊/变卖资产/人生头一次），
+      // 普通月份只在本周日志记一行、不阻断 —— 否则每月一弹、一辈子几百次确认，且快进也被反复打断，极伤流畅。
+      const billNotable = broke || soldAsset > 0 || !has(s, "saw_bill");
+      if (billNotable) {
+        flag(s, "saw_bill");
+        s._pendingBill = {
+          age: s.age, year: s.year, income, totalIncome,
+          expenses: bill.items, totalExpense: total, soldAsset,
+          net: totalIncome - total, balance: Math.round(s.cash),
+          broke, brokeMonths: s._brokeMonths || 0, scene
+        };
+      } else {
+        const net = totalIncome - total;
+        weekLog.push(`🧾 ${s.year}年月度结算：进 ¥${Math.round(totalIncome).toLocaleString()} / 出 ¥${total.toLocaleString()}，${net >= 0 ? "结余" : "透支"} ¥${Math.abs(Math.round(net)).toLocaleString()}（余 ¥${Math.round(s.cash).toLocaleString()}）`);
+      }
+
+      if (s.stress > 45) add(s, "overdraft", Math.max(0, Math.round((s.stress - 45) / 9) - Math.round((s.stats.mind - 30) / 30)));
+      add(s, "stress", -5);
+      if (C._util.socialDecay) C._util.socialDecay(s);
+    }
+    // 过劳预警：在重度暗伤/猝死前给出明确信号（解决「突然死、没预警」）
+    if (s.overdraft >= 90 && !has(s, "warn_overwork")) {
+      flag(s, "warn_overwork");
+      s.timeline.push({ age: s.age, text: "⚠️ 身体频频报警：失眠、心悸、情绪低落。再这样透支下去，会出大事。" });
+      weekLog.push("⚠️ 身体亮红灯了——失眠、心悸、提不起劲。再不停下来歇歇，怕是要垮。");
+    }
+    if (s.overdraft < 60 && has(s, "warn_overwork")) delete s.flags.warn_overwork;
+    // 心力枯竭预警：长期心境低谷时给出明确信号 + 指一条恢复的路（休息/陪家人/培养爱好都能回血）
+    if (s.ailmentIds.includes("burnout") && (s._moodLowWeeks || 0) >= 8 && !has(s, "warn_burnout")) {
+      flag(s, "warn_burnout");
+      s.timeline.push({ age: s.age, text: "🕳️ 你陷进了一种说不清的疲惫与空，做什么都提不起劲。是时候停下来，歇歇、陪陪人、找回点热乎气了。" });
+      weekLog.push("🕳️ 心被掏空了一样——别硬撑。「躺平休息」「陪伴家人」「培养爱好」都能慢慢把你捞回来。");
+    }
+    if (s.mood >= 30 && has(s, "warn_burnout")) delete s.flags.warn_burnout;
+    // 年龄增长的自然健康衰减；★体魄(body)高 = 底子好，老得慢★
+    if (aged && s.age > 40) add(s, "health", -Math.max(0, Math.round((s.age - 40) * 0.10) - Math.round((s.stats.body - 30) / 25)));
+
+    // 年度财富再分配：闲置的巨额身家会被税收/通胀/人情往来/挥霍一点点磨平，
+    // 给「非创业的攒钱暴富」一个软上限——让创业(一次性大额变现)仍是更亮眼的致富路。
+    // 注：只磨「超出门槛」的部分、且每年仅 2%，不伤普通人，也不至于抹平正经身家。
+    if (aged && !(s.startup && s.startup.fulltime)) {
+      const pi = s.world ? s.world.priceIndex : 1;
+      const cap = 5000000 * pi;                 // 约「实际购买力 500 万」以上才开始被磨
+      const wealth = (s.cash || 0) + (s.assets || 0);
+      if (wealth > cap) {
+        let drag = Math.round((wealth - cap) * 0.02);
+        const fromAssets = Math.min(s.assets || 0, drag);
+        s.assets = (s.assets || 0) - fromAssets; drag -= fromAssets;
+        if (drag > 0) s.cash -= drag;
+      }
+    }
+
+    // 暗伤判定
+    for (const a of C.ailments) if (s.overdraft >= a.threshold && !s.ailmentIds.includes(a.id)) {
+      s.ailmentIds.push(a.id); s.timeline.push({ age: s.age, text: `🩸 落下暗伤「${a.name}」，难以痊愈。` });
+      weekLog.push(`🩸 暗伤：${a.name}（${a.desc}）`);
+    }
+
+    // 阶段切换
+    const ns = stageOf(s.age);
+    if (ns.id !== s.stageId) { s.stageId = ns.id; s.timeline.push({ age: s.age, text: `步入【${ns.name}】：${ns.climate}` }); weekLog.push(`—— 你进入了【${ns.name}】阶段 ——`); if (C.stageDecisions[ns.id] && !has(s, "dec_" + ns.id)) s._pendingDecision = C.stageDecisions[ns.id]; }
+
+    // 「硬撑」挤占吃饭睡觉 → 周末结算多维代价（健康/心情↓、压力↑、透支累积→暗伤）
+    const overtime = Math.max(0, -(s.hours || 0));
+    if (overtime > 0) {
+      add(s, "stress", Math.min(22, Math.round(overtime * 0.55)));
+      add(s, "health", -Math.min(14, Math.round(overtime * 0.35)));
+      add(s, "mood", -Math.min(12, Math.round(overtime * 0.3)));
+      s.overdraft = (s.overdraft || 0) + Math.round(overtime / 5);
+      s._overtimeStreak = (s._overtimeStreak || 0) + 1;
+      weekLog.push(overtime >= 24 ? "😵 这一周你几乎连轴转，饭顾不上吃、觉睡不安稳——把自己榨干了。" : "⏰ 你挤占了吃饭睡觉的时间硬塞了不少事，身体悄悄记了一笔账。");
+    } else { s._overtimeStreak = 0; }
+    s._overtimeMode = false;          // 硬撑是逐周的主动选择，每周重置
+    applyWeekWeather(s);              // 结算刚过去这一周的天气影响
+    s.hours = stageOf(s.age).weeklyHours;
+    rollWeekPlan(s);                  // 生成新一周的天气与空排程
+    refreshNews(s);
+    tickMs();
+
+    // 结局判定（每周一次，概率性）
+    if (checkEndings()) return false;
+    // 环境/随机事件（叙事由属性/阶级/标记决定）
+    const amb = drawAmbient();
+    if (amb) { enterEvent(amb); screen = "event"; return true; }
+    return true;
+  }
+
+  /* ---------- 结局：每周概率判定 + 普通死亡兜底 ---------- */
+  function checkEndings() {
+    for (const e of C.endings) {
+      let ok = false; try { ok = e.cond(s); } catch (x) { ok = false; }
+      if (!ok) continue;
+      let p = 0; try { p = e.prob(s); } catch (x) { p = 0; }
+      if (rnd(p)) { triggerEnding(e); return true; }
+    }
+    if (s.age >= 16 && rollDeath()) { s.ending = s._deathRecap || "你走完了这一生。"; s.endingTitle = null; finishGame(); return true; }
+    return false;
+  }
+  function triggerEnding(e) { let t = ""; try { t = e.text(s) || ""; } catch (x) { } s.ending = t; s.endingTitle = e.title; if (t) s.timeline.push({ age: s.age, text: t }); finishGame(); }
+  function finishGame() {
+    s.alive = false; screen = "dead";
+    if (!s._recorded) {                         // 每局只入档一次
+      s._recorded = true;
+      const g = C._util.goalById(s.goal);
+      const minStat = Math.min(...C.STAT_KEYS.map(k => (s.stats && s.stats[k]) || 0));
+      const endName = s.endingTitle || (C._util.pickEnding ? C._util.pickEnding(s) : (C.titles.find(t => { try { return t.cond(s); } catch (e) { return false; } }) || C.titles[C.titles.length - 1]).name);
+      if (has(s, "has_kid") && C._util.childEnsureList) C._util.childEnsureList(s);
+      if (C._util.childUpdateAges) C._util.childUpdateAges(s);
+      const L = {
+        name: s.playerName || "无名之人", birthYear: s.birthYear, age: s.age, netWorth: netWorth(s),
+        birthplace: s.birthplace || null,
+        goal: s.goal, goalDone: !!s._goalDone, path: g ? g.path : null,
+        civilRank: s.civilRank || 0,
+        ipo: has(s, "startup_done") && has(s, "chase_ipo"),
+        married: has(s, "married"), hasKid: has(s, "has_kid"),
+        abroad: has(s, "abroad_done") || has(s, "traveled"),
+        emigrated: has(s, "emigrated"), jailed: has(s, "jailed"),
+        lottery: has(s, "lottery") || has(s, "absurd_lottery_big_win"),
+        minStat: minStat,
+        deathCause: s.causeOfDeath || "寿终正寝",
+        endingTitle: endName, titleName: endName,
+        reputation: s.reputation || 0,
+        profile: s.profile || null,                                   // 社会画像：传给下一代的特权/污点/伤痕
+        threads: s.threads || null,                                   // 持续矛盾：高位未了的心结 → 下一代的家族创伤
+        memories: s.memories || null,
+        worldImpacts: (s.world && s.world.impacts) ? s.world.impacts.slice(0, 6) : [],   // 你改变过的行业，下一代出生即承其余波
+        companyLegacy: s.startup ? { status: (has(s, "chase_ipo") && has(s, "startup_done")) ? "listed" : has(s, "startup_failed") ? "failed" : has(s, "startup_done") ? "acquired" : "running", industry: s.startup.track || null, name: s.startup.name || null } : null,
+        children: (s.children || []).map(c => Object.assign({}, c, { age: Math.max(0, s.year - (c.birthYear || s.year)), parentName: s.playerName || "上一代" }))
+      };
+      try { s._freshAch = C._util.recordLife(L); } catch (e) { s._freshAch = []; }
+    }
+  }
+
+  function rollDeath() {
+    const a = s.age;
+    let yr = a < 30 ? 0.002 : a < 40 ? 0.004 : a < 50 ? 0.01 : a < 60 ? 0.025 : a < 70 ? 0.06 : a < 80 ? 0.14 : 0.32;
+    const hf = Math.max(0.3, Math.min(3, (100 - s.health) / 50 + 0.3)); // 健康是唯一直接影响死亡的维度
+    let af = 1; for (const id of s.ailmentIds) { const am = C.ailments.find(x => x.id === id); if (am) af *= (1 + am.deathMod); }
+    const med = netWorth(s) > 5000000 ? 0.6 : netWorth(s) > 1000000 ? 0.8 : 1;
+    const dm = (DIFFS[s.difficulty] || DIFFS["标准"]).deathMul;
+    let pWeek = Math.min(0.6, (yr * hf * af * med * dm) / 52);
+    // 健康危急（<12）：与年龄无关的额外周死亡风险——长期油尽灯枯，年轻也扛不住，逼你别把健康当耗材。
+    // 温和叠加（健康 0 约「十余年累计五成」），是慢性威胁而非几年暴毙，不误伤偶尔透支的认真玩家。
+    if (s.health < 12) pWeek = Math.min(0.6, pWeek + (12 - s.health) / 100 * 0.008 * dm);
+    if (rnd(pWeek)) {
+      if (C._util.pickDeathCause) { const d = C._util.pickDeathCause(s); s.causeOfDeath = d.cause; s._deathRecap = d.recap; }
+      else { s.causeOfDeath = pick(["心梗", "意外", "重病", "衰老"]); }
+      return true;
+    }
+    return false;
+  }
+
+  /* ---------- 环境事件抽取 ----------
+   * 修复事件刷屏：① once 事件一辈子只触发一次；② 其余事件 5 年冷却，不会反复弹同一个；
+   * ③ 整体降低出现频率（约每年 ~6 次大事，而非满屏）。
+   */
+  const AMBIENT_COOLDOWN = 260; // 周（=5年）
+  const ANNUAL_EVENT_CAP = 5;   // 每年「闲杂事件」上限（创业主线/已开连续剧不计入），做节奏管理
+  const UNIVERSAL_MODULES = { era: 1, health: 1, family: 1, life: 1, absurd: 1, relation: 1, world: 1, history: 1, choice: 1, domestic: 1, love: 1, weather: 1, degree: 1 };
+  const ROUTE_RULES = {
+    peace:  { allow: ["family", "relation", "love", "health", "absurd", "life", "domestic", "choice", "weather", "era", "world", "history"], soft: ["work", "career", "money"], block: ["startup", "venture", "civil", "sudden"], cap: 3, sagaStartP: 0.12 },
+    family: { allow: ["family", "relation", "love", "health", "domestic", "life", "choice", "weather", "era", "world", "history"], soft: ["work", "career", "money", "absurd"], block: ["startup", "venture", "civil", "sudden"], cap: 4, sagaStartP: 0.16 },
+    corp:   { allow: ["work", "career", "relation", "money", "health", "choice", "era", "world", "history", "weather", "family", "love", "absurd"], soft: ["startup", "civil"], block: ["venture"], cap: 5, sagaStartP: 0.22 },
+    official:{ allow: ["civil", "relation", "family", "health", "choice", "era", "world", "history", "weather", "love", "absurd"], soft: ["work", "career", "money"], block: ["startup", "venture"], cap: 5, sagaStartP: 0.2 },
+    freedom:{ allow: ["money", "startup", "venture", "work", "career", "relation", "health", "choice", "era", "world", "history", "weather", "absurd", "family"], soft: ["civil"], block: [], cap: 5, sagaStartP: 0.24 },
+    ipo:    { allow: ["startup", "venture", "money", "work", "career", "relation", "health", "choice", "era", "world", "history", "weather", "absurd", "family"], soft: ["civil"], block: [], cap: 5, sagaStartP: 0.24 }
+  };
+  function routeRule() { return (s.goal && ROUTE_RULES[s.goal]) || null; }
+  // 洞察影响事件出现：看得准的人，风口/机会类事件更常找上门，危机/被坑类则少踩一些
+  const OPP_MODULES = { money: 1, venture: 1, era: 1, world: 1, goal: 1, history: 1 };
+  const HAZARD_MODULES = { crisis: 1, sudden: 1 };
+  function eventWeight(e, gm) {
+    const r = routeRule(); if (!r) return 1;
+    if (r.block && r.block.includes(e.module)) return 0;
+    let w;
+    if (e.module === "saga") w = 1;
+    else if (gm && gm.bias && gm.bias.includes(e.module)) w = 2.2;
+    else if (r.allow && r.allow.includes(e.module)) w = 1;
+    else if (r.soft && r.soft.includes(e.module)) w = 0.25;
+    else if (UNIVERSAL_MODULES[e.module]) w = 0.7;
+    else w = 0.12;
+    const ins = (C._util.statEdge ? C._util.statEdge(s, "insight") : 0);
+    if (OPP_MODULES[e.module] || (e.opportunity)) w *= (1 + ins * 0.9);        // 洞察高 → 风口/机会更频
+    else if (HAZARD_MODULES[e.module]) w *= Math.max(0.4, 1 - ins * 0.5);      // 洞察高 → 危机/突发略少
+    return w;
+  }
+  // ★事件分层★：在路线权重之上，叠加「当前场景 / 当前主线 / 重要性 / 是否挂条件」的语境系数，
+  // 让事件优先服务「你此刻在经历什么」，把无归属的纯填充事件压下去——根治「事件乱跳」。
+  const IMPORTANCE_MULT = { turning: 1.7, arc: 1.35, scene: 1.15, daily: 0.7, minor: 0.6 };
+  // ★创业回归★：按「创业阶段」给事件的创业角色加权——未创业时优先「为什么/如何创业」，
+  // 创业中优先公司经营/危机，创业后优先遗产。让一局人生始终回到创业这根主线上。
+  const ROLE_BOOST = {
+    pre: { origin: 1.6, resource: 1.7, trigger: 2.0, company: 0.8, crisis: 0.85, cost: 1.0, world: 1.15, legacy: 0.4, flavor: 0.5 },
+    in: { origin: 0.7, resource: 1.05, trigger: 0.6, company: 2.0, crisis: 1.8, cost: 1.3, world: 1.4, legacy: 0.5, flavor: 0.4 },
+    post: { origin: 0.6, resource: 0.85, trigger: 0.6, company: 0.95, crisis: 0.95, cost: 1.05, world: 1.15, legacy: 1.9, flavor: 0.5 }
+  };
+  function founderPhase() { if (has(s, "startup_done")) return "post"; if (s.startup) return "in"; return "pre"; }
+  function contextBoost(e) {
+    let m = 1;
+    const sc = C._util.currentScene ? C._util.currentScene(s) : null;
+    if (e.scene && sc && e.scene === sc.type) m *= 2.4;                       // 命中当前场景
+    if (e.arc && s.mainArc && e.arc === s.mainArc.id) m *= 2.2;               // 服务当前核心剧本
+    if (e.importance && IMPORTANCE_MULT[e.importance]) m *= IMPORTANCE_MULT[e.importance];
+    if (C._util.entrepreneurialRoleOf) { const rb = ROLE_BOOST[founderPhase()]; const role = C._util.entrepreneurialRoleOf(e); if (rb && rb[role]) m *= rb[role]; }
+    if (!e.cond && !e.scene && !e.arc) m *= 0.38;                            // 既无条件、又不归属任何场景/主线 → 纯噪音，降权
+    const hits = (s._evHits && s._evHits[e.id]) || 0;                        // 新鲜度：本局已看过的事件逐次降权，逼出更多样的人生
+    if (hits) m *= 1 / (1 + 0.7 * hits);
+    return m;
+  }
+  // 「强戏剧」事件：连续剧开场 / 重大转折 —— 受年度戏剧强度预算约束，避免人生变苦情短剧流
+  function isStrongEvent(e) { return (e.importance === "turning" || e.importance === "crisis" || e.importance === "arc") || isSagaStarter(e); }
+  function weightedPick(list, gm) {
+    let total = 0;
+    const rows = list.map(e => { const w = Math.max(0, eventWeight(e, gm) * contextBoost(e)); total += w; return { e, w }; }).filter(x => x.w > 0);
+    if (!rows.length) return null;
+    let r = Math.random() * total;
+    for (const row of rows) { r -= row.w; if (r <= 0) return row.e; }
+    return rows[rows.length - 1].e;
+  }
+  function isSagaStarter(e) { return e && e.module === "saga" && /_s1$/.test(e.id || ""); }
+  function activeSagaCount() {
+    let n = 0, f = s.flags || {};
+    Object.keys(f).forEach(k => { if (/^saga_.*_s1$/.test(k) && !f[k.replace(/_s1$/, "_done")] && !f[k.replace(/_s1$/, "_s3")]) n++; });
+    return n;
+  }
+  function sagaAllowed(e) {
+    const r = routeRule();
+    if (!isSagaStarter(e)) return true;
+    if (activeSagaCount() >= 1) return false;
+    if (s._lastSagaStart && s.week - s._lastSagaStart < 208) return false; // 至少 4 年再开一条大连续剧
+    if (!r) return rnd(0.22);
+    return rnd(r.sagaStartP == null ? 0.2 : r.sagaStartP);
+  }
+  function drawAmbient() {
+    // 节奏留白（v VN 节奏）：降低平时触发率，让每周更透气、人生像「一段段场景」而非满屏刷事；
+    // 仍保留 pity timer——久不出事才逐步抬高触发率，消除「连续几十周零事件」的死区。
+    s._evDry = (s._evDry || 0) + 1;
+    const baseP = Math.min(0.14, 0.05 + Math.max(0, s._evDry - 10) * 0.006);  // 平时 5%，~10周后加码，封顶 14%
+    if (!rnd(baseP)) return null;
+    s._cd = s._cd || {};
+    const gm = C._util.goalMods ? C._util.goalMods(s) : null;
+    const pool = C.events.filter(e => {
+      if (!e.ambient) return false;
+      if (e.once && has(s, "ev_" + e.id)) return false;              // 一次性事件已发生
+      if (!e.once && s._cd[e.id] && s.week - s._cd[e.id] < AMBIENT_COOLDOWN) return false; // 冷却中
+      if (eventWeight(e, gm) <= 0) return false;
+      if (e.module === "saga" && !sagaAllowed(e)) return false;
+      try { return !e.cond || e.cond(s); } catch (x) { return false; }
+    });
+    if (!pool.length) return null;
+    // —— 分层调度：脊柱 > 当前场景 > 连续剧/联动 > 路线 > 通用，叠加【年度强戏剧预算】，根治乱跳 ——
+    if (!s._yrBud || s._yrBud.year !== s.year) s._yrBud = { year: s.year, used: 0, strong: 0, flavor: 0 };
+    const STRONG_CAP = (routeRule() && routeRule().strongCap) || 3;   // 每年「强戏剧」上限：背叛/暴雷/连续剧开场等
+    const strongOK = s._yrBud.strong < STRONG_CAP;
+    const roleOf = (e) => C._util.entrepreneurialRoleOf ? C._util.entrepreneurialRoleOf(e) : "flavor";
+    const bump = (ev) => { if (ev) { if (isStrongEvent(ev)) s._yrBud.strong++; if (roleOf(ev) === "flavor") s._yrBud.flavor++; } s._yrBud.used++; return ev; };
+    // 1) 脊柱（人生主轴，免预算、优先）：创业 / 学术 / 工作场景 / 家庭
+    if (s.startup && !has(s, "startup_done")) {
+      const main = pool.filter(e => e.module === "startup");
+      if (main.length && rnd(0.72)) return weightedPick(main, gm) || pick(main);
+    }
+    if (has(s, "academia_track") && !has(s, "left_academia")) {
+      const acad = pool.filter(e => e.module === "degree");
+      if (acad.length && rnd(0.5)) return weightedPick(acad, gm) || pick(acad);
+    }
+    if (s.workScene && s.job) {
+      const scn = pool.filter(e => e.scene === "work");
+      if (scn.length && rnd(0.4)) return weightedPick(scn, gm) || pick(scn);
+    }
+    if (has(s, "married") || has(s, "has_kid")) {   // 家庭场景：成家后适度把镜头给婚姻/育儿
+      const fam = pool.filter(e => e.scene === "family" || e.module === "family");
+      if (fam.length && rnd(0.22)) return weightedPick(fam, gm) || pick(fam);
+    }
+    // 2) 连续剧：续推不受强预算限制（别烂尾）；开新一条仅在强预算内
+    const sagaCont = pool.filter(e => e.module === "saga" && !isSagaStarter(e));
+    if (sagaCont.length && rnd(0.36)) return weightedPick(sagaCont, gm) || pick(sagaCont);
+    if (strongOK) {
+      const sagaStart = pool.filter(e => e.module === "saga" && isSagaStarter(e));
+      if (sagaStart.length && rnd(0.14)) return bump(weightedPick(sagaStart, gm) || pick(sagaStart));
+    }
+    // 3) 世界联动：股灾 / 极端天气
+    if (s.world && s.world.crash) { const crPool = pool.filter(e => e.module === "crash"); if (crPool.length && rnd(0.6)) return pick(crPool); }
+    if (s.weekPlan && s.weekPlan.days.some(d => d.wx && d.wx.severe)) { const wxPool = pool.filter(e => e.module === "weather"); if (wxPool.length && rnd(0.55)) return pick(wxPool); }
+    // 4) 年度预算 + 路线 gating。强预算耗尽 → 本年余下只放「非强戏剧」事件；调味事件也有年度上限
+    let basePool = strongOK ? pool : pool.filter(e => !isStrongEvent(e));
+    if (s._yrBud.flavor >= 3) { const nf = basePool.filter(e => roleOf(e) !== "flavor"); if (nf.length) basePool = nf; }   // 与创业无关的调味事件每年最多 3 个（留一点人生底色）
+    if (!basePool.length) basePool = pool;
+    const onroute = (gm && gm.bias) ? basePool.filter(e => gm.bias.includes(e.module)) : [];
+    const cap = (routeRule() && routeRule().cap) || ANNUAL_EVENT_CAP;
+    if (s._yrBud.used >= cap) {
+      if (onroute.length && rnd(0.35)) return bump(weightedPick(onroute, gm) || pick(onroute));
+      return null;
+    }
+    if (onroute.length && gm && rnd(gm.biasP)) return bump(weightedPick(onroute, gm) || pick(onroute));
+    let cand = basePool;
+    if (gm && gm.bias) {
+      const offroute = basePool.filter(e => gm.bias.indexOf(e.module) < 0 && !UNIVERSAL_MODULES[e.module]);
+      if (offroute.length && rnd(0.6)) { const trimmed = basePool.filter(e => offroute.indexOf(e) < 0); if (trimmed.length) cand = trimmed; }
+    }
+    return bump(weightedPick(cand, gm) || pick(cand));
+  }
+  // —— 多级分支事件 ——：当前节点 eventNode = {title?, text(s), choices[]}
+  function nodeChoices(node) { return node.dynamicChoices ? node.dynamicChoices(s) : (node.choices || []); }
+  function enterEvent(ev) {
+    pendingEvent = ev; eventNode = { title: ev.title, text: ev.text, choices: nodeChoices(ev) };
+    s._evDry = 0;                                                     // 触发了事件 → 重置「久旱」计数（pity timer）
+    if (ev.once) flag(s, "ev_" + ev.id);                              // 标记一次性事件（修复 once 失效）
+    if (isSagaStarter(ev)) s._lastSagaStart = s.week;
+    s._cd = s._cd || {}; s._cd[ev.id] = s.week;                       // 记录冷却时间戳
+    s._evHits = s._evHits || {}; s._evHits[ev.id] = (s._evHits[ev.id] || 0) + 1;   // 本局触发次数（供新鲜度降权，治「同一事件一辈子看十遍」）
+    // 时代印记：记下你亲历过的时代大事件，死时回看「你活过的那个时代」
+    if (ev.module === "world" || ev.module === "era" || ev.module === "history") {
+      s.eraLog = s.eraLog || [];
+      if (!s.eraLog.some(x => x.id === ev.id)) s.eraLog.push({ id: ev.id, age: s.age, title: (ev.title || "").replace(/^[^一-龥A-Za-z]+/, "") });
+    }
+  }
+  function gotoNode(nx) {
+    const node = typeof nx === "function" ? nx(s) : nx;
+    eventNode = { title: pendingEvent.title, text: node.text, choices: nodeChoices(node) };
+  }
+
+  /* ============================ 渲染 ============================ */
+  // 月末账单小说化卡片（进 weekLog 展示）
+  function billCardHTML(bill, total, soldAsset, brokeMonths) {
+    const rows = bill.items.map(it =>
+      `<div class="bill-row"><span class="bill-l">${it.emoji} ${it.label}${it.note ? `<i class="bill-note">${it.note}</i>` : ""}</span><b class="bill-a">-¥${it.amount.toLocaleString()}</b></div>`
+    ).join("");
+    const cashNow = Math.round(s.cash || 0);
+    const cls = brokeMonths ? " bill-broke" : (cashNow < 0 ? " bill-warn" : "");
+    return `<div class="billcard${cls}">
+      <div class="bill-h">🧾 ${s.age} 岁 · 月末账单</div>
+      ${rows}
+      ${soldAsset > 0 ? `<div class="bill-row bill-sold"><span class="bill-l">🏚️ 变卖资产抵账</span><b class="bill-a">+¥${soldAsset.toLocaleString()}</b></div>` : ""}
+      <div class="bill-row bill-total"><span class="bill-l">合计支出</span><b class="bill-a">-¥${total.toLocaleString()}</b></div>
+      <div class="bill-row bill-cash"><span class="bill-l">账上余额</span><b class="bill-a">${cashNow < 0 ? "欠 ¥" + (-cashNow).toLocaleString() : "¥" + cashNow.toLocaleString()}</b></div>
+      ${brokeMonths ? `<div class="bill-starve">⚠️ 已断炊 ${brokeMonths} 个月——再不搞到钱，会饿出大病</div>` : ""}
+    </div>`;
+  }
+  // 月末小记：把「又扣了一笔钱」写成一段有季节、有处境的人生场景（账单卡之前登场，做月度锚点）
+  function monthlyScene(s, ctx) {
+    const wk = ((s.week % 52) + 52) % 52;
+    const season = wk < 13 ? "春寒料峭，街角的玉兰开了又谢" : wk < 26 ? "入夏了，空调外机彻夜嗡嗡作响" : wk < 39 ? "秋意渐浓，傍晚的风里有了凉意" : "又是一年最冷的时候，暖气片烫得发响";
+    if (ctx.broke) {
+      const m = ctx.brokeMonths || 1;
+      const lines = [
+        `${season}。月底了，钱包空空，你盯着这张账单，第一次认真琢磨：下一顿，在哪儿。`,
+        `${season}。又是揭不开锅的一个月，你把一个馒头掰成两顿，省下的每一块钱都在发烫。`,
+        `${season}。连着几个月断炊，身体一天天垮下去——再不搞到钱，真要饿出人命了。`
+      ];
+      return lines[Math.min(m - 1, lines.length - 1)];
+    }
+    if (ctx.soldAsset > 0) return `${season}。这个月入不敷出，你忍痛变卖了点家当才把窟窿填上。看着资产又缩水一截，心里不是滋味。`;
+    const runway = ctx.total > 0 ? ((s.cash || 0) + (s.assets || 0)) / ctx.total : 99;
+    if (runway > 14) return `${season}。月底结账，数字看着踏实——钱不是问题，至少现在还不是。`;
+    if (runway > 5) return `${season}。又一个月翻篇了。账单照例来敲门，你照例付清，日子就在这一进一出之间，稳稳地往前走。`;
+    return `${season}。月底了，你捏着账单算了又算，离月光只差那么一点。这种紧巴巴的滋味，你太熟悉了。`;
+  }
+  // ★月度结算单弹窗★：每月把一整张收支账单可视化地拍到玩家面前
+  function renderBill() {
+    const b = s._pendingBill;
+    const yuan = n => "¥" + Math.round(n).toLocaleString();
+    const incRows = (b.income && b.income.length)
+      ? b.income.map(it => `<div class="bl-row bl-inc"><span class="bl-l">${it.emoji} ${it.label}</span><b class="bl-a">+${yuan(it.amount)}</b></div>`).join("")
+      : `<div class="bl-row bl-none"><span class="bl-l">🪹 本月没有工资进账</span><b class="bl-a">¥0</b></div>`;
+    const expRows = b.expenses.map(it => `<div class="bl-row"><span class="bl-l">${it.emoji} ${it.label}${it.note ? `<i class="bl-note">${it.note}</i>` : ""}</span><b class="bl-a bl-exp">-${yuan(it.amount)}</b></div>`).join("");
+    const cls = b.broke ? " bl-broke" : (b.net < 0 ? " bl-warn" : " bl-good");
+    app().innerHTML = `<div class="screen billscreen">
+      <div class="bill-modal${cls}">
+        <div class="bl-head">🧾 月度结算单</div>
+        <div class="bl-sub">${b.age} 岁 · ${b.year} 年 · 第 ${Math.ceil((((s.week - 1) % 52) + 1) / 4)} 个结算月</div>
+        <div class="bl-scene">📖 ${b.scene}</div>
+        <div class="bl-sec"><div class="bl-sec-h">📥 本月收入</div>${incRows}
+          <div class="bl-row bl-sum"><span class="bl-l">收入合计</span><b class="bl-a bl-inc">+${yuan(b.totalIncome)}</b></div></div>
+        <div class="bl-sec"><div class="bl-sec-h">📤 本月支出</div>${expRows}
+          ${b.soldAsset > 0 ? `<div class="bl-row bl-sold"><span class="bl-l">🏚️ 变卖资产抵账</span><b class="bl-a bl-inc">+${yuan(b.soldAsset)}</b></div>` : ""}
+          <div class="bl-row bl-sum"><span class="bl-l">支出合计</span><b class="bl-a bl-exp">-${yuan(b.totalExpense)}</b></div></div>
+        <div class="bl-net"><span>本月结余</span><b class="${b.net >= 0 ? "pos" : "neg"}">${b.net >= 0 ? "+" : "-"}${yuan(Math.abs(b.net))}</b></div>
+        <div class="bl-bal"><span>账上余额</span><b class="${b.balance < 0 ? "neg" : ""}">${b.balance < 0 ? "欠 " + yuan(-b.balance) : yuan(b.balance)}</b></div>
+        ${b.broke ? `<div class="bl-starve">⚠️ 已断炊 ${b.brokeMonths} 个月——再不搞到钱，会饿出大病。快去「上班/找工作/搞副业」弄点进账！</div>` : (b.net < 0 ? `<div class="bl-tip">💡 这个月入不敷出，老本在缩水。多上班、搞副业，或省点开销吧。</div>` : "")}
+        <button class="btn primary" id="billok">${b.broke ? "唉……继续撑 →" : "知道了，继续生活 →"}</button>
+      </div></div>`;
+    const ok = document.getElementById("billok");
+    if (ok) ok.onclick = () => { s._pendingBill = null; if (!s.alive) { screen = "dead"; } else { screen = "play"; } render(); };
+  }
+  const app = () => document.getElementById("app");
+  const SN = C.STAT_NAMES;
+  function statBar(k) { const v = s.stats[k]; return `<div class="stat"><span class="stat-l">${SN[k]}</span><span class="stat-bar"><i class="b-${k}" style="width:${v}%"></i></span><span class="stat-v">${v}</span></div>`; }
+  function relationStatus() {
+    if (has(s, "married")) return has(s, "has_kid") ? "💍 已婚 · 有孩子" : "💍 已婚";
+    if (has(s, "divorced")) return "💔 离异";
+    if (has(s, "partner")) return `💕 恋爱中${s.partnerName ? " · " + s.partnerName : ""}`;
+    if (s.crush || has(s, "crush")) return "🌙 暧昧中";
+    return "🧍 单身";
+  }
+  function careerStatus() {
+    if (s.study && s.study.active) return `🎓 留学生 · ${s.study.school || "海外高校"}`;
+    if (s.startup && s.startup.fulltime && !has(s, "startup_done")) return `🚀 全职创业 · ${s.startup.name || s.startup.track || "项目"}`;
+    if (s.startup && !has(s, "startup_done")) return `🚀 创业中 · ${s.startup.name || s.startup.track || "项目"}`;
+    if (has(s, "civil_servant")) return `🏛️ 体制内${s.civilRank ? " · " + (["", "科员", "副科", "正科", "副处", "正处"][s.civilRank] || "干部") : ""}`;
+    if (s.job) return `💼 ${s.job.name}${s.job.level ? " · Lv." + s.job.level : ""}${s.workScene ? " · " + s.workScene.name : ""}`;
+    if (has(s, "lie_flat")) return "🛋️ 躺平生活";
+    return "💼 无正式工作";
+  }
+  function healthStatus() {
+    const h = Math.round(s.health), p = Math.round(s.stress || 0);
+    if (h >= 82 && p < 35) return `💚 状态良好 · 健康${h}`;
+    if (h >= 65 && p < 55) return `❤️ 基本健康 · 健康${h}`;
+    if (h >= 45) return `🟠 亚健康 · 健康${h}`;
+    if (h >= 25) return `🔴 身体报警 · 健康${h}`;
+    return `☠️ 濒危状态 · 健康${h}`;
+  }
+  function ailmentText() {
+    if (!s.ailmentIds || !s.ailmentIds.length) return "🩺 暂无明确疾病/暗伤";
+    return s.ailmentIds.map(id => { const a = C.ailments.find(x => x.id === id); return `🩸${a ? a.name : id}`; }).join(" ");
+  }
+  function homeStatus() {
+    const tags = [];
+    if (has(s, "has_house")) tags.push("有房");
+    if (has(s, "has_car")) tags.push("有车");
+    if (has(s, "overseas")) tags.push("海外生活");
+    if (has(s, "has_pet")) tags.push("有宠物");
+    return tags.length ? tags.join(" · ") : "漂着";
+  }
+
+  function familyStatus() {
+    if (!(has(s, "married") || has(s, "partner") || has(s, "has_kid") || has(s, "co_parenting"))) return "";
+    const f = typeof familyEnsure === "function" ? familyEnsure(s) : (s.family || {});
+    const bits = [];
+    if (has(s, "married") || has(s, "partner")) bits.push(`💞亲密 ${Math.round(f.bond || 0)}`, `🌡️矛盾 ${Math.round(f.conflict || 0)}`);
+    if (has(s, "has_kid") || has(s, "co_parenting")) bits.push(`👪育儿 ${Math.round(f.coParent || 0)}`);
+    if (has(s, "separated")) bits.push("分居中");
+    if (has(s, "co_parenting")) bits.push("共同育儿");
+    return bits.length ? `<div class="res family-line">${bits.join("　")}</div>` : "";
+  }
+
+  function dashboard() {
+    const st = stageOf(s.age);
+    const cls = C.CLASS_NAMES[classTier(s)];
+    const cof = s.startup && s.startup.cofounder ? `　🤝${s.startup.cofounder.emoji}${s.startup.cofounder.name}` : "";
+    const su = s.startup && !has(s, "startup_done") ? `<span class="su-mini">🚀创业估值 ¥${s.startup.valuation.toLocaleString()}${cof}</span>` : "";
+    const w = s.world || {};
+    const mo = Math.round(w.momentum || 0);
+    const moTxt = mo > 25 ? `<b style="color:var(--green)">顺风顺水 +${mo}</b>` : mo < -25 ? `<b style="color:var(--red)">霉运缠身 ${mo}</b>` : `平稳 ${mo > 0 ? "+" + mo : mo}`;
+    const settledTxt = s.city ? C._util.cityFull(s.city) : "—";   // 定居城市（长期落脚的家，搬家才变）
+    const away = s.away;                                            // 当前不在定居地（出门旅行/在外）时记录
+    const curTxt = away ? away.name : settledTxt;                   // 当前所在城市
+    const birthTxt = s.birthplace ? s.birthplace.path : "—";
+    const jobTxt = careerStatus();
+    const relTxt = relationStatus();
+    const locChips = away
+      ? `<span class="loc-away" title="你这阵子出门在外，人不在定居城市">📍当前 ${curTxt} 🧳</span><span title="你长期落脚的家">🏠定居 ${settledTxt}</span>`
+      : `<span title="你此刻所在的城市">📍当前 ${curTxt}</span><span title="你长期落脚的家">🏠定居 ${settledTxt}</span>`;
+    return `<div class="dash">
+      <div class="dash-top">
+        <div><div class="age">${s.age}<small>岁</small> <span class="wk">第${s.week % 52 + 1}周</span></div><div class="cls">${s.playerName || "无名之人"} · ${st.name} · ${cls}</div>
+          <div class="profile-grid">
+            ${locChips}<span>${jobTxt}</span>
+            <span>${relTxt}</span><span>${healthStatus()}</span><span>🧠 压力 ${Math.round(s.stress)}</span><span>🏠 ${homeStatus()}</span>
+          </div>
+          <div class="res">籍贯：${birthTxt}</div>${familyStatus()}</div>
+        <div class="worth"><small title="现金+资产+持仓市值的总身价（导航栏右上角是可用现金，不重复显示）">${s.year} 年 · 身价</small><b>¥${Math.round(netWorth(s)).toLocaleString()}</b>
+          ${(() => { const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null; if (!mb) return ""; const runway = mb.total > 0 ? ((s.cash || 0) + (s.assets || 0)) / mb.total : 99; const warn = runway < 6; return `<div class="res ${warn ? "runway-warn" : ""}" title="每月账单合计；坐吃山空能撑的月数（现金+资产÷月账单）">🧾 月账单 ≈¥${mb.total.toLocaleString()}${has(s, "starving") ? "　🆘已断炊" : runway < 99 ? `　⏳可撑 ${runway < 0 ? 0 : Math.floor(runway)} 个月` : ""}</div>`; })()}
+          ${(w.priceIndex || 1) >= 1.25 ? `<div class="res" style="color:var(--dim)" title="按开局物价折算的实际购买力——通胀让名义数字虚胖，这才是真金白银">≈ 开局购买力 ¥${Math.round(netWorth(s) / w.priceIndex).toLocaleString()}（物价×${(w.priceIndex).toFixed(2)}）</div>` : ""}
+          <div class="res">❤️健康 ${Math.round(s.health)}　🙂心情 ${Math.round(s.mood)}　😣压力 ${Math.round(s.stress)}</div>
+          <div class="res">🤝人脉 ${Math.round(s.network)}　⭐声誉 ${Math.round(s.reputation)}　${su}</div></div>
+      </div>
+      <div class="bars">${C.STAT_KEYS.map(statBar).join("")}</div>
+      <div class="world-row">🌍 物价 ×${(w.priceIndex || 1).toFixed(2)}　📊 就业景气 ${Math.round(w.jobMarket || 0)}　🌪️ 风口热度 ${Math.round(w.windHeat || 0)}　🎲 运势 ${moTxt}</div>
+      ${(() => { const ps = C._util.profileSummary ? C._util.profileSummary(s) : ""; return ps ? `<div class="profile-line" title="社会画像：解释你为什么在某些场合顺、某些场合难">🪪 ${ps}</div>` : ""; })()}
+      ${(() => { const inf = C._util.influenceSummary ? C._util.influenceSummary(s) : ""; const arc = (C._util.mainArcOf && C._util.mainArcOf(s)); const arcTxt = arc ? `📖 ${arc.name}${s.mainArc ? `·第${(s.mainArc.act || 0) + 1}幕` : ""}` : ""; return (inf || arcTxt) ? `<div class="arc-line">${arcTxt}${inf ? `${arcTxt ? "　" : ""}🏛️ 影响力：${inf}` : ""}</div>` : ""; })()}
+      ${(() => { if (!s.cast) return ""; const crisis = Object.keys(s.cast).map(k => s.cast[k]).filter(c => c.crisis); if (!crisis.length) return ""; const labels = { debt: "陷入债务", illness: "家中有人病了", startup_invite: "想拉你合伙", layoff: "被裁了", reunite: "想和你复合" }; return `<div class="cast-line">👥 ${crisis.slice(0, 2).map(c => `${c.name}(${c.role})${labels[c.crisis] || "有事找你"}`).join("　")}</div>`; })()}
+      ${(() => { if (!C._util.founderReadiness) return ""; if (has(s, "startup_done") || (s.startup && s.startup.fulltime)) return ""; const r = C._util.founderReadiness(s); const v = C._util.readinessVerdict ? C._util.readinessVerdict(s) : ""; const col = r >= 70 ? "var(--green)" : r >= 40 ? "var(--amber)" : "var(--dim)"; return `<div class="founder-line"><div class="fl-bar-row"><span class="fl-lbl">🚀 创业准备度</span><span class="fl-bar"><i style="width:${r}%;background:${col}"></i></span><span class="fl-v">${r}</span></div>${v ? `<div class="fl-verdict">${v}</div>` : ""}</div>`; })()}
+      ${goalBarHTML()}
+      <div class="ail-row">${ailmentText()}</div></div>`;
+  }
+  // 手机时间显示（伪）：用周数推个 hh:mm，纯装饰
+  function phoneClock() { const m = (s.week * 17) % (24 * 60); return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }
+  // 渲染一条新闻卡片
+  function newsCard(n) {
+    const tag = n.early ? '<span class="nc-omen">🌱 苗头</span>'
+      : n.kind === "policy" ? '<span class="nc-policy">政策</span>'
+      : n.kind === "international" ? '<span class="nc-intl">国际</span>'
+      : n.kind === "regulation" ? '<span class="nc-policy">监管</span>'
+      : n.kind === "crisis" ? '<span class="nc-hot">风险</span>'
+      : n.signal ? "" : (Math.random() < 0.3 ? '<span class="nc-hot">🔥热</span>' : "");
+    return `<div class="nc ${n.early ? "nc-early" : ""}"><div class="nc-top"><span class="nc-src">${n.source}</span>${tag}</div>
+      <div class="nc-title">${n.headline}</div><div class="nc-body">${n.body}</div></div>`;
+  }
+  // 手机外壳 + 可下滑新闻流。full=沉浸大屏（深扒）
+  // 趋势嗅探：玩家多次读到同向新闻 → 看出趋势（knownSignals），在新闻流顶部给出可读提示
+  const SIGNAL_LABEL = { ai_boom: "AI 风口正热", shipping_crisis: "航运/供应链紧张", fraud_surge: "电诈高发期", edu_crackdown: "教培监管收紧", consume_downgrade: "消费降级", silver_wave: "老龄化加深", platform_margin: "跨境平台收紧" };
+  function trendStrip() {
+    if (!s.knownSignals) return "";
+    const hot = Object.keys(s.knownSignals).filter(id => (s.knownSignals[id].confidence || 0) >= 50 && SIGNAL_LABEL[id]);
+    if (!hot.length) return "";
+    const chips = hot.slice(0, 4).map(id => `<span class="trend-chip">${SIGNAL_LABEL[id]}</span>`).join("");
+    return `<div class="trend-strip"><span class="trend-h">📡 你嗅到的趋势</span>${chips}<div class="trend-tip">读懂了，就能比别人早一步押对赛道、躲开坑。</div></div>`;
+  }
+  function phoneFeed(items, full) {
+    const cls = full ? "phone phone-full" : "phone";
+    return `<div class="${cls}">
+      <div class="phone-notch"></div>
+      <div class="phone-status"><span>${phoneClock()}</span><span>${s.year}年</span><span>📶 🔋</span></div>
+      <div class="phone-app"><span class="pa-title">📰 今日头条</span><span class="pa-sub">下拉刷新 · 风口藏在字缝里</span></div>
+      ${trendStrip()}
+      <div class="phone-feed">${items.map(newsCard).join("")}</div>
+    </div>`;
+  }
+
+  function renderTitle() {
+    const M = C._util.loadMeta();
+    const total = C._util.ACHIEVEMENTS.length;
+    const got = Object.keys(M.achievements || {}).length;
+    const heirs = ((M.legacy || {}).children || []).filter(c => !c.age || c.age >= 18);
+    const diffBtns = Object.keys(DIFFS).map(k => `<button class="diffbtn ${gameDiff === k ? "on" : ""}" data-diff="${k}">${DIFFS[k].emoji} ${k}</button>`).join("");
+    app().innerHTML = `<div class="screen title">
+      <div class="logo">荒诞 · 人生<br><span>ABSURD LIFE SIM</span></div>
+      <p class="tag">你的属性决定你能走的路、遇见的人、和别人对你的态度。<br>健康只决定你哪天离场。剩下的故事，你自己写。</p>
+      <div class="diffpick"><span class="diff-lbl">难度</span>${diffBtns}<div class="diff-note">${DIFFS[gameDiff].label}</div></div>
+      <button class="btn primary" id="start">投胎 →</button>
+      ${heirs.length ? `<button class="btn" id="legacykids">从上一代孩子成年开始 · ${heirs.length} 人</button>` : ""}
+      <button class="btn" id="gallery">🏅 图鉴 · 成就 ${got}/${total}${M.lives ? ` · 已轮回 ${M.lives} 世` : ""}</button>
+      <p class="ver">原型 v0.4 · 周推进 · 行动驱动 · 多维叙事 · 概率结局</p></div>`;
+    document.querySelectorAll(".diffbtn").forEach(b => b.onclick = () => { gameDiff = b.dataset.diff; renderTitle(); });
+    document.getElementById("start").onclick = () => { screen = "cohort"; render(); };
+    const lk = document.getElementById("legacykids"); if (lk) lk.onclick = () => { screen = "legacykids"; render(); };
+    document.getElementById("gallery").onclick = () => { screen = "gallery"; render(); };
+  }
+
+  function renderLegacyKids() {
+    const M = C._util.loadMeta();
+    const lg = M.legacy || {};
+    const kids = (lg.children || []).filter(c => !c.age || c.age >= 18);
+    if (!kids.length) { screen = "title"; render(); return; }
+    const cards = kids.map((c, i) => {
+      const trait = c.trait === "supported" ? "被支持过" : c.trait === "arranged" ? "被安排过" : c.trait === "independent" ? "早早独立" : "普通成年";
+      return `<div class="bgcard" data-kid="${i}"><div class="bg-emoji">🧬</div><div class="bg-name">${c.name} <small>${c.gender || ""}</small></div><div class="bg-desc">${c.relation || "子女"} · ${c.age || 18}岁 · ${trait}<br>${c.note || "上一代人生留下的孩子，终于站到自己的起跑线前。"}</div></div>`;
+    }).join("");
+    const PRIV_L = { family_business: "家族企业", overseas_status: "海外身份", house_local: "本地房产", parent_safety_net: "父母托底" };
+    const STIG_L = { family_debt: "家族债务", bad_credit: "征信瑕疵", gray_suspect: "灰色嫌疑", lawsuit: "官司缠身" };
+    const ltags = [];
+    if (lg.companyLegacy) ltags.push(lg.companyLegacy.status === "listed" ? "🏛️ 前代公司已上市（资源+公众压力）" : lg.companyLegacy.status === "failed" ? "📉 前代公司暴雷（债务+污点）" : "🏢 前代留有公司");
+    ((lg.profileLegacy && lg.profileLegacy.privilege) || []).forEach(p => ltags.push("✨ " + (PRIV_L[p] || p)));
+    ((lg.profileLegacy && lg.profileLegacy.stigma) || []).forEach(p => ltags.push("⚠️ " + (STIG_L[p] || p)));
+    (lg.familyWounds || []).forEach(w => ltags.push("🩹 " + w.label));
+    if ((lg.worldImpacts || []).length) ltags.push("🌍 前代改变过的行业余波");
+    const legacyTags = ltags.length ? `<div class="legacy-tags"><div class="lt-h">🧬 你将从上一代继承</div>${ltags.map(t => `<span class="ltag">${t}</span>`).join("")}</div>` : "";
+    app().innerHTML = `<div class="screen"><h2>选择继承者</h2><p class="sub">从上一代「${lg.fromName || "主角"}」的孩子成年开始。你会继承少量家底、家族痕迹，以及上一代的余波。</p>
+      ${legacyTags}
+      <div class="bggrid">${cards}</div>
+      <div class="dead-btns"><button class="btn" id="legacyback">← 返回</button><button class="btn" id="freshlife">不继承，重新投胎</button></div></div>`;
+    document.querySelectorAll("[data-kid]").forEach(el => el.onclick = () => { startLegacyChildDraft(kids[+el.dataset.kid]); screen = "namepick"; render(); });
+    document.getElementById("legacyback").onclick = () => { screen = "title"; render(); };
+    document.getElementById("freshlife").onclick = () => { screen = "cohort"; render(); };
+  }
+
+  function renderNamePick() {
+    if (!draft) startDraft(C.cohorts[1]);
+    const suggested = draft.playerName || defaultPlayerName(draft.gender);
+    app().innerHTML = `<div class="screen"><h2>给自己起个名字</h2><p class="sub">名字不会改变数值，但会进入时间线、结局和家族传承。</p>
+      <div class="namebox"><label>角色姓名</label><input id="playerNameInput" maxlength="12" value="${suggested}"><small>${draft.legacyChild ? "这是上一代的孩子。你可以沿用原名，也可以改名。" : "不填会自动生成一个名字。"}</small></div>
+      <div class="dead-btns"><button class="btn" id="nameback">← 返回</button><button class="btn primary" id="nameto">继续 →</button></div></div>`;
+    document.getElementById("nameback").onclick = () => { screen = draft.legacyChild ? "legacykids" : "birthplace"; render(); };
+    document.getElementById("nameto").onclick = () => {
+      const v = document.getElementById("playerNameInput").value.trim();
+      draft.playerName = (v || suggested).slice(0, 12);
+      if (draft.legacyChild) { s = newState(draft); screen = "goalpick"; }
+      else { draft.stepIndex = 0; screen = "create"; }
+      render();
+    };
+  }
+
+  // 🏅 图鉴：跨局累计的成就墙 + 死法/结局收藏 + 统计
+  function renderGallery() {
+    const M = C._util.loadMeta();
+    const unl = C._util.metaUnlocked ? C._util.metaUnlocked(M) : {};
+    const achHTML = C._util.ACHIEVEMENTS.map(a => {
+      const got = !!(M.achievements || {})[a.id];
+      return `<div class="gal-ach ${got ? "got" : "locked"}"><div class="ga-emoji">${got ? a.emoji : "🔒"}</div><div class="ga-txt"><b>${got ? a.name : "？？？"}</b><small>${got ? a.desc : "尚未解锁"}</small></div></div>`;
+    }).join("");
+    const deaths = Object.keys(M.deaths || {});
+    const endings = Object.keys(M.endings || {});
+    const got = Object.keys(M.achievements || {}).length;
+    const total = C._util.ACHIEVEMENTS.length;
+    const avgAge = M.lives ? Math.round((M.totalAge || 0) / M.lives) : 0;
+    const collHTML = (arr, empty) => arr.length ? arr.map(x => `<span class="coll-chip">${x}</span>`).join("") : `<span class="coll-empty">${empty}</span>`;
+    app().innerHTML = `<div class="screen gallery">
+      <h2>🏅 人生图鉴</h2>
+      <div class="gal-stats">
+        <div class="gs"><small>解锁成就</small><b>${got}/${total}</b></div>
+        <div class="gs"><small>累计轮回</small><b>${M.lives || 0} 世</b></div>
+        <div class="gs"><small>历史最高身价</small><b>¥${(M.bestNW || 0).toLocaleString()}</b></div>
+        <div class="gs"><small>平均寿命</small><b>${avgAge} 岁</b></div>
+      </div>
+      <div class="gal-sec-h">成就墙</div>
+      <div class="gal-achs">${achHTML}</div>
+      <div class="gal-sec-h">见过的离场方式</div>
+      <div class="gal-coll">${collHTML(deaths, "还没有任何记录——去活过一生吧。")}</div>
+      <div class="gal-sec-h">收集到的结局称号</div>
+      <div class="gal-coll">${collHTML(endings, "暂无。每一种结局都值得被记住。")}</div>
+      <div class="gal-sec-h">跨局解锁 · 集齐条件喂出新内容</div>
+      <div class="gal-unlocks">${(C._util.UNLOCKS || []).map(u => { const on = unl[u.id]; return `<div class="gal-unlock ${on ? "on" : "off"}"><div class="gu-ico">${on ? u.name.split(" ")[0] : "🔒"}</div><div class="gu-txt"><b>${u.name} <span class="gu-state ${on ? "on" : "off"}">${on ? "已解锁" : "未解锁"}</span></b><small>${u.kind}｜${u.desc}</small><div class="gu-req">条件：${u.reqText}</div></div></div>`; }).join("")}</div>
+      <button class="btn primary" id="galback">← 返回</button></div>`;
+    document.getElementById("galback").onclick = () => { screen = s && s.alive === false ? "dead" : "title"; render(); };
+  }
+
+  function renderCohort() {
+    if (!draft) startDraft(C.cohorts[1]);
+    const cunl = C._util.metaUnlocked ? C._util.metaUnlocked() : {};
+    const cards = C.cohorts.map(c => {
+      const locked = c.locked && !cunl[c.locked];
+      const reqTxt = locked ? `<span class="lock-req">🔒 ${(C._util.unlockById(c.locked) || {}).reqText || "尚未解锁"}</span>` : "";
+      return `<div class="bgcard ${draft.cohort.id === c.id ? "sel" : ""} ${locked ? "locked" : ""}" ${locked ? "" : `data-id="${c.id}"`}><div class="bg-photo" style="${C.images.styleBg("era_" + c.id, 500, "card")}"></div><div class="bg-emoji">${locked ? "🔒" : c.emoji}</div><div class="bg-name">${c.name}</div><div class="bg-desc">${c.vibe}</div>${reqTxt}</div>`;
+    }).join("");
+    app().innerHTML = `<div class="screen"><h2>选择出生年代</h2><p class="sub">不同世代，在不同年龄撞上不同的大环境与风口。</p>
+      <div class="bggrid">${cards}</div>
+      <div class="yearpick">性别：
+        <button class="gbtn ${draft.gender === "男" ? "sel" : ""}" data-g="男">♂ 男</button>
+        <button class="gbtn ${draft.gender === "女" ? "sel" : ""}" data-g="女">♀ 女</button>
+        <span style="margin-left:14px">取向：</span>
+        <button class="gbtn ${draft.orientation === "异" ? "sel" : ""}" data-o="异">异性</button>
+        <button class="gbtn ${draft.orientation === "同" ? "sel" : ""}" data-o="同">同性</button>
+        <button class="gbtn ${draft.orientation === "双" ? "sel" : ""}" data-o="双">双性</button>
+        <span style="margin-left:14px">出生年份：</span><button class="step" id="ym">−</button><b id="yv">${draft.birthYear}</b><button class="step" id="yp">+</button>
+        <span class="year-hint">（18 岁时是 ${draft.birthYear + 18} 年）</span></div>
+      <button class="btn primary" id="next">开始塑造你的成长 →</button></div>`;
+    document.querySelectorAll(".bgcard[data-id]").forEach(el => el.onclick = () => { const g = draft.gender, o = draft.orientation; startDraft(C.cohorts.find(c => c.id === el.dataset.id)); draft.gender = g; draft.orientation = o; renderCohort(); });
+    document.querySelectorAll(".gbtn").forEach(el => el.onclick = () => { if (el.dataset.g) draft.gender = el.dataset.g; if (el.dataset.o) draft.orientation = el.dataset.o; renderCohort(); });
+    document.getElementById("ym").onclick = () => { draft.birthYear = Math.max(1960, draft.birthYear - 1); document.getElementById("yv").textContent = draft.birthYear; document.querySelector(".year-hint").textContent = `（18 岁时是 ${draft.birthYear + 18} 年）`; };
+    document.getElementById("yp").onclick = () => { draft.birthYear = Math.min(2020, draft.birthYear + 1); document.getElementById("yv").textContent = draft.birthYear; document.querySelector(".year-hint").textContent = `（18 岁时是 ${draft.birthYear + 18} 年）`; };
+    document.getElementById("next").onclick = () => { bpSel = bpSel || {}; screen = "birthplace"; render(); };
+  }
+
+  /* ============================ 出生地：可点击的「中国」省份图 → 下钻到村 ============================ */
+  // 经济档 → 颜色（深色海面上的协调色板：暖金→玉绿→雾蓝→陶土）
+  const GEO_ECON_COLOR = { "富庶": "#eab64e", "小康": "#57bf97", "普通": "#7396d4", "欠发达": "#cb8a63" };
+  function geoEconColor(econ) { return GEO_ECON_COLOR[econ] || "#7396d4"; }
+  // 13 省在画布上的地理化坐标（仿中国轮廓的相对位置）
+  const GEO_POS = {
+    saibei: [470, 92], liaodong: [726, 120], longyou: [250, 178], jingji: [560, 196],
+    xichui: [120, 300], zhongzhou: [468, 262], bashu: [300, 360], chuxiang: [486, 384],
+    jiangnan: [676, 322], huhai: [806, 330], donghai: [858, 426], miaoling: [300, 484], lingnan: [602, 500]
+  };
+  // 合并 origin：村 → 县 → 市 → 省，取第一个非空字段
+  function geoMergedOrigin(prov, city, county, village) {
+    const out = { cashMul: 1, network: 0, tags: [], note: "" };
+    const layers = [village, county, city, prov].filter(Boolean);
+    // cashMul / network / note 取最具体一层的值；tags 累积
+    let gotMul = false, gotNet = false, gotNote = false;
+    for (const L of layers) {
+      const o = L.origin; if (!o) continue;
+      if (!gotMul && o.cashMul != null) { out.cashMul = o.cashMul; gotMul = true; }
+      if (!gotNet && o.network != null) { out.network = o.network; gotNet = true; }
+      if (!gotNote && o.note) { out.note = o.note; gotNote = true; }
+      if (o.tags) out.tags.push(...o.tags);
+    }
+    out.tags = [...new Set(out.tags)];
+    return out;
+  }
+  function geoProv(id) { return C.geo.provinces.find(p => p.id === id); }
+  function bpRandom() {
+    const prov = pick(C.geo.provinces);
+    const city = pick(prov.cities || []);
+    const county = city ? pick(city.counties || []) : null;
+    const village = county ? pick(county.villages || []) : null;
+    bpSel = { provinceId: prov.id, city, county, village };
+  }
+  function renderBirthplace() {
+    const provs = C.geo.provinces;
+    bpSel = bpSel || {};
+    const prov = bpSel.provinceId ? geoProv(bpSel.provinceId) : null;
+    // —— 真实中国省界 SVG（geo-svg.js）：34 真实省级区按 fid 归并着色，点击选中虚构省 ——
+    const gs = C.geoSvg;
+    const selId = prov ? prov.id : null;
+    const pathEls = gs.paths.map(pp => {
+      const pv = geoProv(pp.fid); const color = pv ? geoEconColor(pv.econ) : "#5b7290";
+      return `<path class="bp-rp ${selId === pp.fid ? "sel" : ""}" data-prov="${pp.fid}" d="${pp.d}" fill="${color}"></path>`;
+    }).join("");
+    const labelEls = gs.labels.map(l => `<text class="bp-rlabel ${selId === l.fid ? "sel" : ""}" data-prov="${l.fid}" x="${l.x}" y="${l.y}">${l.name}</text>`).join("");
+    const svg = `<svg class="bp-map" viewBox="${gs.viewBox}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bpOcean" cx="50%" cy="36%" r="78%">
+          <stop offset="0%" stop-color="#13283e"></stop><stop offset="100%" stop-color="#0a121c"></stop>
+        </radialGradient>
+        <filter id="bpShadow" x="-6%" y="-6%" width="112%" height="112%">
+          <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#02060c" flood-opacity="0.55"></feDropShadow>
+        </filter>
+      </defs>
+      <rect x="0" y="0" width="100%" height="100%" fill="url(#bpOcean)"></rect>
+      <g filter="url(#bpShadow)">${pathEls}</g>${labelEls}</svg>`;
+    const legend = `<div class="bp-legend">${["富庶", "小康", "普通", "欠发达"].map(e => `<span><i style="background:${geoEconColor(e)}"></i>${e}</span>`).join("")}</div>`;
+    // —— 右侧下钻面板 ——
+    let panel;
+    if (!prov) {
+      panel = `<div class="bp-hint">点击地图上的省份，一级级往下选到你的出生村落。<br>不同的出身，给你不同的起手家底、人脉与风土。</div>`;
+    } else {
+      const econTag = `<span class="bp-tag">${prov.econ}</span>`;
+      const cityList = (prov.cities || []).map((c, i) => `<button class="bp-item ${bpSel.city === c ? "on" : ""}" data-city="${i}">🏙️ ${c.name} <small>${c.tier || ""}</small></button>`).join("");
+      let sub = "";
+      if (bpSel.city) {
+        const counties = (bpSel.city.counties || []).map((co, i) => `<button class="bp-item ${bpSel.county === co ? "on" : ""}" data-county="${i}">🏘️ ${co.name}</button>`).join("");
+        sub += `<div class="bp-sub-h">${bpSel.city.name} · 区县</div><div class="bp-items">${counties}</div>`;
+        if (bpSel.county) {
+          const villages = (bpSel.county.villages || []).map((v, i) => `<button class="bp-item ${bpSel.village === v ? "on" : ""}" data-village="${i}">🌾 ${v.name}</button>`).join("");
+          sub += `<div class="bp-sub-h">${bpSel.county.name} · 村落</div><div class="bp-items">${villages}</div>`;
+        }
+      }
+      const merged = geoMergedOrigin(prov, bpSel.city, bpSel.county, bpSel.village);
+      const deepest = bpSel.village || bpSel.county || bpSel.city || prov;
+      const path = [prov.name, bpSel.city && bpSel.city.name, bpSel.county && bpSel.county.name, bpSel.village && bpSel.village.name].filter(Boolean).join(" · ");
+      panel = `<div class="bp-panel-h">${prov.name} ${econTag}</div>
+        <div class="bp-desc">${prov.desc || ""}</div>
+        <div class="bp-sub-h">${prov.name} · 城市</div><div class="bp-items">${cityList}</div>${sub}
+        <div class="bp-pick-card">
+          <div class="bp-pick-path">📍 ${path}</div>
+          <div class="bp-pick-note">${deepest.desc || ""}</div>
+          <div class="bp-pick-mods">起手家底 ×${merged.cashMul} ｜ 人脉 ${merged.network >= 0 ? "+" : ""}${merged.network} ${merged.tags.length ? "｜ " + merged.tags.map(t => "#" + t).join(" ") : ""}</div>
+          <div class="bp-pick-flavor">${merged.note || ""}</div>
+          <button class="btn primary" id="bpconfirm">就生在这儿 →</button>
+        </div>`;
+    }
+    app().innerHTML = `<div class="screen bp-screen">
+      <h2>选择出生地</h2><p class="sub">投胎是门玄学。点开地图，省 → 市 → 县 → 村，看看命运把你丢在了哪里。</p>
+      <div class="bp-layout"><div class="bp-mapwrap">${svg}${legend}</div><div class="bp-panel">${panel}</div></div>
+      <div class="bp-foot"><button class="btn" id="bprand">🎲 随机投胎</button><button class="btn" id="bpback">← 返回</button></div></div>`;
+    // 事件绑定
+    document.querySelectorAll("[data-prov]").forEach(g => g.onclick = () => { bpSel = { provinceId: g.dataset.prov }; render(); });
+    document.querySelectorAll("[data-city]").forEach(b => b.onclick = () => { bpSel.city = prov.cities[+b.dataset.city]; bpSel.county = null; bpSel.village = null; render(); });
+    document.querySelectorAll("[data-county]").forEach(b => b.onclick = () => { bpSel.county = bpSel.city.counties[+b.dataset.county]; bpSel.village = null; render(); });
+    document.querySelectorAll("[data-village]").forEach(b => b.onclick = () => { bpSel.village = bpSel.county.villages[+b.dataset.village]; render(); });
+    document.getElementById("bprand").onclick = () => { bpRandom(); render(); };
+    document.getElementById("bpback").onclick = () => { screen = "cohort"; render(); };
+    const cf = document.getElementById("bpconfirm");
+    if (cf) cf.onclick = () => {
+      const pv = geoProv(bpSel.provinceId);
+      const merged = geoMergedOrigin(pv, bpSel.city, bpSel.county, bpSel.village);
+      draft.birthplace = {
+        provinceId: pv.id, provinceName: pv.name, region: pv.region, econ: pv.econ, cityName: bpSel.city && bpSel.city.name,
+        countyName: bpSel.county && bpSel.county.name, villageName: bpSel.village && bpSel.village.name,
+        path: [pv.name, bpSel.city && bpSel.city.name, bpSel.county && bpSel.county.name, bpSel.village && bpSel.village.name].filter(Boolean).join(" · "),
+        origin: merged
+      };
+      draft.stepIndex = 0; screen = "namepick"; render();
+    };
+  }
+
+  function renderCreate() {
+    const step = C.creationSteps[draft.stepIndex];
+    const options = creationOptions(step);
+    const preview = normalizeStats(Object.assign({}, draft.stats));
+    const projOf = (o) => { const cp = Object.assign({}, draft.stats); const d = optDeltas(o); for (const k in d) cp[k] = (cp[k] || 0) + d[k]; return normalizeStats(cp); };
+    const selI = (draft._previewSel != null && options[draft._previewSel]) ? draft._previewSel : null;   // 已「点一次预览」的选项
+    const shown = selI != null ? projOf(options[selI]) : preview;        // 属性条默认显示：预览中的项 / 否则当前
+    // —— 属性条形图：当前六维（或预览结果）分布，总和恒为 BASE_TOTAL ——
+    const statBars = C.STAT_KEYS.map(k => { const d = shown[k] - preview[k]; return `<div class="stat"><span class="stat-l">${SN[k]}</span><span class="stat-bar"><i class="b-${k}" data-bar="${k}" style="width:${Math.round(shown[k] / 95 * 100)}%;transition:width .16s ease"></i></span><span class="stat-v" data-val="${k}" style="transition:color .12s;color:${d > 0 ? "var(--green)" : d < 0 ? "var(--red)" : ""};font-weight:${d ? 800 : 400}">${shown[k]}</span></div>`; }).join("");
+    const bp = draft.birthplace || {}; const org = bp.origin || {};
+    const bpLine = bp.path ? `<div style="font-size:12px;color:var(--dim);margin-top:10px;border-top:1px solid var(--line);padding-top:8px">📍 ${bp.path}｜起手现金 ×<b style="color:var(--amber2)">${org.cashMul || 1}</b>　人脉 <b style="color:var(--amber2)">${(org.network >= 0 ? "+" : "")}${org.network || 0}</b>${(org.tags && org.tags.length) ? "　" + org.tags.map(t => "#" + t).join(" ") : ""}</div>` : "";
+    const flagLabels = { can_abroad: "🎓 解锁留学", nouveau_riche: "💰 暴发户", fallen: "📉 家道中落", startup_seed_trade: "🌱 生意苗子", startup_seed_agri: "🌱 土货生意" };
+    const tierName = { poor: "清贫", worker: "工薪", upper: "殷实", rich: "豪富" };
+    const chip = (k, v) => `<span style="display:inline-block;font-size:12px;font-weight:700;padding:1px 7px;border-radius:6px;margin:3px 4px 0 0;color:#10100a;background:${v > 0 ? "var(--green)" : "var(--red)"}">${SN[k]}${v > 0 ? "+" : ""}${v}</span>`;
+    const tag = (txt, col) => `<span style="display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;margin:5px 4px 0 0;color:${col};border:1px solid ${col}66;background:${col}1f">${txt}</span>`;
+    const cards = options.map((o, i) => {
+      const rl = optDeltas(o);   // 只加不减；取舍项才显示减项
+      const chips = C.STAT_KEYS.filter(k => rl[k]).map(k => chip(k, rl[k])).join("") + (o.tradeoff ? ` <span style="display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;margin:3px 0 0;color:var(--red);border:1px solid var(--red)">⚠ 有取舍</span>` : "") || `<span style="font-size:12px;color:var(--dim)">均衡 · 不偏科</span>`;
+      const badges = (o.assetTier ? tag(`💼 ${tierName[o.assetTier] || o.assetTier} · ¥${(C.assetTierCash[o.assetTier] || 0).toLocaleString()}`, "var(--green)") : "")
+        + (o.flags || []).filter(f => flagLabels[f]).map(f => tag(flagLabels[f], "var(--amber2)")).join("");
+      const isSel = i === selI;
+      const foot = isSel ? `<div style="margin-top:8px;font-size:12px;font-weight:800;color:var(--amber2)">👆 再点一次 = 确认 →</div>` : "";
+      return `<div class="bgcard ${o.regional ? "regional" : ""}${isSel ? " sel" : ""}" data-i="${i}"><div class="bg-name">${o.name}${o.regional ? ' <span class="region-badge">地区专属</span>' : ""}</div><div class="bg-desc">${o.desc}</div>
+        <div class="bg-start" style="color:inherit">${chips}</div>${badges ? `<div>${badges}</div>` : ""}${foot}</div>`;
+    }).join("");
+    app().innerHTML = `<div class="screen"><div class="scene-hero" style="${C.images.styleBg("create", 1200)}"><span class="scene-cap">捏人 · 你这一生的底牌</span></div>
+      <h2>${step.title}　<small class="step-n">${draft.stepIndex + 1}/${C.creationSteps.length}</small></h2>
+      <p class="sub">${step.note || "每一步都在为你加点——多数选项纯长属性，越选底子越厚；个别「有取舍」的才需权衡。"}</p>
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:12px;color:var(--dim);margin-bottom:8px">当前属性 · <b style="color:var(--amber2)">加点制：越选越强</b>，多数选项只加不减，仅「<span style="color:var(--red)">⚠ 有取舍</span>」的少数项会扣点（封顶 95）　👇 <b style="color:var(--amber2)">鼠标悬浮预览、点选即确认</b></div>
+        <div class="bars">${statBars}</div>${bpLine}
+        <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px;font-size:11px;color:var(--dim);line-height:1.85">
+          <b style="color:var(--amber2)">六维决定人生走向</b>（点高哪一维，那条路就明显更顺）：
+          <span style="color:var(--green)">体魄</span>=耐操健康长寿·体力销售更挣钱
+          <span style="color:var(--pink)">心智</span>=抗压回血·学得快少崩溃
+          <span style="color:var(--blue)">学识</span>=好工作·升职快·产品强
+          <span style="color:var(--purple)">谋略</span>=副业投资创业回报高·少被裁
+          <span style="color:var(--amber)">魅力</span>=朋友多人缘热·谈薪拉客恋爱顺
+          <span style="color:#9ccc65">洞察</span>=看准风口·运气好·少踩坑
+        </div>
+      </div>
+      <div class="bggrid">${cards}</div></div>`;
+    // —— 悬浮预览(电脑) + 两段点击(触屏/通用)：第一次点=预览选中，再点同一项=确认 ——
+    const baseStats = preview;   // 当前(已归一)六维 = 基准
+    const paintBars = (stats) => C.STAT_KEYS.forEach(k => {
+      const bar = document.querySelector(`[data-bar="${k}"]`); const val = document.querySelector(`[data-val="${k}"]`);
+      if (bar) bar.style.width = Math.round(stats[k] / 95 * 100) + "%";
+      if (val) { const d = stats[k] - baseStats[k]; val.textContent = stats[k]; val.style.color = d > 0 ? "var(--green)" : d < 0 ? "var(--red)" : ""; val.style.fontWeight = d ? "800" : "400"; }
+    });
+    const confirmPick = (i) => {
+      draft._previewSel = null;
+      applyOption(options[i]);
+      if (draft.stepIndex < C.creationSteps.length - 1) { draft.stepIndex++; renderCreate(); }
+      else { s = newState(draft); screen = "play"; weekLog = []; render(); }
+    };
+    document.querySelectorAll(".bgcard").forEach(el => {
+      const i = parseInt(el.dataset.i, 10);
+      el.onmouseenter = () => paintBars(projOf(options[i]));      // 悬浮即预览
+      el.onmouseleave = () => paintBars(shown);                  // 移开复位
+      el.onclick = () => confirmPick(i);                         // 点一下直接确认（悬浮已能预览，无需二次确认）
+    });
+  }
+
+  function renderIntro() {
+    app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:600px;margin:6vh auto 0">
+      <div class="ev-tag">${s.birthYear + 18} 年 · 18 岁 · 故事开始之前</div>
+      <div class="ev-title">👴 老祖宗的话</div>
+      <div class="ev-text">十八岁这年，临行前，家里最年长的太爷爷把你叫到跟前，浑浊的眼睛盯着你，一字一句地说：<br><br>
+      「娃啊，记住——<b style="color:var(--amber2)">打工是不可能打工的，这辈子都不可能打工的。</b>一个『工』字，上面一横下面一横，中间一竖到底，<b style="color:var(--amber2)">永远没有出头之日</b>。」<br><br>
+      「想出头，要么读书读出个名堂，要么自己当老板。给人打工，到头来只是个『工具人』。」<br><br>
+      <i style="color:var(--dim)">这句话你将信将疑。可往后几十年的风风雨雨里，你会无数次想起这个下午。是真理，还是毒鸡汤？只有你自己的人生能回答。</i></div>
+      <div class="ev-choices"><button class="btn primary choice" id="introgo">我记住了，出发 →</button></div>
+    </div></div>`;
+    document.getElementById("introgo").onclick = () => { s._intro = false; s.timeline.push({ age: 18, text: "太爷爷说：「打工是不可能打工的。」你带着这句话上了路。" }); screen = "goalpick"; render(); };
+  }
+  // 本周 7 天日历：每天显示天气 + 已排满程度 + 行动小图标
+  function weekCalendar() {
+    if (!s.weekPlan) return "";
+    const wp = s.weekPlan;
+    const cap = wp.cap, soft = DAY_SOFT, softPct = soft / cap * 100;
+    return `<div class="weekcal">${wp.days.map((d, i) => {
+      const u = wp.used[i];
+      const normW = Math.min(u, soft) / cap * 100;          // 正常时段(琥珀)
+      const otW = Math.max(0, u - soft) / cap * 100;        // 挤占时段(红)
+      const acts = d.acts || [];
+      const chips = acts.slice(0, 4).map(x => `<span class="wc-chip">${x.emoji}</span>`).join("") + (acts.length > 4 ? "<span class='wc-more'>…</span>" : "");
+      const wx = d.wx || {};
+      // 进度条恒含一段「正常填不满」的吃饭/休息区(虚线右侧斜纹)，只有硬撑才会用红色填进去
+      const fill = `<div class="wc-fill" style="position:relative;overflow:hidden">
+          <span style="position:absolute;left:${softPct}%;right:0;top:0;bottom:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.06) 0 4px,transparent 4px 8px)"></span>
+          <i style="position:absolute;left:0;top:0;height:100%;width:${normW}%;background:var(--amber)"></i>
+          ${otW > 0 ? `<i style="position:absolute;left:${softPct}%;top:0;height:100%;width:${otW}%;background:var(--red)"></i>` : ""}
+          <span style="position:absolute;left:${softPct}%;top:0;bottom:0;border-left:1px dashed rgba(255,255,255,.45)"></span>
+        </div>`;
+      return `<div class="wc-day${wx.severe ? " wc-severe" : ""}" title="${(wx.name || "")}：${(wx.note || "")}　正常 ${soft}h 内，再多就要挤占吃饭/休息">
+        <div class="wc-name">${d.name}</div>
+        <div class="wc-wx">${wx.emoji || ""}</div>
+        ${fill}
+        <div class="wc-acts">${chips}</div>
+        <div class="wc-h"${u > soft ? ' style="color:var(--red)"' : ""}>${u}h</div></div>`;
+    }).join("")}</div>`;
+  }
+  function renderPlay() {
+    if (s._intro) return renderIntro();
+    // ★月度结算单弹窗★：每月结算后优先弹出可视化收支账单（先于一切）
+    if (s._pendingBill) return renderBill();
+    if (s.study && s.study.active) return renderStudy();   // 留学周推进模式接管界面
+    if (s.startup && s.startup.fulltime) return renderVenture();   // 全职创业经营模式接管界面
+    // 进入大阶段时的「明确选择」优先弹出
+    if (s._pendingDecision) { const ev = C.events.find(x => x.id === s._pendingDecision); s._pendingDecision = null; if (ev) { flag(s, "dec_" + s.stageId); enterEvent(ev); screen = "event"; return renderEvent(); } }
+    // 跨多年的承诺（如留学）：接管界面，按年推进
+    if (s.commitment) return renderCommitment();
+    // ★脊柱节奏★：核心剧本/命运幕不再「一到年龄就立刻强弹」，而是与上一幕脊柱事件至少隔几周，
+    // 给生活留白、避免主线接连霸屏（治「主线过度强制」）。两条线也不会同一周连珠炮。
+    const spineReady = (s.week - (s._lastSpineWk || -999)) >= 8;
+    // 核心剧本（main-arc）优先于目标命运线（destiny）
+    if (spineReady && C._util.nextMainArcChapter) {
+      const ach = C._util.nextMainArcChapter(s);
+      if (ach) { const ev = C.events.find(x => x.id === ach); if (ev) { flag(s, "arcdone_" + ach); s._lastSpineWk = s.week; enterEvent(ev); screen = "event"; return renderEvent(); } }
+    }
+    if (spineReady && C._util.nextDestinyChapter) {
+      const dch = C._util.nextDestinyChapter(s);
+      if (dch) { const ev = C.events.find(x => x.id === dch); if (ev) { flag(s, "dstdone_" + dch); s._lastSpineWk = s.week; enterEvent(ev); screen = "event"; return renderEvent(); } }
+    }
+    const st = stageOf(s.age);
+    // 可做的事 = (本阶段基础行动 ∪ 任意阶段的上下文行动) ∩ 满足处境门槛(require)
+    // → 菜单随人生阶段 + 当前处境(婚育/宠物/体制/阶级/海外/房产…)动态增减，而非单一固定
+    // 有人生路线(routes.js)时：行动 = 路线行动池(已解锁) ∪ 上下文行动 ∩ require（按路线渐进解锁）；
+    // 无路线时回退旧逻辑(本阶段行动 ∪ anyStage) ∩ require。
+    const avail = C._util.routeFilterActions
+      ? C._util.routeFilterActions(s, C.actions, st)
+      : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })());
+    const done = s._weekActs || {};
+    // 本周是否已排满：只要还塞得进至少一件「日常」行动（排除辞职/搬家/旅行/留学/投资/全职创业这些决策类），就算没满，不许结束本周
+    const FILL_EXCLUDE = { quit: 1, relocate: 1, travel: 1, abroad: 1, venture: 1, invest: 1 };
+    const weekFull = s.hours <= 0 || !avail.some(a => !done[a.id] && !FILL_EXCLUDE[a.id] && a.hours <= Math.max(0, s.hours));
+    const usedSum = s.weekPlan ? s.weekPlan.used.reduce((a, b) => a + b, 0) : (st.weeklyHours - s.hours);
+    const physRemain = (s.weekPlan ? s.weekPlan.cap * 7 : 112) - usedSum;          // 物理上还能塞多少（每天16h上限）
+    const schedCap = s._overtimeMode ? physRemain : Math.max(0, s.hours);          // 开了硬撑才允许挤占休息
+    const rows = avail.map(a => {
+      const didThis = !a.repeatWeek && done[a.id];                                  // 可多次的行动(repeatWeek)不被「本周已做」锁住
+      const fits = a.hours <= schedCap; const dis = !fits || didThis;
+      const over = s._overtimeMode && fits && a.hours > Math.max(0, s.hours);       // 这件会挤占吃饭休息
+      const cost = didThis ? `<span class="ap-cost">✓ 本周已做</span>`
+        : `<span class="ap-cost${over ? " ap-over" : ""}">${over ? "⏰" : ""}${a.hours}h${a.repeatWeek && (s._actCount && s._actCount[a.id]) ? ` · 本周已 ${s._actCount[a.id]} 次` : a.repeatWeek ? " · 可多次" : ""}</span>`;
+      return `<div class="track ${dis ? "dis" : ""}${over ? " tk-over" : ""}" data-id="${a.id}">
+      <div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span>${cost}</div>
+      <div class="tk-desc">${a.desc}</div>${a.hint ? `<div class="tk-hint">${a.hint}</div>` : ""}</div>`; }).join("");
+    const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
+    const tipHtml = (s.age <= 20 && !has(s, "employed") && !has(s, "startup")) ? `<div class="tip">💡 新手提示：想有收入，得<b>主动</b>点下面的「💼上班搬砖」或「📨找工作」——光按「结束本周/快进」会坐吃山空。攒钱、搞事业、追目标，全看你每周怎么分配时间。</div>` : "";
+    const allocHtml = `<div class="alloc-h">${s.hours >= 0
+        ? `本周精力：剩余 <b>${s.hours}</b> / ${st.weeklyHours} 小时 —— 排满才能结束本周；每天正常 ${DAY_SOFT}h，剩下到 16h 是吃饭/休息区，<b style="color:var(--red)">只有硬撑才填得进（变红）</b>`
+        : `本周精力：<b style="color:var(--red)">已挤占吃饭/休息 ${-s.hours}h</b> —— 硬撑一时爽，周末身体会找你算账（健康/心情↓、压力↑）`}</div>`;
+    const sceneHero = `<div class="scene-hero" style="${C.images.styleBg(C.images.stageKey(st.id), 1200)}"><span class="scene-cap">${st.name} · ${s.city ? s.city.name : ""} · ${s.year}年</span></div>`;
+    // ★任务引导横幅★：常驻「当前任务 + 下一步提示」，治「不知道干嘛」
+    let questHtml = "";
+    if (C._util.currentQuest) {
+      const cq = C._util.currentQuest(s);
+      if (cq) questHtml = `<div class="quest-banner"><div class="qb-top"><span class="qb-tag">📌 当前任务 ${cq.index + 1}/${cq.total}</span><b class="qb-title">${cq.quest.title}</b></div><div class="qb-hint">${cq.quest.hint || ""}</div></div>`;
+      else if (C._util.routeOf && C._util.routeOf(s)) questHtml = `<div class="quest-banner qb-done"><div class="qb-top"><span class="qb-tag">🏁 引导完成</span><b class="qb-title">这条路的关都闯过了——剩下的人生，由你自己续写。</b></div></div>`;
+    }
+    // 未解锁行动的提示（让玩家知道还有东西没开，靠完成任务/到年龄解锁）
+    const lockedHints = (C._util.routeLockedHints ? C._util.routeLockedHints(s) : []);
+    const lockedHtml = lockedHints.length ? `<div class="locked-hints">${lockedHints.map(h => `<span class="lh">${h.why}</span>`).join("")}</div>` : "";
+    // ★大框架改造·批次1：主线阶段 / 周时间预算 / 场景 / 人生记忆 的状态可视化
+    let mainStageHtml = "", weekBudgetHtml = "", sceneAmbHtml = "", memHtml = "";
+    if (C._util.mainStageSummary) {
+      const mss = C._util.mainStageSummary(s);
+      if (mss) {
+        const dots = mss.beats.map(b => `<span class="msb-dot${b.done ? " on" : ""}"></span>`).join("");
+        mainStageHtml = `<div class="mainstage-banner"><div class="msb-top"><span class="msb-tag">🧭 创业主线 ${mss.index + 1}/${mss.total}</span><b class="msb-title">${mss.emoji} ${mss.title}</b></div><div class="msb-quest">${mss.quest}</div><div class="msb-beats">${dots}<span class="msb-cnt">${mss.beatsDone}/${mss.beatsTotal}</span></div></div>`;
+      }
+    }
+    if (C._util.weekBudgetSummary) {
+      const wb = C._util.weekBudgetSummary(s);
+      weekBudgetHtml = `<div class="weekbudget"><span class="wb-status">⏳ ${wb.status}</span> 自由 <b>${wb.free}h</b> / 固定 ${wb.fixed}h${wb.blocks.length ? `<div class="wb-blocks">${wb.blocks.map(x => `<span class="wb-blk">${x.label}${x.hours}h</span>`).join("")}</div>` : ""}</div>`;
+    }
+    if (C._util.sceneMeta) { const sc = C._util.sceneMeta(s); if (sc) sceneAmbHtml = `<div class="scene-amb">📍 <b>${sc.name}</b>：${sc.ambient}</div>`; }
+    if (C._util.memoryDigest) { const md = C._util.memoryDigest(s, 5); if (md.length) memHtml = `<div class="membox"><div class="membox-h">🧠 人生记忆</div>${md.map(m => `<div class="mem">· ${m.text}</div>`).join("")}</div>`; }
+    app().innerHTML = `<div class="screen play">${navBar("play")}
+      <div class="play-cols">
+        <section class="play-main">
+          <div class="play-main-h">📋 本周怎么过 —— 安排你的时间</div>
+          ${mainStageHtml}
+          ${questHtml}
+          ${tipHtml}
+          ${allocHtml}
+          ${weekBudgetHtml}
+          <button class="btn otbtn${s._overtimeMode ? " on" : ""}" id="overtime">${s._overtimeMode ? "💪 硬撑模式已开 · 可突破上限挤占休息（点此关闭）" : "💪 挤时间硬撑 —— 突破上限多塞事，代价是吃饭睡觉的时间"}</button>
+          <div class="tracks">${rows}</div>
+          ${lockedHtml}
+          <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary ${weekFull ? "" : "dis"}" id="endweek" ${weekFull ? "" : "disabled"} title="${weekFull ? "" : "本周还有空闲时间没安排，排满了才能过完这周"}">${weekFull ? "结束本周 →" : "⏳ 时间没排满"}</button></div>
+        </section>
+        <aside class="play-side">
+          ${dashboard()}
+          ${sceneHero}
+          ${sceneAmbHtml}
+          <div class="stagebar">📍 ${st.climate}</div>
+          ${memHtml}${logHtml}
+          ${weekCalendar()}
+        </aside>
+      </div></div>`;
+    bindNav();
+    document.querySelectorAll(".track").forEach(el => el.onclick = () => {
+      const a = C.actions.find(x => x.id === el.dataset.id);
+      const _used = s.weekPlan ? s.weekPlan.used.reduce((x, y) => x + y, 0) : (stageOf(s.age).weeklyHours - s.hours);
+      const _cap = s._overtimeMode ? ((s.weekPlan ? s.weekPlan.cap * 7 : 112) - _used) : Math.max(0, s.hours);
+      if (a.hours > _cap) return;                          // 默认受舒适上限保护；开了硬撑才能塞进休息时间
+      if (!a.repeatWeek && s._weekActs && s._weekActs[a.id]) return;   // 默认每周一次；repeatWeek 行动(如投简历)可反复做，仅受时间预算限制
+      // 先看这件事会通向哪——这些「打开子界面」的行动 resolve 本身无副作用，可先试探再决定是否计时
+      let r; try { r = a.resolve(s) || {}; } catch (e) { r = {}; }
+      // —— 会打开「可取消子界面」的行动（换城市/旅行/找乐子）：先挂起不计时间，等真在里面落地了再结算；
+      //     点「再想想/算了，继续生活」半途退出 → 不扣时间、不占用本周名额（修复「先不做也被计入」）——
+      if (r.map) { deferAction(a); mapPurpose = r.map; mapCountry = null; screen = "map"; render(); return; }
+      if (r.leisure) { deferAction(a); screen = "mgmenu"; render(); return; }   // 找乐子 → 小游戏菜单
+      // —— 触发事件的行动（找工作/辞职/投资…）：先挂起不计时间，进事件；事件里选「先不做」会退还，
+      //     选了实质动作才在事件结算时落账（修复「点了等等先不投仍扣时间」）——
+      if (r.event) { const ev = C.events.find(x => x.id === r.event); if (ev) { deferAction(a); enterEvent(ev); screen = "event"; render(); return; } }
+      // —— 其余行动：当场就算「做了」，扣时间、排进日历、标记本周已做 ——
+      commitAction(a);
+      // 不再清空 weekLog —— 一周内多个行动的日志会累积，直到结束本周
+      if (r.phone) { screen = "phone"; render(); return; }
+      if (r.commit) { if (r.commit === "abroad") startStudy(); else { startCommitment(r.commit); render(); } return; }
+      if (r.venture) { enterVenture(); return; }
+      if (r.minigame) { startMinigame(r.minigame); return; }
+      // 常规行动日志只进「本周日志」，不进永久时间线 —— 人生回顾留给高光（事件/里程碑/转折），
+      // 不再被「又是朝九晚十」「出了几身汗」这类流水账淹没（也根治结局渲染上万条的性能问题）。
+      // 行动若想留痕到时间线，自行在 resolve 里返回 r.mark（少见但重要的瞬间：加薪/被裁等）。
+      if (r.log) { weekLog.push(`${a.emoji} ${r.log}`); if (r.mark) s.timeline.push({ age: s.age, text: r.log }); }
+      render();
+    });
+    document.getElementById("overtime").onclick = () => { s._overtimeMode = !s._overtimeMode; render(); };
+    document.getElementById("endweek").onclick = () => { if (!weekFull) return; weekLog = []; endWeek(); render(); };
+    // 快进：自动延续「上周那套日常」连续推进，直到触发事件/结局，或最多一年——
+    // 不再是空耗：上班/副业/养生这类常规行动会被自动重做，让平淡的日子一笔带过却仍有进展。
+    // 仅自动重做「不打开子界面、不弹事件」的安全行动；遇到要做决策的就停下交还给玩家。
+    const SKIP_SAFE = { work: 1, sidehustle: 1, parttime: 1, exercise: 1, rest: 1, study: 1, socialize: 1, hobby: 1, startup: 1 };
+    document.getElementById("skip").onclick = () => {
+      weekLog = []; let n = 0;
+      while (n++ < 52) {
+        // 自动重做上周的安全日常（按时间预算，能塞几件塞几件）
+        const plan = (s._lastPlan || []).filter(id => SKIP_SAFE[id]);
+        for (const id of plan) {
+          const a = C.actions.find(x => x.id === id); if (!a) continue;
+          if (a.hours > Math.max(0, s.hours)) continue;
+          if (!a.repeatWeek && s._weekActs && s._weekActs[id]) continue;
+          if (a.require && !(() => { try { return a.require(s); } catch (e) { return false; } })()) continue;
+          let r; try { r = a.resolve(s) || {}; } catch (e) { r = {}; }
+          // 若这件事会打开子界面/弹事件：快进时不做它（保持安静推进），不强行打断
+          if (r.event || r.map || r.leisure || r.minigame || r.commit || r.venture || r.phone) continue;
+          commitAction(a);
+        }
+        const cont = endWeek(); if (!cont) break; if (pendingEvent) break; if (s._pendingBill) break;   // 月结算到了，停下弹账单
+      }
+      if (screen !== "event" && screen !== "dead") screen = "play";
+      render();
+    };
+  }
+
+  /* ============================ 留学：周推进子系统（参考《留学模拟器》） ============================ */
+  function startStudy(dest) {
+    const years = (C.commitments.abroad && C.commitments.abroad.years) || 4;
+    let school, flag = "🎓", country = "", destName = "异国", prestige = 2, costMul = 1.4, langHard = 0;
+    if (dest && dest.school) {
+      school = dest.school.name; flag = dest.flag || "🎓"; country = dest.country; destName = dest.name || "异国";
+      prestige = dest.school.tier || 2; costMul = dest.school.costMul || 1.4; langHard = dest.langHard || 0;
+    } else {
+      school = pick(["雾岛大学", "枫桥理工", "北境州立大学", "圣赫尔学院", "临海大学", "橡谷大学", "银湖大学"]);
+    }
+    s.study = { active: true, level: "本科", school: school, flag: flag, country: country, destName: destName, prestige: prestige, costMul: costMul, totalWeeks: years * 52, weeksDone: 0, gpa: 55, lang: Math.max(18, 32 - langHard), homesick: 30, social: 22, credits: 0, papers: 0, advisor: 50, advisorAnger: 0, hours: 40, _weekActs: {}, _worked: 0, absences: 0, examFails: 0, visaTrouble: 0, mentalNeglect: 0, warned: false, _delays: 0 };
+    s.timeline.push({ age: s.age, text: `你拖着两个行李箱落地${destName}，成了「${flag}${school}」的一名留学生。往后几年，酸甜苦辣只能自己尝。` });
+    weekLog = [`🛫 飞机落地${flag !== "🎓" ? "·" + flag + destName : ""}，陌生的语言扑面而来。在「${school}」的留学生活，开始了。`];
+    if (dest && dest.school && dest.school.tier >= 3) add(s, "reputation", 2);   // 名校光环，起手就有点名气
+    screen = "play"; render();
+  }
+  function renderStudyPick() {
+    const DESTS = window.STUDY_DESTS; if (!DESTS) { startStudy(); return; }
+    const hero = `<div class="scene-hero" style="${C.images.styleBg("create", 1200)}"><span class="scene-cap">🎓 留学 · 选择你的目的地</span></div>`;
+    const tierName = { 1: "普通", 2: "不错", 3: "名校" };
+    if (!s._studyCountry) {
+      const cards = DESTS.map(d => `<button class="btn" data-country="${d.country}" style="display:block;width:100%;text-align:left;margin:0 0 8px"><b>${d.flag} ${d.name}</b>　<span style="font-size:12px;color:var(--dim)">${d.schools.length} 所院校${d.langHard ? "　· 语言较难" : ""}</span></button>`).join("");
+      app().innerHTML = `<div class="screen">${hero}<h2 style="margin-top:8px">🎓 去哪个国家留学？</h2><p class="sub">不同国家、不同院校，<b style="color:var(--amber)">花销、声望、语言难度</b>各不相同。名校履历更亮、回报更高，但更烧钱、更卷。</p>${cards}<button class="btn" id="studyback" style="margin-top:6px">← 再想想，先不出国</button></div>`;
+      document.querySelectorAll("[data-country]").forEach(b => b.onclick = () => { s._studyCountry = b.dataset.country; render(); });
+      document.getElementById("studyback").onclick = () => { s._studyCountry = null; delete s.flags._start_abroad; s.commitment = null; screen = "play"; render(); };
+      return;
+    }
+    const d = DESTS.find(x => x.country === s._studyCountry) || DESTS[0];
+    const admitP = (sc) => { const acc = C._util.socialAccess ? C._util.socialAccess(s, "study_abroad") : 55; const mul = sc.tier >= 3 ? 0.62 : sc.tier === 2 ? 0.95 : 1.15; return Math.max(0.05, Math.min(0.97, (acc / 100) * mul)); };
+    const cards = d.schools.map((sc, i) => { const p = Math.round(admitP(sc) * 100); const pc = p >= 70 ? "var(--green)" : p >= 40 ? "var(--amber)" : "var(--red)"; return `<button class="btn" data-school="${i}" style="display:block;width:100%;text-align:left;margin:0 0 8px"><b>${sc.name}</b> ${"⭐".repeat(sc.tier)}　<span style="font-size:12px;color:var(--amber2)">声望 ${tierName[sc.tier]}</span>　<span style="font-size:12px;color:${pc}">录取概率 ${p}%</span><br><span style="font-size:12px;color:var(--dim)">${sc.blurb}　· 花销 ×${sc.costMul}</span></button>`; }).join("");
+    const rej = s._studyReject ? `<div class="tip" style="border-color:var(--red)">📪 ${s._studyReject}</div>` : "";
+    app().innerHTML = `<div class="screen">${hero}<h2 style="margin-top:8px">${d.flag} ${d.name} · 选所学校</h2><p class="sub">声望越高，毕业履历越亮（<b style="color:var(--amber)">声誉/学识更高</b>），但越贵越卷，<b style="color:var(--amber)">录取也越看你的背景</b>（学历底子/家境/能力）。</p>${rej}${cards}<button class="btn" id="studyback2" style="margin-top:6px">← 换个国家</button></div>`;
+    document.querySelectorAll("[data-school]").forEach(b => b.onclick = () => {
+      const sc = d.schools[+b.dataset.school];
+      // 名校(tier≥3)要过录取关：背景不够会被拒，可改投普通校或攒够实力再来
+      if (sc.tier >= 3 && !rnd(admitP(sc))) {
+        s._studyReject = `「${sc.name}」给你发来了拒信。名校的门槛，不只看你想不想去，也看你够不够格——先换所学校，或回头把底子(学历/能力)补硬些再来。`;
+        bumpMomentum(s, -2); render(); return;
+      }
+      s._studyReject = null; s._studyCountry = null; startStudy({ country: d.country, flag: d.flag, name: d.name, langHard: d.langHard, school: sc });
+    });
+    document.getElementById("studyback2").onclick = () => { s._studyReject = null; s._studyCountry = null; render(); };
+  }
+  // 继续深造：从「本科毕业」决定读硕、或「硕士毕业」决定读博时调用。沿用同一套周推进，但切到研究型节奏。
+  function continueStudy(level) {
+    const cfg = DEGREE_LEVELS[level]; if (!cfg) { screen = "play"; render(); return; }
+    const carry = s._degCarry || {}; delete s._degCarry;
+    s.study = {
+      active: true, level, school: carry.school || "本校研究生院",
+      totalWeeks: cfg.years * 52, weeksDone: 0,
+      gpa: 64, lang: (carry.lang != null ? carry.lang : 42), homesick: 26,
+      social: (carry.social != null ? carry.social : 30), credits: 0,
+      papers: 0, advisor: 50, advisorAnger: 0,
+      hours: 40, _weekActs: {}, _worked: 0, absences: 0, examFails: 0, visaTrouble: 0, mentalNeglect: 0, warned: false, _delays: 0
+    };
+    const intro = level === "硕士"
+      ? `你换上研究生的身份，走进「${s.study.school}」。从此告别满课表，迎来组会、文献、和一个叫「导师」的人——读硕的日子，是另一种修行。`
+      : `你戴上了准博士的帽子。前方是一条窄而长的路：课题、论文、答辩，还有那个传说中「不延毕都不好意思说自己读过博」的江湖。`;
+    s.timeline.push({ age: s.age, text: intro });
+    weekLog = [cfg.emoji + " " + (level === "硕士" ? "研究生开学。导师把你领进实验室，指了指那张属于你的工位。" : "博士入学。导师拍拍你肩膀：「做出东西，才能毕业。」")];
+    screen = "play"; render();
+  }
+  function drawStudyEvent() {
+    if (!rnd(0.2)) return null;
+    s._cd = s._cd || {};
+    const pool = C.events.filter(e => e.module === "study" && (!e.once || !has(s, "ev_" + e.id)) && (!s._cd[e.id] || s.week - s._cd[e.id] >= 60) && (() => { try { return !e.cond || e.cond(s); } catch (x) { return false; } })());
+    return pool.length ? pick(pool) : null;
+  }
+  // —— 留学「本周必做」清单：按当前处境动态生成。未完成会在过完这周时结算后果，决定后续走向 ——
+  function studyDuties(st, s) {
+    const wk = st.weeksDone;                 // 正在过的这一周（0-based）
+    const sem = wk % 26;                     // 学期内周序（每 26 周一学期）
+    const did = st._weekActs || {};
+    const cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
+    const D = [];
+    if (cfg.research) {
+      // 研究型阶段（硕士/博士）：科研产出与导师关系才是命根子
+      D.push({ id: "research", emoji: "🔬", label: "推进课题 · 别让导师空等", done: !!(did.research || did.paper || did.meetadvisor),
+        miss: "本周科研零产出：导师渐渐不满，攒多了会被「请」出组、甚至延毕" });
+      if (st.level === "博士" && wk > st.totalWeeks * 0.55 && (st.papers || 0) < (cfg.needPapers || 60))
+        D.push({ id: "pubpush", emoji: "📄", label: "冲毕业论文 · 指标告急", done: !!did.paper,
+          miss: "论文数离毕业线还差一截：延毕的阴影一周近过一周" });
+    } else {
+      D.push({ id: "attend", emoji: "📚", label: "出勤 · 跟上课业", done: !!(did.lecture || did.cram),
+        miss: "旷课：绩点下滑＋记一次缺勤，攒到 3 次吃学术警告、6 次直接劝退" });
+      if (sem >= 24) D.push({ id: "exam", emoji: "📝", label: "考试周 · 备考冲刺", done: !!did.cram,
+        miss: "弃考：这门多半要挂，绩点与学分双双重创" });
+    }
+    if (wk > 0 && sem === 0) D.push({ id: "visa", emoji: "🛂", label: "学期注册 · 续签证", done: !!did.visa,
+      miss: "逾期不办：签证亮红灯，再拖一次就被遣返" });
+    if (st.homesick >= 70) D.push({ id: "mind", emoji: "🫂", label: "疏解思乡 · 心理调节", done: !!(did.callhome || did.srest || did.explore || did.langx || did.campuslove),
+      miss: "硬扛思乡：情绪持续崩坏，攒到 3 周会抑郁休学" });
+    if (s.cash < 1500) D.push({ id: "money", emoji: "💰", label: "打工 · 维持生计", done: !!did.ptjob,
+      miss: "揭不开锅：被催缴、压力飙升" });
+    return D;
+  }
+  // 结算刚过去这周未完成的必做事项，累加后果计数，必要时触发强制中断（劝退/遣返/休学）
+  function checkStudyDuties(st, s) {
+    const duties = studyDuties(st, s);
+    let forcedEnd = null;
+    for (const d of duties) {
+      if (d.done) continue;
+      if (d.id === "attend") {
+        st.absences = (st.absences || 0) + 1; st.gpa = _cl(st.gpa - 5); st.credits = _cl(st.credits - 1);
+        weekLog.push(`🚷 这周翘了课——绩点下滑，记一次缺勤（累计 ${st.absences} 次）。`);
+        if (st.absences === 3 && !st.warned) { st.warned = true; flag(s, "study_warned"); weekLog.push("⚠️ 学校下达【学术警告】：再放任下去，就等着被劝退。"); s.timeline.push({ age: s.age, text: "屡屡旷课，吃了学校的学术警告。" }); }
+        if (st.absences >= 6) forcedEnd = "expelled";
+      } else if (d.id === "exam") {
+        st.examFails = (st.examFails || 0) + 1; st.gpa = _cl(st.gpa - 9); st.credits = _cl(st.credits - 2); add(s, "mood", -5); add(s, "stress", 5);
+        weekLog.push(`📕 你没去备考，考试崩了——挂了一门（累计挂科 ${st.examFails} 门），绩点学分双双下滑。`);
+      } else if (d.id === "visa") {
+        st.visaTrouble = (st.visaTrouble || 0) + 1; add(s, "stress", 9); add(s, "mood", -4);
+        weekLog.push(`🛂 你忘了按时注册/续签——学籍系统亮起红灯（第 ${st.visaTrouble} 次）。`);
+        if (st.visaTrouble >= 2) forcedEnd = "deported";
+      } else if (d.id === "mind") {
+        st.mentalNeglect = (st.mentalNeglect || 0) + 1; add(s, "mood", -8); add(s, "stress", 6); st.homesick = _cl(st.homesick + 4);
+        weekLog.push(`🫥 你硬扛着思乡，情绪一周比一周沉（累计忽视 ${st.mentalNeglect} 周）。`);
+        if (st.mentalNeglect >= 3) forcedEnd = "medical";
+      } else if (d.id === "research") {
+        st.advisorAnger = (st.advisorAnger || 0) + 1; st.papers = _cl((st.papers || 0) - 1); st.advisor = _cl((st.advisor || 50) - 5); add(s, "mood", -4); add(s, "stress", 4);
+        weekLog.push(`🔬 这周课题毫无进展，导师的脸色又沉了几分（累计 ${st.advisorAnger} 次）。`);
+        if (st.advisorAnger === 3 && !st.warned) { st.warned = true; flag(s, "study_warned"); weekLog.push("⚠️ 导师把你单独叫去谈话：「再这样下去，就别怪我撒手不管了。」"); s.timeline.push({ age: s.age, text: "课题长期停滞，被导师严厉警告。" }); }
+        if (st.advisorAnger >= 5) forcedEnd = "advisor_drop";
+      } else if (d.id === "pubpush") {
+        add(s, "stress", 5); add(s, "mood", -3);
+        weekLog.push("📄 论文数还差得远，毕业指标像块石头压在胸口。");
+      } else if (d.id === "money") {
+        add(s, "cash", -800); add(s, "stress", 6); add(s, "mood", -4);
+        weekLog.push("💸 这周没腾出手挣钱，账单逼上门，只能刷卡顶着。");
+      }
+    }
+    return { forcedEnd };
+  }
+  // 被必做事项拖垮 → 提前中断留学，结局分叉（劝退 / 遣返 / 休学回国）
+  function studyForceEnd(reason) {
+    flag(s, "abroad_done"); flag(s, "abroad_dropout");
+    let txt;
+    if (reason === "expelled") { add(s, "knowledge", 1); add(s, "mood", -14); add(s, "stress", 8); add(s, "reputation", -5); flag(s, "study_expelled"); txt = "旷课太多、绩点崩盘，一纸【劝退通知】把你送上回国的飞机。几十万学费打了水漂，履历上也留了道疤。"; }
+    else if (reason === "deported") { add(s, "mood", -12); add(s, "stress", 10); add(s, "reputation", -3); flag(s, "study_deported"); txt = "签证逾期失效，移民局找上门。你在慌乱中仓促离境——留学梦，碎在了一张过期的纸上。"; }
+    else if (reason === "advisor_drop") { add(s, "mood", -14); add(s, "stress", 10); add(s, "reputation", -4); flag(s, "study_expelled"); flag(s, "acad_washout"); txt = "导师终于对你彻底失望，撤了课题、停了补助。系里没有第二个老师肯接手——你的学位，停在了答辩门外。多年青春，换来一句「肄业」。"; }
+    else { add(s, "mood", -10); add(s, "health", -4); flag(s, "study_medical"); txt = "长期的孤独与高压把你压垮。在医生和家人的劝说下你办了休学、提前回国——有些仗，得先把自己救回来。"; }
+    s.timeline.push({ age: s.age, text: txt }); weekLog.push("🎓 " + txt);
+    s.study = null; screen = "play";
+  }
+  function studyTick() {   // 返回 true=继续留学；false=被事件/毕业/死亡打断
+    const st = s.study; if (!st) return false;
+    // 先结算刚过去这周的「本周必做」：没做的扣分记账，攒够了直接中断学业
+    const _neg = checkStudyDuties(st, s);
+    if (_neg.forcedEnd) { studyForceEnd(_neg.forcedEnd); return false; }
+    st.weeksDone++; s.week++;
+    const na = s.startAge + Math.floor(s.week / 52); const aged = na !== s.age;
+    s.age = na; s.year = s.birthYear + s.age; s.eraWind = C.windAt(s.year);
+    st.credits = _cl(st.credits + 0.35);                 // 到课基线学分
+    const _cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
+    if (_cfg.research) st.advisor = _cl((st.advisor || 50) - 0.3);   // 师生关系不维护就自然冷却
+    st.homesick = _cl(st.homesick + 1.1);                // 思乡随时间缓升
+    if (st.homesick > 75) add(s, "mood", -3);
+    if (s.mood < 36) add(s, "mood", 1);                  // 心情韧性回弹（同主循环）
+    if (s.stress < 42 && s.health < 92) add(s, "health", 1);
+    s._moodLowWeeks = (s.mood < 18) ? (s._moodLowWeeks || 0) + 1 : 0;
+    if (s.week % 4 === 0) {                               // 每月：房租+伙食+学费分摊（留学烧钱）
+      const cost = Math.round((4000 + st.weeksDone * 4) * (s.world ? s.world.priceIndex : 1) * ((DIFFS[s.difficulty] || DIFFS["标准"]).costMul));
+      add(s, "cash", -cost);
+      if (s.cash < 0) { add(s, "stress", 4); add(s, "mood", -3); }
+    }
+    if (aged && s.age > 35) add(s, "health", -1);
+    if (s.age >= 16 && rollDeath()) { s.ending = s._deathRecap || "你走完了这一生。"; finishGame(); return false; }
+    st._weekActs = {}; st.hours = 40;                    // 新一周，时间重置
+    if (st.weeksDone >= st.totalWeeks) { graduateStudy(); return false; }
+    const ev = drawStudyEvent();
+    if (ev) { enterEvent(ev); screen = "event"; return false; }
+    return true;
+  }
+  function graduateStudy() {
+    const st = s.study; const cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
+    flag(s, "abroad_done");
+    // —— 博士延毕：论文不够 / 导师关系太差，且还有延毕额度 → 续一年继续熬 ——
+    if (st.level === "博士") {
+      const enough = (st.papers || 0) >= (cfg.needPapers || 60) && (st.advisor || 0) >= 22;
+      if (!enough && (st._delays || 0) < 2) {
+        st._delays = (st._delays || 0) + 1; st.totalWeeks += 52; flag(s, "phd_delayed");
+        s.timeline.push({ age: s.age, text: `博士读到第 ${Math.round(st.totalWeeks / 52)} 年——论文还差口气，毕业又往后推了一年。` });
+        const dev = C.events.find(x => x.id === "ev_deg_phd_delay");
+        if (dev) { enterEvent(dev); screen = "event"; render(); return; }
+        weekLog = ["⏳ 延毕一年。实验室的灯，又得多陪你一程。"]; screen = "play"; render(); return;
+      }
+    }
+    // —— 是否合格毕业 ——
+    const pass = cfg.research
+      ? ((st.papers || 0) >= (cfg.needPapers || 30) * 0.75 && (st.advisor || 0) >= 20)
+      : (st.credits >= (cfg.gradCredits || 60));
+    const clean = (st.absences || 0) <= 1 && (st.examFails || 0) === 0 && (st.visaTrouble || 0) === 0;
+    let txt;
+    if (st.level === "本科") {
+      flag(s, "edu_bachelor");
+      if (pass && st.gpa >= 70 && clean) { add(s, "knowledge", 8); add(s, "insight", 5); add(s, "charm", 3); add(s, "reputation", 8); add(s, "network", 6); flag(s, "abroad_honors"); flag(s, "can_emigrate"); txt = `毕业典礼上，你以优异成绩拨穗。一纸名校文凭、一口流利外语、一身见识——本科这几年，没白熬。`; }
+      else if (pass) { add(s, "knowledge", 5); add(s, "insight", 4); add(s, "charm", 2); add(s, "network", 3); flag(s, "can_emigrate"); txt = `你顺利本科毕业。成绩不算耀眼，但文凭到手、视野打开，这趟远行总归值回票价。`; }
+      else { add(s, "knowledge", 2); add(s, "mood", -10); add(s, "stress", 6); flag(s, "abroad_dropout"); txt = `挂科太多、学分没修够，你没能等到毕业典礼，灰头土脸地收拾行李——这几十万学费，买了个教训。`; }
+    } else if (st.level === "硕士") {
+      if (pass) { add(s, "knowledge", 7); add(s, "insight", 5); add(s, "strategy", 3); add(s, "reputation", 5); add(s, "network", 4); flag(s, "edu_top"); flag(s, "edu_master"); flag(s, "can_emigrate"); txt = `硕士答辩通过！你戴上硕士帽，手里多了一篇属于自己的论文。比本科更深一层的训练，让你看问题的眼光都不一样了。`; }
+      else { add(s, "knowledge", 3); add(s, "mood", -8); add(s, "stress", 5); flag(s, "edu_bachelor"); flag(s, "acad_washout"); txt = `课题烂尾、论文没攒够，硕士读成了「肄业」。这几年像一场没考完的试，你不太想再提起。`; }
+    } else { // 博士
+      if (pass) { add(s, "knowledge", 11); add(s, "insight", 8); add(s, "strategy", 4); add(s, "reputation", 9); flag(s, "edu_top"); flag(s, "edu_phd"); flag(s, "phd_done"); txt = `博士帽穗子拨到左边的那一刻，台下导师红了眼眶。${st._delays ? "延了" + st._delays + "年，" : ""}你终于熬出了头——「博士」这两个字，是用无数个不眠之夜换来的。`; }
+      else { add(s, "knowledge", 5); add(s, "mood", -12); add(s, "stress", 8); flag(s, "edu_master"); flag(s, "acad_washout"); txt = `熬到延毕上限，论文还是没能凑齐。你办了结业、拿了个硕士学位走人——读博这一仗，终究没能打赢。`; }
+    }
+    if (has(s, "abroad_romance")) txt += "（你还在异国留下了一段心动，能不能走到最后，是另一个故事。）";
+    s.timeline.push({ age: s.age, text: txt }); weekLog = ["🎓 " + txt];
+    // 给「深造」分支留底（沿用语言/融入/学校）
+    s._degCarry = { lang: st.lang, social: st.social, school: st.school, level: st.level, passed: pass };
+    s._lastDegree = st.level;
+    s.study = null;
+    // —— 触发该阶段的「去向抉择」关键事件（含深造/就业/学术职业分叉）——
+    const nextId = st.level === "本科" ? "ev_deg_ug_next" : st.level === "硕士" ? "ev_deg_ms_next" : "ev_deg_phd_next";
+    const ev = C.events.find(x => x.id === nextId);
+    if (ev) { enterEvent(ev); screen = "event"; render(); return; }
+    screen = "play"; render();
+  }
+  function studyDash() {
+    const st = s.study; const cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
+    const yr = Math.floor(st.weeksDone / 52) + 1, totalYr = Math.round(st.totalWeeks / 52), weeksLeft = st.totalWeeks - st.weeksDone;
+    const bar = (label, v, cls, warn) => `<div class="sd-bar"><span class="sd-l">${label}</span><span class="sd-track"><i class="${cls}" style="width:${Math.round(v)}%"></i></span><span class="sd-v ${warn ? "sd-warn" : ""}">${Math.round(v)}</span></div>`;
+    // 研究型阶段看论文/导师；本科看绩点/学分
+    const stats = cfg.research
+      ? bar("论文", st.papers || 0, "b-knowledge", st.level === "博士" && (st.papers || 0) < (cfg.needPapers || 60) * 0.5) + bar("导师", st.advisor || 50, "b-happy", (st.advisor || 50) < 30) + bar("语言", st.lang, "b-tech") + bar("融入", st.social, "b-net") + bar("思乡", st.homesick, "b-rep", st.homesick > 70)
+      : bar("绩点", st.gpa, "b-happy", st.gpa < 40) + bar("学分", st.credits, "b-knowledge") + bar("语言", st.lang, "b-tech") + bar("融入", st.social, "b-net") + bar("思乡", st.homesick, "b-rep", st.homesick > 70);
+    return `<div class="dash">
+      <div class="dash-top">
+        <div><div class="age">第${yr}<small> /${totalYr} 学年</small></div><div class="cls">${cfg.emoji} ${st.school} · ${st.level} · 距毕业 ${weeksLeft} 周${st._delays ? "（已延毕" + st._delays + "年）" : ""}</div></div>
+        <div class="worth"><small>${s.year} 年 · 现金</small><b>¥${Math.round(s.cash).toLocaleString()}</b><div class="res">❤️${Math.round(s.health)}　🙂${Math.round(s.mood)}　😣${Math.round(s.stress)}</div></div>
+      </div>
+      <div class="sd-bars">${stats}</div></div>`;
+  }
+  function renderStudy() {
+    const st = s.study; const done = st._weekActs || {};
+    const acts = STUDY_ACTIONS.filter(a => !a.avail || a.avail(st));   // 研究型行动仅硕士/博士可见
+    const rows = acts.map(a => { const dis = a.hours > st.hours || done[a.id];
+      return `<div class="track ${dis ? "dis" : ""}" data-sid="${a.id}"><div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span><span class="ap-cost">${done[a.id] ? "✓ 本周已做" : a.hours + "h"}</span></div><div class="tk-desc">${a.desc}</div>${a.hint ? `<div class="tk-hint">${a.hint}</div>` : ""}</div>`; }).join("");
+    const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
+    const duties = studyDuties(st, s);
+    const undone = duties.filter(d => !d.done);
+    const dutyHtml = `<div style="background:rgba(240,167,60,.05);border:1px solid var(--line);border-left:3px solid ${undone.length ? "var(--amber)" : "var(--green)"};border-radius:10px;padding:10px 12px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:${undone.length ? "var(--amber2)" : "var(--green)"};margin-bottom:6px">📋 本周必做 ${duties.length - undone.length}/${duties.length}${undone.length ? " —— 没做完会影响你毕业的去向" : " —— 全部完成，稳住了"}</div>
+      ${duties.map(d => `<div style="font-size:12px;line-height:1.7;color:${d.done ? "var(--dim)" : "var(--txt)"}">${d.done ? "✅" : "⬜"} ${d.emoji} ${d.label}${d.done ? "" : ` <span style="color:var(--amber)">— ${d.miss}</span>`}</div>`).join("")}
+    </div>`;
+    const _rcfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
+    const stageTxt = _rcfg.research
+      ? `${_rcfg.emoji} ${st.level}在读 · 在「${st.school}」的第 ${st.weeksDone + 1} 周。论文产出和导师关系决定你能否按时毕业——别熬成「延毕老博士」。`
+      : `🛫 留学进行中 · 在「${st.school}」的第 ${st.weeksDone + 1} 周。绩点决定能否体面毕业，思乡与钱包决定你撑不撑得住。`;
+    app().innerHTML = `<div class="screen play">${studyDash()}
+      <div class="stagebar">${stageTxt}</div>${logHtml}
+      ${dutyHtml}
+      <div class="alloc-h">本周可支配时间：剩余 <b>${st.hours}</b> / 40 小时</div>
+      <div class="tracks">${rows}</div>
+      <div class="weekbtns"><button class="btn" id="sskip">⏭ 快进（遇事即停）</button><button class="btn primary" id="sweek">${undone.length ? `⚠️ 仍有 ${undone.length} 项必做没做，硬过这周 →` : "过完这周 →"}</button></div></div>`;
+    document.querySelectorAll(".track[data-sid]").forEach(el => el.onclick = () => {
+      const a = STUDY_ACTIONS.find(x => x.id === el.dataset.sid);
+      if (a.hours > st.hours || (st._weekActs && st._weekActs[a.id])) return;
+      st.hours -= a.hours; st._weekActs = st._weekActs || {}; st._weekActs[a.id] = true;
+      const log = a.run(st, s); if (log) weekLog.push(`${a.emoji} ${log}`);
+      render();
+    });
+    document.getElementById("sweek").onclick = () => { weekLog = []; studyTick(); render(); };
+    document.getElementById("sskip").onclick = () => { weekLog = []; let n = 0; while (n++ < 52) { if (!studyTick()) break; } render(); };
+  }
+
+  /* ============================ 创业：全职「经营模式」周推进子系统 ============================ */
+  function recalcValuation() {
+    const su = s.startup; if (!su) return;
+    const align = su.track === s.eraWind;
+    const stageMul = { "种子": 1, "天使轮": 2.2, "A轮": 5, "B轮": 12, "Pre-IPO": 30 }[su.stage] || 1;
+    const base = su.product * 0.5 + su.users * 1.3 + su.buzz * 0.6;
+    su.valuation = Math.round(base * 13000 * stageMul * (align ? 1.7 : 0.9) * (1 + s.reputation / 120) * (1 + C._util.statEdge(s, "strategy") * 0.6));
+  }
+  function enterVenture() {
+    const su = s.startup; if (!su || has(s, "startup_done")) return;
+    su.fulltime = true;
+    if (s.job) { s.job = null; delete s.flags.employed; }   // 全职 all-in：辞掉原工作，不再保留（退出经营模式后不会莫名其妙又有工作）
+    if (su.product == null) su.product = Math.max(10, Math.round(su.progress || 5));
+    if (su.users == null) su.users = 8;
+    if (su.team == null) su.team = 35;
+    if (su.buzz == null) su.buzz = 12;
+    if (su.runway == null) su.runway = 40;
+    if (su.stage == null) su.stage = "种子";
+    su.weeksRun = su.weeksRun || 0; su.hours = 50; su._weekActs = {};
+    flag(s, "risk_hustle"); recalcValuation();
+    if (C._util.ensureCompanyFields) C._util.ensureCompanyFields(s);
+    const _why = C._util.startupTriggerReason ? C._util.startupTriggerReason(s) : "";
+    s.timeline.push({ age: s.age, text: `你把后路一断，全职扑进了「${su.track}」这摊事。${_why ? _why + " " : ""}从今往后，公司就是你的命。` });
+    weekLog = ["🚀 你正式 all-in。账上的钱是倒计时，窗外的天，得自己捅破。"];
+    screen = "play"; render();
+  }
+  function drawVentureEvent() {
+    if (!rnd(0.22)) return null;
+    s._cd = s._cd || {};
+    const pool = C.events.filter(e => e.module === "venture" && (!e.once || !has(s, "ev_" + e.id)) && (!s._cd[e.id] || s.week - s._cd[e.id] >= 52) && (() => { try { return !e.cond || e.cond(s); } catch (x) { return false; } })());
+    return pool.length ? pick(pool) : null;
+  }
+  function ventureTick() {
+    const su = s.startup; if (!su) return false;
+    su.weeksRun++; s.week++;
+    const na = s.startAge + Math.floor(s.week / 52); const aged = na !== s.age;
+    s.age = na; s.year = s.birthYear + s.age; s.eraWind = C.windAt(s.year);
+    su.runway -= 1;
+    su.users = _cl(su.users - 0.6); su.buzz = _cl(su.buzz - 0.5); su.team = _cl(su.team - 0.3);
+    add(s, "stress", 2); if (su.weeksRun % 2 === 0) add(s, "health", -1);   // 健康隔周才掉，长期创业也不至于直接耗死
+    if (s.mood < 36) add(s, "mood", 1);                                     // 心情韧性回弹（同主循环）
+    s._moodLowWeeks = (s.mood < 18) ? (s._moodLowWeeks || 0) + 1 : 0;
+    recalcValuation();
+    if (s.week % 4 === 0) { add(s, "cash", -Math.round(3000 * (s.world ? s.world.priceIndex : 1) * ((DIFFS[s.difficulty] || DIFFS["标准"]).costMul))); if (has(s, "has_loan")) add(s, "cash", -Math.round(10000 * (s.world ? s.world.priceIndex : 1))); }
+    if (aged && s.age > 35) add(s, "health", -1);
+    if (s.age >= 16 && rollDeath()) { s.ending = s._deathRecap || "你走完了这一生。"; finishGame(); return false; }
+    su._weekActs = {}; su.hours = 50;
+    if (su.runway <= 0) { ventureExit("bust"); return false; }
+    // 时间闸：经营够久才谈得上敲钟/被收购，杜绝「2 年爽文上市」（IPO≥6年，收购≥3年）
+    if (su.weeksRun >= 312 && su.valuation >= 800000000 && su.stage === "Pre-IPO" && rnd(0.18)) { ventureExit("ipo"); return false; }
+    if (su.weeksRun >= 156 && su.valuation >= 150000000 && rnd(0.05)) { ventureExit("acquire"); return false; }
+    const ev = drawVentureEvent();
+    if (ev) { enterEvent(ev); screen = "event"; return false; }
+    return true;
+  }
+  function ventureExit(type) {
+    const su = s.startup; flag(s, "startup_done"); let txt;
+    if (type === "ipo") { flag(s, "chase_ipo"); const cashout = Math.round(su.valuation * 0.25); add(s, "cash", cashout); add(s, "reputation", 20); add(s, "assets", Math.round(su.valuation * 0.2)); txt = `敲钟那天，大屏幕上跳动的市值让你眼眶发热。从车库到交易所，你把「${su.track}」做成了——套现 ¥${cashout.toLocaleString()}，财务自由近在眼前。`; }
+    else if (type === "acquire") { const price = Math.round(su.valuation * 0.5); add(s, "cash", price); add(s, "reputation", 10); txt = `大厂递来收购要约，你权衡再三签了字。卖了 ¥${price.toLocaleString()}，没敲钟，但也是体面的退出——下一个故事，从此开始。`; }
+    else { add(s, "mood", -14); add(s, "stress", 8); flag(s, "startup_failed"); delete s.flags.chase_ipo; txt = `账上最后一笔钱也烧光了。你遣散团队、关掉服务器、清算注销。九死一生，这次你是那个『九』——但创业者的故事，从来不是只有一次。`; }
+    s.startup = null;
+    s.timeline.push({ age: s.age, text: txt }); weekLog = ["📌 " + txt];
+    screen = "play"; render();
+  }
+  function ventureDash() {
+    const su = s.startup;
+    const bar = (label, v, cls, warn) => `<div class="sd-bar"><span class="sd-l">${label}</span><span class="sd-track"><i class="${cls}" style="width:${Math.round(v)}%"></i></span><span class="sd-v ${warn ? "sd-warn" : ""}">${Math.round(v)}</span></div>`;
+    const val = su.valuation >= 1e8 ? (su.valuation / 1e8).toFixed(1) + "亿" : (su.valuation / 1e4).toFixed(0) + "万";
+    return `<div class="dash">
+      <div class="dash-top">
+        <div><div class="age" style="font-size:26px">¥${val}<small> 估值</small></div><div class="cls">🚀「${su.track}」· ${su.stage} · 已经营 ${su.weeksRun} 周</div></div>
+        <div class="worth"><small>资金跑道（还能撑）</small><b class="${su.runway < 8 ? "sd-warn" : ""}" style="color:${su.runway < 8 ? "var(--red)" : "var(--green)"}">${Math.max(0, Math.round(su.runway))} 周</b><div class="res">💰个人现金 ¥${Math.round(s.cash).toLocaleString()}　❤️${Math.round(s.health)}　😣${Math.round(s.stress)}</div></div>
+      </div>
+      <div class="sd-bars">${bar("产品", su.product, "b-tech")}${bar("用户", su.users, "b-net")}${bar("团队", su.team, "b-biz", su.team < 25)}${bar("口碑", su.buzz, "b-happy")}</div></div>`;
+  }
+  function renderVenture() {
+    const su = s.startup; const done = su._weekActs || {};
+    const rows = VENTURE_ACTIONS.map(a => { const dis = a.hours > su.hours || done[a.id];
+      return `<div class="track ${dis ? "dis" : ""}" data-vid="${a.id}"><div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span><span class="ap-cost">${done[a.id] ? "✓ 本周已做" : a.hours + "h"}</span></div><div class="tk-desc">${a.desc}</div>${a.hint ? `<div class="tk-hint">${a.hint}</div>` : ""}</div>`; }).join("");
+    const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
+    app().innerHTML = `<div class="screen play">${ventureDash()}
+      <div class="stagebar">🚀 全职创业经营中 · 第 ${su.weeksRun + 1} 周。跑道烧光就出局，估值够高就敲钟/被收购。产品、用户、团队、口碑，一个都不能塌。</div>${logHtml}
+      <div class="alloc-h">本周可支配时间：剩余 <b>${su.hours}</b> / 50 小时</div>
+      <div class="tracks">${rows}</div>
+      <div class="weekbtns"><button class="btn" id="vskip">⏭ 快进（遇事即停）</button><button class="btn primary" id="vweek">过完这周 →</button></div>
+      <button class="btn" id="vquit" style="margin-top:10px">🚪 暂别经营，回去过普通日子（公司转后台慢跑）</button></div>`;
+    document.querySelectorAll(".track[data-vid]").forEach(el => el.onclick = () => {
+      const a = VENTURE_ACTIONS.find(x => x.id === el.dataset.vid);
+      if (a.hours > su.hours || (su._weekActs && su._weekActs[a.id])) return;
+      su.hours -= a.hours; su._weekActs = su._weekActs || {}; su._weekActs[a.id] = true;
+      const log = a.run(su, s); recalcValuation(); if (log) weekLog.push(`${a.emoji} ${log}`);
+      render();
+    });
+    document.getElementById("vweek").onclick = () => { weekLog = []; ventureTick(); render(); };
+    document.getElementById("vskip").onclick = () => { weekLog = []; let n = 0; while (n++ < 52) { if (!ventureTick()) break; } render(); };
+    document.getElementById("vquit").onclick = () => { su.fulltime = false; weekLog = ["🚪 你从一线退了下来，公司交给团队慢慢跑，自己回去过日子。想全力以赴时，随时能再扑回去。"]; screen = "play"; render(); };
+  }
+
+  /* ---------- 跨多年承诺（如留学）：一次抉择占去好几年，逐年叙事 ---------- */
+  function startCommitment(id) {
+    const ref = C.commitments[id]; if (!ref) return;
+    s.commitment = { id, ref, yearIdx: 0 };
+    s.timeline.push({ age: s.age, text: `你踏上了「${ref.label}」之路，未来几年都将身在其中。` });
+  }
+  function lightAdvanceYear() { // 在承诺期间安静地度过一年（含基本开销与死亡判定，无随机事件）
+    for (let i = 0; i < 52; i++) {
+      s.week++;
+      const na = s.startAge + Math.floor(s.week / 52); const aged = na !== s.age;
+      s.age = na; s.year = s.birthYear + s.age; s.eraWind = C.windAt(s.year);
+      if (s.week % 4 === 0) { add(s, "cash", -Math.round(2000 + s.age * 60)); }
+      if (aged && s.age > 35) add(s, "health", -1);
+      if (s.age >= 16 && rollDeath()) { s.ending = s._deathRecap || "你走完了这一生。"; finishGame(); return false; }
+    }
+    return true;
+  }
+  function renderCommitment() {
+    const c = s.commitment, ref = c.ref;
+    const blurb = ref.blurbs[Math.min(c.yearIdx, ref.blurbs.length - 1)] || "";
+    app().innerHTML = `<div class="screen play">${dashboard()}
+      <div class="stagebar">🛫 ${ref.label}中 · 第 ${c.yearIdx + 1} / ${ref.years} 年</div>
+      <div class="ev-card" style="border-color:var(--line)"><div class="ev-text">${blurb}</div></div>
+      <button class="btn primary" id="goyear">度过这一年 →</button></div>`;
+    document.getElementById("goyear").onclick = () => {
+      ref.perYear(s);
+      if (!lightAdvanceYear()) { render(); return; }   // 期间可能离世
+      c.yearIdx++;
+      if (c.yearIdx >= ref.years) {
+        const t = ref.end(s); if (t) { s.timeline.push({ age: s.age, text: t }); weekLog = ["📌 " + t]; }
+        s.commitment = null;
+        if (ref.endEvent) { const ev = C.events.find(x => x.id === ref.endEvent); if (ev) { enterEvent(ev); screen = "event"; render(); return; } }
+        screen = "play"; render(); return;
+      }
+      render();
+    };
+  }
+
+  // 沉浸大屏：花一晚上深扒新闻。★不替玩家说破风口★，只让更多同向新闻浮出，自己悟。
+  function renderPhone() {
+    const feed = buildFeed(s, true);
+    app().innerHTML = `<div class="screen">${navBar("phone")}
+      <div class="play-cols">
+        <section class="play-main">
+          <div class="phonepage">
+            <div class="phone-deck">${phoneFeed(feed, true)}</div>
+            <div class="phone-actions">
+              <button class="btn primary" id="dig">🌙 熬夜深扒，多翻几页</button>
+              <button class="btn" id="closep">放下手机 →</button>
+            </div>
+            <p class="sub" style="text-align:center">没人会直接告诉你答案。但翻得够多，你会发现——好几条看似无关的新闻，其实都在反复念叨同一件事。</p>
+          </div>
+        </section>
+        <aside class="play-side">${dashboard()}
+          <div class="scene-hero" style="${C.images.styleBg("phone", 1200)}"><span class="scene-cap">资讯 · 风口藏在字缝里</span></div>
+        </aside>
+      </div></div>`;
+    document.getElementById("dig").onclick = () => {
+      add(s, "insight", 2); add(s, "mood", -2); flag(s, "wind_hint");
+      // 不点破风口：刷新出更密集的信号让玩家自己拼图
+      s.news = buildFeed(s, true);
+      // 深扒挖到的信号（含更早期的苗头）同样形成下一周的盘面催化——埋伏的回报
+      if (C._util.applyNewsToMarket) C._util.applyNewsToMarket(s, s.news);
+      if (C._util.applyNewsSignals) C._util.applyNewsSignals(s);
+      weekLog = ["📱 你又翻了几十页。零碎的消息在脑子里慢慢拼成一张模糊的图——风往哪吹，你心里隐隐有了数，但谁也不敢打包票。"];
+      render();
+    };
+    document.getElementById("closep").onclick = () => { screen = "play"; render(); };
+    bindNav();
+  }
+
+  // —— 把一段叙事文本切成「逐句浮现」的片段（按句末标点/换行断句，保留句内 HTML）——
+  function vnSegments(raw) {
+    let html = String(raw == null ? "" : raw);
+    html = html.split("<br>").join("\n").split("<br/>").join("\n").split("<br />").join("\n");
+    const enders = "。！？…」”";
+    const out = []; let cur = "";
+    for (const ch of html) {
+      if (ch === "\n") { if (cur.trim()) out.push(cur.trim()); cur = ""; continue; }
+      cur += ch;
+      if (enders.indexOf(ch) >= 0) { out.push(cur.trim()); cur = ""; }
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out.length ? out : [html.trim()];
+  }
+  function renderEvent() {
+    if (_vnTimer) { clearInterval(_vnTimer); _vnTimer = null; }
+    const node = eventNode; const choices = node.choices || [];
+    const btns = choices.map((c, i) => `<button class="btn choice" data-i="${i}"><span class="ch-dot">◆</span><span class="ch-txt">${c.label}</span></button>`).join("");
+    const mod = pendingEvent && pendingEvent.module;
+    const evImg = C.images.styleBg(C.images.eventKey(mod), 1400, "event");
+    // 章节眉头：命运幕显示「命运·第N幕·幕名」，否则年份/年龄/阶级
+    let chapter = `${s.year} 年 · ${s.age} 岁 · ${C.CLASS_NAMES[classTier(s)]}`;
+    let eraSummary = "";
+    if (mod === "mainarc" && C._util.chapterTitle) {
+      chapter = C._util.chapterTitle(s);
+      eraSummary = C._util.chapterWorldSummary ? C._util.chapterWorldSummary(s) : "";
+    } else if (mod === "destiny" && C._util.destinyStatus) {
+      const ds = C._util.destinyStatus(s);
+      if (ds && ds.act) chapter = `📖 命运 · ${ds.name} · ${ds.act}`;
+    } else if (mod === "saga") { chapter = `📖 连续剧 · ${s.year} 年 · ${s.age} 岁`; }
+    const rawText = typeof node.text === "function" ? node.text(s) : (node.text || "");
+    const segs = vnSegments(rawText);
+    const body = segs.map((x, i) => `<span class="vn-seg" data-i="${i}">${x}</span>`).join("");
+    app().innerHTML = `<div class="screen event vn">
+      ${evImg ? `<div class="vn-bg" style="${evImg}"></div><div class="vn-scrim"></div>` : ""}
+      <div class="ev-card vn-page">
+        <div class="vn-chapter">${chapter}</div>
+        ${eraSummary ? `<div class="vn-era">${eraSummary}</div>` : ""}
+        <div class="ev-title vn-title">${(t => { try { return typeof t === "function" ? t(s) : t; } catch (e) { return ""; } })(node.title || pendingEvent.title)}</div>
+        <div class="ev-text vn-text">${body}</div>
+        <div class="vn-more" id="vnMore">▾ 轻触继续</div>
+        <div class="ev-choices vn-choices">${btns}</div>
+      </div></div>`;
+    // 逐句浮现：依次点亮 .vn-seg；全部点亮后浮现选项。轻触可瞬间展开。
+    const segEls = Array.from(document.querySelectorAll(".vn-seg"));
+    const choicesBox = document.querySelector(".vn-choices");
+    const moreHint = document.getElementById("vnMore");
+    let shown = 0;
+    const finish = () => {
+      if (_vnTimer) { clearInterval(_vnTimer); _vnTimer = null; }
+      segEls.forEach(el => el.classList.add("show"));
+      shown = segEls.length;
+      if (moreHint) moreHint.style.display = "none";
+      if (choicesBox) choicesBox.classList.add("ready");
+    };
+    const step = () => {
+      if (shown >= segEls.length) { finish(); return; }
+      segEls[shown].classList.add("show"); shown++;
+      if (shown >= segEls.length) finish();
+    };
+    if (segEls.length <= 1) { finish(); }
+    else { step(); _vnTimer = setInterval(step, 460); }
+    // 轻触页面任意处（非选项）→ 立即展开全文
+    const card = document.querySelector(".vn-page");
+    if (card) card.addEventListener("click", (e) => { if (e.target.closest(".choice")) return; if (shown < segEls.length) { e.stopPropagation(); finish(); } });
+    document.querySelectorAll(".choice").forEach(btn => btn.onclick = () => {
+      if (_vnTimer) { clearInterval(_vnTimer); _vnTimer = null; }
+      const c = choices[parseInt(btn.dataset.i, 10)];
+      if (c.enter) { try { c.enter(s); } catch (x) { } }
+      if (c.next) {            // 分支：进入下一层，展开更多选项
+        try { gotoNode(c.next); } catch (x) { screen = "play"; }
+        render(); return;
+      }
+      // 终止：应用结果，回到游戏
+      let res = ""; try { res = c.effect(s) || ""; } catch (x) { res = ""; }
+      if (res) { s.timeline.push({ age: s.age, text: res }); weekLog = ["📌 " + res]; }
+      // 由行动触发的事件：选了「先不做」(cancel) → 退还时间不计；否则落账这次行动的耗时
+      if (c.cancel) clearPendingAct(); else commitPendingAct();
+      pendingEvent = null; eventNode = null;
+      if (s.flags._start_abroad) { delete s.flags._start_abroad; startStudy(); return; }  // 青年抉择选了留学 → 启动留学周推进
+      if (s._pendingDegree) { const lv = s._pendingDegree; delete s._pendingDegree; continueStudy(lv); return; }  // 毕业去向选了深造 → 续读硕/博
+      if (s._enterVenture) { delete s._enterVenture; if (s.startup && !has(s, "startup_done")) { enterVenture(); return; } }  // 下海经商/成果转化 → 进创业经营子循环
+      if (s._mg) { const id = s._mg; delete s._mg; tickMs(); if (s.alive) { startMinigame(id); return; } }  // 事件里拉起的对话小游戏
+      if (s._bg) { const id = s._bg; delete s._bg; tickMs(); if (s.alive) { startBoardGame(id); return; } }  // 事件里拉起的真棋盘游戏
+      tickMs(); screen = s.alive ? "play" : "dead"; render();
+    });
+  }
+
+  // 人生回响：把这一生留下的高强度记忆(memories)与未了的心结(threads)在结局回看
+  function lifeEchoesHTML() {
+    const mems = (s.memories || []).filter(m => (m.intensity || 0) >= 45).sort((a, b) => (b.intensity || 0) - (a.intensity || 0)).slice(0, 5);
+    const openThreads = s.threads ? Object.keys(s.threads).filter(k => s.threads[k] && s.threads[k].status !== "closed" && (s.threads[k].level || 0) >= 40) : [];
+    if (!mems.length && !openThreads.length) return "";
+    const memHtml = mems.map(m => `<div class="echo-item">· ${m.text}</div>`).join("");
+    const tHtml = openThreads.length ? `<div class="echo-thread">未了的心结：${openThreads.length} 桩，随你一同长眠。</div>` : "";
+    return `<div class="dead-verdict echoes"><div class="echo-h">🕯️ 人生回响</div>${memHtml}${tHtml}</div>`;
+  }
+  // 创业人生回顾：每局结局都回到「创业」这根主线上
+  function founderRecapHTML() {
+    if (!C._util.founderReadiness) return "";
+    let body = "";
+    if (has(s, "startup_done")) {
+      const won = has(s, "chase_ipo") && !has(s, "startup_failed");
+      const fail = has(s, "startup_failed") || has(s, "been_bankrupt");
+      body = won ? "你把公司带上了台前——从一个念头到一家真正的公司，你做到了极少数人敢想的事。"
+        : fail ? "你创过业，也尝过公司清盘的滋味。九死一生里，你是那个『九』——但你真的下过场。"
+          : "你创过一次业，有过自己的公司。它没惊天动地，却是你亲手搭起来的。";
+    } else if (s.startup) {
+      body = "你的公司还在半路上，你也走到了人生的终点。未竟，但你毕竟是个下过场的人。";
+    } else {
+      const r = C._util.founderReadiness(s);
+      body = r >= 60 ? "你一直被推到创业门口，却终究没迈出那一步。准备好了，却没敢赌——这成了你心里一根没拔的刺。"
+        : r >= 30 ? "你想过自己干，念头冒过很多次，最后都被生活按了回去。也许是怂，也许是清醒。"
+          : "创业这件事，你这辈子只在饭桌上聊过。人生有很多种活法，你选了不下场的那种。";
+    }
+    const sum = C._util.founderSummary ? C._util.founderSummary(s) : "";
+    return `<div class="dead-verdict founder-verdict">🚀 创业人生：${body}${sum ? `<br><span style="color:var(--dim)">你这一生攒下的底牌：${sum}</span>` : ""}</div>`;
+  }
+  function renderDead() {
+    const title = s.endingTitle || (C._util.pickEnding ? C._util.pickEnding(s) : (C.titles.find(t => { try { return t.cond(s); } catch (e) { return false; } }) || C.titles[C.titles.length - 1]).name);
+    const w = netWorth(s);
+    let _lastTlAge = null;
+    const tl = s.timeline.map(t => {
+      const head = t.age !== _lastTlAge; _lastTlAge = t.age;
+      const yr = s.birthYear + t.age;
+      return `<div class="tl${head ? " tl-head" : ""}"><span class="tl-age">${head ? `${t.age}岁 · ${yr}年` : ""}</span> ${t.text}</div>`;
+    }).join("");
+    app().innerHTML = `<div class="screen dead">
+      <div class="dead-head">— ${s.birthYear} — ${s.year} —</div>
+      <div class="dead-hero" style="${C.images.styleBg("dead", 900)}"><span class="scene-cap">${s.playerName || "无名之人"} · ${s.cohortName} · 享年 ${s.age} 岁</span></div>
+      <div class="dead-title">${title}</div>
+      <div class="dead-cause">${s.ending || "走完了这一生。"}</div>
+      ${s.goal ? `<div class="dead-verdict">🎯 人生目标【${(C._util.goalById(s.goal)||{}).name||""}】：${s._goalDone ? "已达成 ✅" : "未竟"}<br>${C._util.ancestorVerdict(s)}${(C._util.destinyReckon && C._util.destinyReckon(s)) ? `<br><br>📖 ${C._util.destinyReckon(s)}` : ""}</div>` : ""}
+      ${(C._util.mainArcOf && C._util.mainArcOf(s) && C._util.mainArcReckon) ? `<div class="dead-verdict arc-verdict">📖 核心剧本【${C._util.mainArcOf(s).name}】：${C._util.mainArcReckon(s)}</div>` : ""}
+      ${founderRecapHTML()}
+      ${lifeEchoesHTML()}
+      <div class="scorecard">
+        <div class="sc"><small>终身身价</small><b>¥${w.toLocaleString()}</b></div>
+        <div class="sc"><small>享年</small><b>${s.age} 岁</b></div>
+        <div class="sc"><small>心情</small><b>${Math.round(s.mood)}/100</b></div>
+        <div class="sc"><small>出身</small><b>${s.cohortName}</b></div>
+        <div class="sc"><small>阶级</small><b>${C.CLASS_NAMES[classTier(s)]}</b></div>
+        <div class="sc"><small>籍贯</small><b>${s.birthplace ? s.birthplace.provinceName : "—"}</b></div>
+      </div>
+      ${(s.eraLog && s.eraLog.length) ? `<div class="eralog"><div class="eralog-h">🌍 你活过的时代 · 亲历 ${s.eraLog.length} 件大事</div>${s.eraLog.map(e => `<span class="era-chip">${e.age}岁 · ${e.title}</span>`).join("")}</div>` : ""}
+      ${(s._freshAch && s._freshAch.length) ? `<div class="ach-unlock"><div class="ach-unlock-h">🏅 本局解锁 ${s._freshAch.length} 个新成就</div>${s._freshAch.map(a => `<span class="ach-chip">${a.emoji} ${a.name}</span>`).join("")}</div>` : ""}
+      <div class="tl-h">人生回顾</div><div class="timeline">${tl}</div>
+      <div class="dead-btns"><button class="btn primary" id="again">再投一次胎 ↻</button>${(s.children || []).some(c => (s.year - (c.birthYear || s.year)) >= 18) ? `<button class="btn" id="heirplay">从孩子成年开始</button>` : ""}<button class="btn" id="togallery">🏅 图鉴</button></div></div>`;
+    document.getElementById("again").onclick = () => { s = null; draft = null; screen = "title"; weekLog = []; render(); };
+    const hp = document.getElementById("heirplay"); if (hp) hp.onclick = () => { screen = "legacykids"; render(); };
+    document.getElementById("togallery").onclick = () => { screen = "gallery"; render(); };
+  }
+
+  /* ============================ 顶部导航 + 商城 + 社交圈 ============================ */
+  function navBar(cur) {
+    const tabs = [["play", "🎮 人生"], ["shop", "🛒 消费"], ["market", "📈 理财"], ["social", "👥 社交圈"], ["phone", "📱 手机"]];
+    return `<div class="nav">${tabs.map(([k, t]) => `<button class="navbtn ${cur === k ? "on" : ""}" data-nav="${k}">${t}</button>`).join("")}<button class="navbtn" id="reincarnate" title="放弃这一生，回到投胎页重开" style="margin-left:auto;border-color:rgba(255,107,107,.5);color:var(--red)">🔄 重开</button></div>`;
+  }
+  // 放弃当前这一生，回到标题页重新投胎（已解锁成就/图鉴在 localStorage，不受影响）
+  function restartLife() {
+    s = null; draft = null; weekLog = [];
+    pendingEvent = null; eventNode = null;
+    screen = "title"; render();
+  }
+  function bindNav() {
+    document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => {
+      if (b.id === "reincarnate") return;   // 重开按钮单独处理（带确认）
+      const k = b.dataset.nav; weekLog = []; s._buyMsg = null; s._mktMsg = null; s._castMsg = null;
+      s._pendingAct = null;             // 切换到别的页 = 放弃当前挂起的换城市/找乐子，不计时间
+      screen = k;
+      render();
+    });
+    const rb = document.getElementById("reincarnate");
+    if (rb) rb.onclick = () => { if (window.confirm("确定放弃这一生、重新投胎吗？\n当前这局进度会清空（已解锁的成就/图鉴会保留）。")) restartLife(); };
+  }
+
+  // 购买消费品：扣钱、转资产、改心情/健康/声誉、社交圈联动
+  function buy(item) {
+    if (s.cash < item.price) return;
+    // 🏦 银行授信：分期/贷款类消费(买房买车)要过征信关——背景差/征信污点 → 拒贷
+    if (item.kind === "分期负债" && C._util.socialAccess) {
+      const credit = C._util.socialAccess(s, "bank_credit");
+      const badCredit = C._util.profileHas && C._util.profileHas(s, "stigma", "bad_credit");
+      if (badCredit || credit < 28) {
+        s._buyMsg = `🏦 银行查了你的征信和流水，婉拒了「${item.name}」的贷款申请——${badCredit ? "征信有污点" : "资质暂时不够"}，这道门眼下对你关着。`;
+        return;
+      }
+    }
+    add(s, "cash", -item.price);
+    if (item.assetRate) add(s, "assets", Math.round(item.price * item.assetRate));
+    if (item.mood) add(s, "mood", item.mood);
+    if (item.health) add(s, "health", item.health);
+    if (item.reputation) add(s, "reputation", item.reputation);
+    if (item.network) add(s, "network", item.network);                 // 消费带来的人脉增益（独立于六维 stats）
+    if (item.stats) for (const k in item.stats) add(s, k, item.stats[k]);
+    if (item.flag) flag(s, item.flag);
+    C._util.socialShift(s, item.social || 0);             // 大多数人高看你，清高者反感
+    if (item.custom) try { item.custom(s); } catch (e) { }
+    if (!item.repeatable) flag(s, "bought_" + item.id); tickMs(); // buy 后检测里程碑
+    s.timeline.push({ age: s.age, text: `买了「${item.name}」（¥${item.price.toLocaleString()}）。` });
+    s._buyMsg = `🛒 你拿下了「${item.name}」。${(item.social || 0) >= 6 ? "消息很快传开，圈子里看你的眼神都不一样了——大多数人热络了几分，也有人撇了撇嘴。" : "钱花出去，心情好了不少。"}`;
+  }
+  function renderShop() {
+    const owned = id => has(s, "bought_" + id);
+    const kinds = [...new Set(C.consumption.map(i => i.kind))];
+    const groups = kinds.map(kd => {
+      const items = C.consumption.filter(i => i.kind === kd).map(it => {
+        const can = s.cash >= it.price; const got = owned(it.id);
+        return `<div class="shopcard ${got ? "got" : (can ? "" : "poor")}">
+          <div class="shop-emoji">${it.emoji}</div>
+          <div class="shop-mid"><div class="shop-name">${it.name} ${"⭐".repeat(Math.min(5, Math.round((it.social || 0) / 3)))}</div>
+            <div class="shop-desc">${it.desc}</div></div>
+          <div class="shop-buy"><div class="shop-price">¥${it.price.toLocaleString()}</div>
+            <button class="btn buybtn" data-buy="${it.id}" ${got || !can ? "disabled" : ""}>${got ? "已拥有" : (can ? "购买" : "钱不够")}</button></div>
+        </div>`;
+      }).join("");
+      return `<div class="shop-kind">「${kd}」</div>${items}`;
+    }).join("");
+    const msg = s._buyMsg ? `<div class="logbox"><div class="log">${s._buyMsg}</div></div>` : "";
+    app().innerHTML = `<div class="screen">${navBar("shop")}
+      <div class="play-cols">
+        <section class="play-main">
+          <h2 style="margin-top:0">🛒 消费 · 花钱买生活</h2>
+          <p class="sub">钱花出去也有意义：多数物件能<b style="color:var(--amber)">永久提升某些维度</b>，还会改变社交圈对你的态度——多数人锦上添花，极少数人嗤之以鼻。</p>${msg}
+          <div class="shop">${groups}</div>
+        </section>
+        <aside class="play-side">${dashboard()}
+          <div class="scene-hero" style="${C.images.styleBg("shop_default", 1200)}"><span class="scene-cap">消费 · 花钱买生活</span></div>
+        </aside>
+      </div></div>`;
+    bindNav();
+    document.querySelectorAll(".buybtn").forEach(b => b.onclick = () => { const it = C.consumption.find(x => x.id === b.dataset.buy); if (it) { buy(it); render(); } });
+  }
+  // 股票交易（买/卖 n 股），刷新提示
+  function tradeStock(id, shares) {
+    const st = C._util.stockById(id); if (!st) return;
+    const price = s.market.prices[id];
+    if (shares > 0) {
+      const ok = C._util.buyStock(s, id, shares);
+      s._mktMsg = ok ? `📈 买入 ${st.name} ${shares} 股，花费 ¥${Math.round(price * shares).toLocaleString()}。` : `💸 现金不够，买不了这么多 ${st.name}。`;
+    } else {
+      const have = s.market.hold[id] || 0; const n = Math.min(-shares, have);
+      if (n <= 0) { s._mktMsg = `你手里没有 ${st.name}。`; return; }
+      C._util.sellStock(s, id, n);
+      s._mktMsg = `📉 卖出 ${st.name} ${n} 股，到手 ¥${Math.round(price * n).toLocaleString()}。`;
+    }
+    tickMs();
+  }
+  // 把一组 OHLC 行情渲染成内嵌 SVG：mode="candle" 蜡烛图 / "line" 折线图，均叠加 MA 均线。
+  // range=显示窗口周数(0=全部)；周线，长期累积随游戏生长。
+  function klineSVG(candles, range, mode) {
+    if (!candles || candles.length < 2) return `<div class="kline-empty">暂无行情数据</div>`;
+    const line = mode === "line";
+    const data = (range && range > 0) ? candles.slice(-range) : candles.slice();
+    const W = 560, H = 132, padX = 4, padT = 6, padB = 6;
+    let lo = Infinity, hi = -Infinity;
+    for (const k of data) {
+      // 折线图只看收盘价，量程更贴合走势；蜡烛图取最高/最低含影线
+      if (line) { if (k.c < lo) lo = k.c; if (k.c > hi) hi = k.c; }
+      else { if (k.l < lo) lo = k.l; if (k.h > hi) hi = k.h; }
+    }
+    if (!(hi > lo)) { hi = lo + 1; }
+    const span = hi - lo || 1;
+    const n = data.length, slot = (W - padX * 2) / n;
+    const bw = Math.max(0.8, Math.min(10, slot * 0.64));
+    const sw = slot < 3 ? 0.6 : 1;                            // 影线宽度随密度收细
+    const Y = v => padT + (H - padT - padB) * (1 - (v - lo) / span);
+    const cx = i => padX + slot * (i + 0.5);
+    // 网格线（4 档水平参考）
+    let grid = "";
+    for (let g = 0; g <= 4; g++) { const y = padT + (H - padT - padB) * g / 4; grid += `<line x1="0" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>`; }
+    let series;
+    if (line) {
+      // 折线图：收盘价连线 + 渐变面积填充，按区间首尾涨跌着色
+      const pts = data.map((k, i) => `${cx(i).toFixed(1)},${Y(k.c).toFixed(1)}`);
+      const rise = data[n - 1].c >= data[0].c;
+      const col = rise ? "var(--green)" : "var(--red)";
+      const base = (H - padB).toFixed(1);
+      const area = `<polygon points="${cx(0).toFixed(1)},${base} ${pts.join(" ")} ${cx(n - 1).toFixed(1)},${base}" fill="${col}" opacity="0.1"/>`;
+      series = `${area}<polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="1.4"/>`;
+    } else {
+      series = data.map((k, i) => {
+        const x = cx(i);
+        const rise = k.c >= k.o;
+        const col = rise ? "var(--green)" : "var(--red)";
+        const yo = Y(k.o), yc = Y(k.c);
+        const top = Math.min(yo, yc), bh = Math.max(0.8, Math.abs(yc - yo));
+        return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(k.h).toFixed(1)}" y2="${Y(k.l).toFixed(1)}" stroke="${col}" stroke-width="${sw}"/>`
+          + `<rect x="${(x - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${col}"/>`;
+      }).join("");
+    }
+    // MA 均线只在蜡烛图叠加；折线图保持「纯收盘价」单线（折点硬连、不平滑），
+    // 避免折线和均线两条平滑曲线同时出现而被误解。
+    let ma = "";
+    if (!line) {
+      const maWin = Math.max(3, Math.min(12, Math.round(n / 8)));
+      const pts = [];
+      for (let i = maWin - 1; i < n; i++) {
+        let sum = 0; for (let j = i - maWin + 1; j <= i; j++) sum += data[j].c;
+        pts.push(`${cx(i).toFixed(1)},${Y(sum / maWin).toFixed(1)}`);
+      }
+      ma = pts.length > 1 ? `<polyline points="${pts.join(" ")}" fill="none" stroke="var(--amber)" stroke-width="1.1" opacity="0.85"/>` : "";
+    }
+    return `<svg class="kline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${line ? "折线走势" : "K线走势"}">${grid}${series}${ma}</svg>`;
+  }
+  // 板块催化 → 标的徽标（新闻联动的可视化）
+  function catalystBadge(sector) {
+    const cat = C._util.sectorCatalyst ? C._util.sectorCatalyst(s, sector) : null;
+    if (!cat) return "";
+    if (cat.early) return '<span class="mkt-cat early">🌱 苗头</span>';
+    if (cat.dir < 0) return '<span class="mkt-cat bear">⚠️ 降温</span>';
+    return '<span class="mkt-cat bull">📈 消息</span>';
+  }
+  function renderMarket() {
+    const m = s.market;
+    const portVal = C._util.stockValue(s);
+    const longest = Math.max.apply(null, C.stocks.map(st => (C._util.stockCandles(s, st.id) || []).length).concat([0]));
+    const cards = C.stocks.map(st => {
+      const price = m.prices[st.id]; const chg = C._util.stockChange(s, st.id);
+      const hold = m.hold[st.id] || 0; const hv = Math.round(hold * price);
+      const cls = chg > 0.05 ? "up" : chg < -0.05 ? "down" : "flat";
+      const arrow = chg > 0.05 ? "▲" : chg < -0.05 ? "▼" : "■";
+      const canBuy1 = s.cash >= price; const canBuy10 = s.cash >= price * 10;
+      const tag = st.kind === "safe" ? "避险" : st.kind === "index" ? "指数" : st.kind === "crypto" ? "加密" : st.sector;
+      const candles = C._util.stockCandles(s, st.id);
+      const shown = mktRange > 0 ? Math.min(mktRange, candles.length) : candles.length;
+      const hot = st.sector && st.sector === s.eraWind;
+      const badge = catalystBadge(st.sector);
+      return `<div class="mkt-card ${hold > 0 ? "held" : ""}">
+        <div class="mkt-head">
+          <div class="mkt-id"><span class="mkt-emoji">${st.emoji}</span><div><b>${st.name}${hot ? ' <span class="mkt-hot">🔥风口</span>' : ""}${badge}</b><small>${tag}</small></div></div>
+          <div class="mkt-px"><b>¥${price.toFixed(2)}</b><span class="mkt-chg ${cls}">${arrow} ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%</span></div>
+          <div class="mkt-hold">${hold > 0 ? `持 ${hold} 股<small>¥${hv.toLocaleString()}</small>` : `<span class="mkt-none">未持有</span>`}</div>
+          <div class="mkt-act">
+            <button class="btn mbtn" data-buy="${st.id}" data-n="1" ${canBuy1 ? "" : "disabled"}>买1</button>
+            <button class="btn mbtn" data-buy="${st.id}" data-n="10" ${canBuy10 ? "" : "disabled"}>买10</button>
+            <button class="btn mbtn sell" data-buy="${st.id}" data-n="-1" ${hold > 0 ? "" : "disabled"}>卖1</button>
+            <button class="btn mbtn sell" data-buy="${st.id}" data-n="-9999" ${hold > 0 ? "" : "disabled"}>清仓</button>
+          </div>
+        </div>
+        <div class="mkt-chart">${klineSVG(candles, mktRange, mktChartType)}<span class="kline-meta">周线 · 近 ${shown} 周${badge ? " · 📰 有催化" : ""}</span></div>
+      </div>`;
+    }).join("");
+    // 基本面 ↔ 盘面：最近一屏新闻形成的板块催化（一周后兑现）
+    const nlog = (m.newsLog || []).filter(x => C._util.stocksBySector(x.sector).length);
+    const digest = nlog.length ? nlog.map(x => {
+      const stk = C._util.stocksBySector(x.sector)[0];
+      const dirTxt = x.early ? '<i class="nd-omen">🌱 苗头·下一轮风向</i>' : x.dir < 0 ? '<i class="nd-bear">⚠️ 利空降温</i>' : '<i class="nd-bull">📈 利好</i>';
+      return `<div class="nd-row"><span class="nd-sec">${stk ? stk.emoji : "📰"} ${x.sector}</span>${dirTxt}<span class="nd-line">「${x.headline}」<small> · ${x.source}</small></span></div>`;
+    }).join("") : `<div class="nd-empty">最近没什么值得盘的消息。多去 <b>📱 手机</b> 翻翻新闻——读懂正在发酵的赛道，下周开盘往往就有反应。</div>`;
+    const ranges = [[26, "近半年"], [52, "近1年"], [156, "近3年"], [0, "全部"]];
+    const rangeBtns = ranges.map(r => `<button class="rgbtn ${mktRange === r[0] ? "on" : ""}" data-rg="${r[0]}">${r[1]}</button>`).join("");
+    const typeBtn = `<button class="rgbtn typebtn" id="charttype">${mktChartType === "candle" ? "📉 切折线图" : "🕯️ 切蜡烛图"}</button>`;
+    const msg = s._mktMsg ? `<div class="logbox"><div class="log">${s._mktMsg}</div></div>` : "";
+    app().innerHTML = `<div class="screen">${navBar("market")}
+      <div class="play-cols">
+        <section class="play-main">
+          <h2 style="margin-top:0">📈 理财 · 股票账户</h2>
+          <p class="sub">周线 K 线随人生<b style="color:var(--amber)">逐周生长</b>。价格随时代景气与风口波动，<b style="color:var(--amber)">更跟着基本面新闻走</b>：手机新闻里反复念叨的赛道，一般<b style="color:var(--amber)">到下一周开盘就兑现对应涨跌</b>。读懂正在发酵、甚至刚冒苗头的赛道，先人一步埋伏——但热度见顶时别当最后接盘的人。持仓市值并入你的身价。</p>
+          <div class="mkt-sum">
+            <div class="ms"><small>持仓市值</small><b>¥${portVal.toLocaleString()}</b></div>
+            <div class="ms"><small>累计投入</small><b>¥${Math.round(m.invested || 0).toLocaleString()}</b></div>
+            <div class="ms"><small>浮动盈亏</small><b style="color:${portVal - (m.invested || 0) >= 0 ? "var(--green)" : "var(--red)"}">${portVal - (m.invested || 0) >= 0 ? "+" : ""}¥${Math.round(portVal - (m.invested || 0)).toLocaleString()}</b></div>
+          </div>
+          <div class="mkt-news"><div class="mkt-news-h">📰 基本面风向 · 新闻 → 下周盘面</div>${digest}</div>${msg}
+          <div class="mkt-toolbar"><span class="mkt-range-l">区间</span>${rangeBtns}${typeBtn}<span class="mkt-range-r">已积累 ${longest} 周行情</span></div>
+          <div class="mkt-list">${cards}</div>
+        </section>
+        <aside class="play-side">${dashboard()}
+          ${industryBoardHTML()}
+          <div class="scene-hero" style="${C.images.styleBg("market", 1200)}"><span class="scene-cap">理财 · 在 K 线里押注时代</span></div>
+        </aside>
+      </div></div>`;
+    bindNav();
+    document.querySelectorAll(".mbtn").forEach(b => b.onclick = () => { tradeStock(b.dataset.buy, parseInt(b.dataset.n, 10)); render(); });
+    document.querySelectorAll(".rgbtn[data-rg]").forEach(b => b.onclick = () => { mktRange = parseInt(b.dataset.rg, 10); render(); });
+    const ct = document.getElementById("charttype"); if (ct) ct.onclick = () => { mktChartType = mktChartType === "candle" ? "line" : "candle"; render(); };
+  }
+  // 关键角色(cast)区：把主线里的固定角色摆进社交圈，带信任/压力/危机，危机可一键回应
+  const CAST_CRISIS_LABEL = { debt: "陷入债务，向你求助", illness: "家中有人病了", startup_invite: "想拉你合伙创业", layoff: "刚被裁，正失落", reunite: "想和你复合" };
+  function castSectionHTML() {
+    const arr = s.cast ? Object.keys(s.cast).map(k => s.cast[k]).filter(c => c && c.name && c.role) : [];
+    if (!arr.length) return "";
+    const cards = arr.map(c => {
+      const trust = Math.round(c.trust || 50);
+      const col = trust >= 65 ? "good" : trust >= 40 ? "mid" : "bad";
+      const crisis = c.crisis ? `<div class="cast-crisis">⚠️ ${CAST_CRISIS_LABEL[c.crisis] || "有事找你"}<button class="cast-respond" data-castev="${c.crisis}">回应 →</button></div>` : "";
+      const visited = s._castVisit && s._castVisit[c.id] === s.week;
+      const visitBtn = `<button class="cast-visit ${visited ? "off" : ""}" data-castvisit="${c.id}" ${visited ? "disabled" : ""}>${visited ? "本周已走动" : "🤝 走动联络"}</button>`;
+      return `<div class="npc cast-npc"><div class="npc-top"><span class="npc-name">🎭 ${c.name}</span><span class="npc-role">${c.role}${c.industry && C._util.INDUSTRIES && C._util.INDUSTRIES[c.industry] ? " · " + C._util.INDUSTRIES[c.industry].name : ""}</span></div>
+        <div class="npc-bar"><i class="att-${col}" style="width:${trust}%"></i></div>
+        <div class="npc-att">信任 ${trust}/100${c.pressure ? ` · 压力 ${Math.round(c.pressure)}` : ""}</div>${crisis}<div class="cast-acts">${visitBtn}</div></div>`;
+    }).join("");
+    const msg = s._castMsg ? `<div class="npc-result">${s._castMsg}</div>` : "";
+    return `<div class="social-tier cast-tier"><div class="st-head">🎭 关键角色 · 你人生剧本里的人 <span class="st-cnt">${arr.length}人</span></div>
+      <div class="st-hint">他们不只是人脉，更是这段人生的固定角色——会随这个世界的起落，有自己的际遇，也会反过来找上你。平时多走动，关键时才靠得住。</div>
+      ${msg}<div class="npclist">${cards}</div></div>`;
+  }
+  // 行业风向板：把后台的 8 行业冷热/监管摆给玩家看，动态世界从此可见
+  function industryBoardHTML() {
+    if (!s.world || !s.world.industries) return "";
+    const inds = s.world.industries; const base = C._util.INDUSTRIES || {};
+    const rows = Object.keys(inds).map(id => {
+      const ind = inds[id]; const b = base[id] || ind; const heat = Math.round(ind.heat);
+      const trend = ind.heat > (b.heat || 40) + 8 ? "↑热" : ind.heat < (b.heat || 40) - 8 ? "↓冷" : "—";
+      const tcol = trend.indexOf("热") >= 0 ? "var(--green)" : trend.indexOf("冷") >= 0 ? "var(--red)" : "var(--dim)";
+      const hcol = heat >= 60 ? "good" : heat >= 35 ? "mid" : "bad";
+      return `<div class="ind-row"><span class="ind-name">${ind.name}</span><span class="ind-bar"><i class="att-${hcol}" style="width:${heat}%"></i></span><span class="ind-trend" style="color:${tcol}">${trend}</span><span class="ind-reg">${ind.regulation >= 60 ? "🛡" : ""}</span></div>`;
+    }).join("");
+    return `<div class="ind-board"><div class="ind-board-h">🌐 行业风向</div>${rows}<div class="ind-tip">热度高=机会多但人才贵；🛡=监管重、阻力大。求职/创业/投资都受它牵动。</div></div>`;
+  }
+  function renderSocial() {
+    const KIND = { 势利: "见钱眼开，你风光时最热络、落魄时跑最快", 清高: "看不起炫耀，你越显摆 ta 越疏远你", 仗义: "重情义不重钱，雪中送炭型", 亲情: "血浓于水，基本无条件", 普通: "随大流，轻度受你境况影响" };
+    const budgetLeft = C._util.socialWeekLeft ? C._util.socialWeekLeft(s) : 3;
+    const budgetCap = C._util.socialWeekCap ? C._util.socialWeekCap(s) : 3;
+    const relTagOf = (n) => (C._util.relTag ? C._util.relTag(s, n) : null);
+    const npcCard = (n) => {
+      const idx = s.social.indexOf(n);
+      const rt = relTagOf(n);
+      const sel = s._npcSel === idx;
+      const col = n.attitude >= 70 ? "good" : n.attitude >= 40 ? "mid" : "bad";
+      const face = n.attitude >= 70 ? "😊" : n.attitude >= 40 ? "🙂" : "😒";
+      const p = n.persona;
+      const personaRow = p ? `<div class="npc-persona">${p.emoji || "🎭"} <b>${p.name}</b> · ${p.desc} <span class="npc-quirk">${p.quirk || ""}</span></div>` : "";
+      const locRow = n.homeCity ? `<div class="npc-loc">📍 ${n.homeCity} · ${n.residence || "未知"} · ${n.meetable ? "可约见" : "远程联系"}</div>` : "";
+      let panel = "";
+      if (sel) {
+        const acts = (C._util.npcActions ? C._util.npcActions(s, n) : []);
+        const noBudget = budgetLeft <= 0;
+        const btns = acts.map(a => {
+          const disabled = a.dis || noBudget;
+          const tip = a.dis ? a.why : (noBudget ? "本周走动次数用完了" : a.hint);
+          return `<button class="npc-act-btn ${disabled ? "off" : ""}" data-npcact="${a.id}" data-npc="${idx}" ${disabled ? "disabled" : ""} title="${tip}">${a.emoji} ${a.label}${a.cost ? ` <small>¥${a.cost.toLocaleString()}</small>` : ""}<span class="na-hint">${tip}</span></button>`;
+        }).join("");
+        const msg = s._npcMsg && s._npcMsgFor === idx ? `<div class="npc-result ${s._npcMsgBad ? "bad" : ""}">${s._npcMsg}</div>` : "";
+        panel = `<div class="npc-panel" data-keep="1">
+          <div class="npc-panel-h">和 ${n.name} 走动一番 · 本周还能走动 <b>${budgetLeft}/${budgetCap}</b> 次</div>
+          ${msg}<div class="npc-actbtns">${btns}</div></div>`;
+      }
+      return `<div class="npc ${sel ? "sel" : ""}" data-npc="${idx}">
+        <div class="npc-top"><span class="npc-name">${face} ${n.name}</span>${rt ? `<span class="rel-tag ${rt.cls}">${rt.emoji} ${rt.label}</span>` : ""}<span class="npc-role">${n.role} · <i class="k-${n.kind}">${n.kind}</i></span></div>
+        ${personaRow}
+        ${locRow}
+        <div class="npc-bar"><i class="att-${col}" style="width:${n.attitude}%"></i></div>
+        <div class="npc-att">态度 ${n.attitude}/100 —— ${KIND[n.kind] || ""}</div>
+        ${sel ? "" : `<div class="npc-tap">👆 点击主动走动（聊天 / 送礼 / 求助 / 合伙…）</div>`}
+        ${panel}</div>`;
+    };
+    const tierMeta = [
+      { t: 1, name: "💗 核心圈 · 至亲挚友", hint: "不离不弃、雪中送炭。无论你飞黄腾达还是跌落谷底，他们的态度几乎不变。" },
+      { t: 2, name: "🤝 中间圈 · 好友同侪", hint: "好友、同事、同学、近亲。会因你的境况起落，但不会立刻翻脸。" },
+      { t: 3, name: "🌐 外围圈 · 熟人之交", hint: "点头之交、网友、客户。最势利也最现实——你风光时蜂拥而上，你落魄时一哄而散。" }
+    ];
+    const tierFn = C._util.socialTier || ((st, t) => (st.social || []).filter(n => (n.tier || 3) === t));
+    const avgT = C._util.socialAvgTier || (() => null);
+    const sections = tierMeta.map(tm => {
+      const arr = tierFn(s, tm.t); if (!arr.length) return "";
+      const av = avgT(s, tm.t);
+      // 圈内按【关系重要性】排序：合伙人/至亲/挚友/贵人……靠前，同级再看态度
+      const sorted = arr.slice().sort((a, b) => {
+        const ra = relTagOf(a), rb = relTagOf(b);
+        return ((rb ? rb.rank : 0) - (ra ? ra.rank : 0)) || ((b.attitude || 0) - (a.attitude || 0));
+      });
+      return `<div class="social-tier"><div class="st-head">${tm.name} <span class="st-cnt">${arr.length}人${av != null ? " · 均态度 " + av : ""}</span></div>
+        <div class="st-hint">${tm.hint}</div>
+        <div class="npclist">${sorted.map(npcCard).join("")}</div></div>`;
+    }).join("");
+    const outer = s.socialOuter;
+    const outerCol = outer ? (outer.attitude >= 60 ? "good" : outer.attitude >= 40 ? "mid" : "bad") : "mid";
+    const outerHtml = outer ? `<div class="social-tier"><div class="st-head">🌫️ 弱连接 · 泛泛之交 <span class="st-cnt">约 ${outer.count} 人</span></div>
+        <div class="st-hint">叫得出名字都难的一大片人——同行、群友、加过没聊过的好友。你得意时朋友圈点赞如潮，你失意时无人问津。</div>
+        <div class="npc"><div class="npc-bar"><i class="att-${outerCol}" style="width:${Math.round(outer.attitude)}%"></i></div>
+        <div class="npc-att">整体风评 ${Math.round(outer.attitude)}/100 —— 人情最薄，也最随行就市。</div></div></div>` : "";
+    const reach = C._util.socialReach ? C._util.socialReach(s) : (s.social || []).length;
+    app().innerHTML = `<div class="screen">${navBar("social")}
+      <div class="play-cols">
+        <section class="play-main">
+          <h2 style="margin-top:0">👥 社交圈 · 人情冷暖</h2>
+          <p class="sub">认识的人越往里越少、越往外越多。<b style="color:var(--amber)">总人脉约 ${reach} 人</b>。越亲密的越不在乎你混得好不好；越外围的，越只认你的风光。<br>👆 <b style="color:var(--amber)">点开任何一个人，主动走动</b>——聊天、送礼、请教、求人办事、借钱、拉合伙。平时多攒交情，关键时才换得来真东西。本周还能走动 <b style="color:var(--amber)">${budgetLeft}/${budgetCap}</b> 次。</p>
+          ${castSectionHTML()}${sections}${outerHtml}
+        </section>
+        <aside class="play-side">${dashboard()}
+          <div class="scene-hero" style="${C.images.styleBg("social", 1200)}"><span class="scene-cap">社交圈 · 人情冷暖</span></div>
+        </aside>
+      </div></div>`;
+    bindNav();
+    document.querySelectorAll(".npc[data-npc]").forEach(card => card.onclick = (e) => {
+      if (e.target.closest(".npc-panel")) return;            // 面板内的点击不切换选中
+      const idx = +card.dataset.npc;
+      s._npcSel = (s._npcSel === idx) ? null : idx;
+      s._npcMsg = null; render();
+    });
+    document.querySelectorAll(".npc-act-btn").forEach(b => b.onclick = (e) => {
+      e.stopPropagation();
+      const idx = +b.dataset.npc; const n = s.social[idx]; if (!n) return;
+      const r = C._util.doNpcAction(s, n, b.dataset.npcact);
+      s._npcMsg = r.msg; s._npcMsgFor = idx; s._npcMsgBad = !!r.bad;
+      render();
+    });
+    document.querySelectorAll(".cast-respond").forEach(b => b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.castev === "startup_invite" ? "ev_cast_invite" : b.dataset.castev === "reunite" ? "ev_cast_reunite" : "ev_cast_help";
+      const ev = C.events.find(x => x.id === id);
+      if (ev) { try { if (!ev.cond || ev.cond(s)) { enterEvent(ev); screen = "event"; render(); return; } } catch (x) {} }
+    });
+    document.querySelectorAll(".cast-visit").forEach(b => b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.castvisit; const c = s.cast && s.cast[id]; if (!c) return;
+      s._castVisit = s._castVisit || {}; if (s._castVisit[id] === s.week) return;
+      s._castVisit[id] = s.week; c.trust = Math.min(100, (c.trust || 50) + 4); c.pressure = Math.max(0, (c.pressure || 30) - 3);
+      s._castMsg = `你和${c.name}聊了聊近况，关系热乎了些（信任+4）。平时的走动，攒的是关键时刻的底气。`;
+      render();
+    });
+  }
+
+  /* ============================ 全球地图选择器 ============================ */
+  function tierTag(t) { return ["", "🥇一线", "🥈二线", "🥉三线"][t] || ""; }
+  function costTag(c) { return c >= 1.8 ? "极高" : c >= 1.3 ? "高" : c >= 0.9 ? "中" : c >= 0.6 ? "偏低" : "低"; }
+  function oppTag(o) { return o >= 1.6 ? "极多" : o >= 1.2 ? "多" : o >= 0.9 ? "中" : "少"; }
+  function markPlaceSeen(city) {   // 环游世界目标：记下去过的不同地方
+    s.seenPlaces = s.seenPlaces || {}; const k = city.name || city.id;
+    if (!s.seenPlaces[k]) { s.seenPlaces[k] = 1; s.placesSeen = (s.placesSeen || 0) + 1; }
+  }
+  function applyMapPick(city) {
+    if (mapPurpose === "relocate") {
+      const moveCost = Math.round(30000 * city.cost * (s.world ? s.world.priceIndex : 1));
+      if (s.cash < moveCost) { s._mapMsg = "搬到 " + C._util.cityFull(city) + " 估算要 ¥" + moveCost.toLocaleString() + "（含安顿），你现在掏不出。先攒攒吧。"; render(); return; }
+      add(s, "cash", -moveCost); add(s, "mood", 5); add(s, "network", -8);
+      if (s.world && city.paceMod !== undefined) s.world.pace = Math.max(0, Math.min(100, s.world.pace + city.paceMod * 0.3));
+      s.city = city; s.away = null; C._util.initSocial(s); markPlaceSeen(city);   // 搬家=定居地更新，且人就在新家
+      if (city.country !== "cn") flag(s, "overseas"); else delete s.flags.overseas;
+      s.timeline.push({ age: s.age, text: "搬去了 " + C._util.cityFull(city) + " 生活。" });
+      weekLog = ["🧳 你拖着行李落脚 " + C._util.cityFull(city) + "。陌生的一切，旧人脉一夜清零，但也一切归零、皆有可能。"];
+      commitPendingAct();                                  // 真的搬了，才结算「换个城市」这周的时间
+      screen = "play"; render(); return;
+    }
+    // 旅游 → 进入「旅途」专属界面：先选天数，再一天天玩（见闻/机遇/小插曲，心情爆棚）
+    s.trip = { city: city, cityName: C._util.cityFull(city), abroad: (city.country !== "cn" && city.country !== "hk"), started: false, days: 0, dayN: 0, _seen: {}, _beat: null, log: [] };
+    screen = "travel"; render();   // 费用与计时在「确认天数」时才结算；planner 里退出则不计
+  }
+  /* ============================ 旅游：选天数 → 逐日旅途子系统 ============================ */
+  function startTrip(days) {
+    const t = s.trip; const TR = window.TRAVEL; if (!t || !TR) { screen = "play"; return render(); }
+    const plan = TR.TRIP_PLANS.find(p => p.days === days); if (!plan) return;
+    const cost = TR.tripTotalCost(s, t.city, plan);
+    if (s.cash < cost) { s._tripMsg = "这趟 " + days + " 天大约要 ¥" + cost.toLocaleString() + "，钱包不答应。换短一点的吧。"; render(); return; }
+    add(s, "cash", -cost); t.cost = cost; t.days = days; t.dayN = 1; t.started = true; t._beat = null;
+    s.away = { name: t.cityName, id: t.city.id };
+    commitPendingAct();   // 真出门了，结算「出国旅游」这周的时间
+    render();
+  }
+  function doTripDay(actId) {
+    const t = s.trip; const TR = window.TRAVEL; if (!t || t._beat) return;
+    const b = TR.drawTravelBeat(s, t, actId);
+    t._seen = t._seen || {}; t._seen[b.id] = true;
+    add(s, "mood", b.mood || 0);
+    if (b.fx) { try { b.fx(s, t); } catch (e) { } }
+    const act = TR.TRAVEL_ACTS.find(a => a.id === actId);
+    t._beat = { txt: b.txt || b.text, mood: b.mood || 0, chance: !!b.chance };
+    t.log.push(`第${t.dayN}天 ${act ? act.emoji : ""} ${(b.text || "").slice(0, 20)}…`);
+    render();
+  }
+  function tripAdvance() {
+    const t = s.trip; if (!t) return;
+    t._beat = null; t.dayN++;
+    if (t.dayN > t.days) return finishTrip();
+    render();
+  }
+  function finishTrip() {
+    const t = s.trip; if (!t) { screen = "play"; return render(); }
+    const bonus = Math.min(38, Math.round(8 + t.days * 1.6));
+    add(s, "mood", bonus); add(s, "stress", -Math.min(45, 12 + t.days)); add(s, "insight", 1); add(s, "health", 1);
+    C._util.socialShift(s, 1); flag(s, "traveled"); markPlaceSeen(t.city);
+    s.timeline.push({ age: s.age, text: `去 ${t.cityName} 旅居了 ${t.days} 天，整个人被治愈了一遍。` });
+    weekLog = [`🧳 ${t.days} 天的「${t.cityName}」之旅结束，你心满意足地回了家——心情拉满、压力清零，相册里多了一堆故事。`];
+    s.trip = null; screen = "play"; render();
+  }
+  function renderTravel() {
+    const t = s.trip; const TR = window.TRAVEL;
+    if (!t || !TR) { screen = "play"; return renderPlay(); }
+    const hero = `<div class="scene-hero" style="${C.images.styleBg("map", 1200)}"><span class="scene-cap">🧳 旅途 · ${t.cityName}</span></div>`;
+    if (!t.started) {
+      const msg = s._tripMsg ? `<div class="logbox"><div class="log">⚠️ ${s._tripMsg}</div></div>` : ""; s._tripMsg = null;
+      const plans = TR.TRIP_PLANS.map(p => {
+        const cost = TR.tripTotalCost(s, t.city, p); const can = s.cash >= cost;
+        return `<button class="btn" data-days="${p.days}" ${can ? "" : "disabled"} style="display:block;width:100%;text-align:left;margin:0 0 10px;${can ? "" : "opacity:.45;cursor:not-allowed"}"><b>${p.name} · ${p.days} 天</b>　<span style="font-size:12px;color:var(--dim)">${p.blurb}</span><br><span style="font-size:12px;color:var(--amber2)">预算 ≈ ¥${cost.toLocaleString()}</span>${can ? "" : ` <span style="font-size:12px;color:var(--red)">· 钱不够</span>`}</button>`;
+      }).join("");
+      app().innerHTML = `<div class="screen">${hero}
+        <h2 style="margin-top:8px">🧳 去「${t.cityName}」玩几天？</h2>
+        <p class="sub">旅行最大的好处是让<b style="color:var(--amber)">心情爆棚</b>——天数越多，见闻越多、机遇越多，花销也越大。选了几天，就玩几天。</p>${msg}
+        <div>${plans}</div>
+        <button class="btn" id="tripcancel" style="margin-top:6px">← 不去了，回去生活</button></div>`;
+      document.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { if (!b.disabled) startTrip(+b.dataset.days); });
+      document.getElementById("tripcancel").onclick = () => { clearPendingAct(); s.trip = null; screen = "play"; render(); };
+      return;
+    }
+    const beat = t._beat;
+    const logHtml = t.log.length ? `<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0;font-size:12px;color:var(--dim);line-height:1.7;max-height:130px;overflow:auto">${t.log.slice(-6).map(l => `<div>${l}</div>`).join("")}</div>` : "";
+    let body;
+    if (!beat) {
+      const acts = TR.TRAVEL_ACTS.map(a => `<button class="btn" data-act="${a.id}" style="display:block;width:100%;text-align:left;margin:0 0 8px">${a.emoji} ${a.label}</button>`).join("");
+      body = `<div style="font-size:15px;font-weight:700;margin:8px 0 10px">📅 第 ${t.dayN} / ${t.days} 天 —— 今天想怎么过？</div>${acts}`;
+    } else {
+      body = `<div style="font-size:15px;line-height:1.85;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:12px;padding:14px 16px;margin:8px 0 12px">${beat.txt}</div>
+        <div style="font-size:13px;color:var(--green);margin-bottom:12px">🙂 心情 +${beat.mood}${beat.chance ? `　<span style="color:var(--amber2);font-weight:700">✨ 旅途机遇！</span>` : ""}</div>
+        <button class="btn primary" id="tripnext">${t.dayN >= t.days ? "🏡 结束旅程，心满意足回家 →" : `继续旅程 · 第 ${t.dayN + 1} 天 →`}</button>`;
+    }
+    app().innerHTML = `<div class="screen">${hero}
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--dim);margin:6px 0">📅 第 <b style="color:var(--amber2)">${t.dayN}</b> / ${t.days} 天 · ${t.cityName}<span>🙂 心情 <b style="color:var(--amber)">${Math.round(s.mood)}</b>　😣 压力 ${Math.round(s.stress)}</span></div>
+      ${logHtml}<div>${body}</div></div>`;
+    document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => doTripDay(b.dataset.act));
+    const nx = document.getElementById("tripnext"); if (nx) nx.onclick = () => tripAdvance();
+  }
+  function renderMap() {
+    const title = mapPurpose === "relocate" ? "🧳 搬到哪座城市？" : "🗺️ 去哪里旅行？";
+    const regions = [...new Set(C.countries.map(c => c.region))];
+    let body;
+    if (!mapCountry) {
+      body = regions.map(rg => '<div class="map-region">' + rg + '</div><div class="map-countries">' + C.countries.filter(c => c.region === rg).map(c => '<button class="mapc" data-co="' + c.id + '">' + c.flag + ' ' + c.name + '</button>').join("") + '</div>').join("");
+    } else {
+      const co = C._util.countryById(mapCountry);
+      const cs = C._util.citiesOf(mapCountry).slice().sort((a, b) => a.tier - b.tier);
+      body = '<button class="btn" id="mapback" style="margin:0 0 12px">← 返回选国家</button><div class="map-cohead">' + co.flag + ' ' + co.name + ' 的城市</div><div class="citylist">' + cs.map(c => '<div class="citycard ' + (s.city && s.city.id === c.id ? "here" : "") + '"><div class="city-mid"><div class="city-name">' + tierTag(c.tier) + ' ' + c.name + '</div><div class="city-meta">花销 <b>' + costTag(c.cost) + '</b>　机会 <b>' + oppTag(c.opp) + '</b>　房价 ' + costTag(c.house) + '</div></div><button class="btn buybtn city-pick" data-city="' + c.id + '" ' + (s.city && s.city.id === c.id ? "disabled" : "") + '>' + (s.city && s.city.id === c.id ? "在这" : "选择") + '</button></div>').join("") + '</div>';
+    }
+    const msg = s._mapMsg ? '<div class="logbox"><div class="log">⚠️ ' + s._mapMsg + '</div></div>' : "";
+    app().innerHTML = '<div class="screen">' + navBar("play") + '<div class="scene-hero" style="' + C.images.styleBg("map", 1200) + '"><span class="scene-cap">' + (mapPurpose === "relocate" ? "搬迁 · 换座城市重新开局" : "旅行 · 去看不一样的风景") + '</span></div><h2 style="margin-top:8px">' + title + '</h2><p class="sub">当前在 <b style="color:var(--amber)">' + (s.city ? C._util.cityFull(s.city) : "—") + '</b>。城市分一/二/三线，花销与机会各不相同。</p>' + msg + '<div class="worldmap">' + body + '</div><button class="btn" id="mapclose" style="margin-top:16px">' + (mapPurpose === "relocate" ? "再想想，先不搬" : "不去了，继续生活") + ' →</button></div>';
+    bindNav(); s._mapMsg = null;
+    document.querySelectorAll(".mapc").forEach(b => b.onclick = () => { mapCountry = b.dataset.co; render(); });
+    const back = document.getElementById("mapback"); if (back) back.onclick = () => { mapCountry = null; render(); };
+    document.querySelectorAll(".city-pick").forEach(b => b.onclick = () => { const c = C._util.cityById(b.dataset.city); if (c) applyMapPick(c); });
+    document.getElementById("mapclose").onclick = () => { clearPendingAct(); screen = "play"; render(); };
+  }
+
+  // —— 人生目标 / 里程碑 ——
+  function goalBarHTML() {
+    if (!s.goal) return "";
+    const g = C._util.goalById(s.goal); if (!g) return "";
+    const pct = C._util.goalProgress(s);
+    const ds = C._util.destinyStatus ? C._util.destinyStatus(s) : null;
+    const dstChip = (ds && !ds.finished && ds.act) ? `<span class="dst-chip" title="${ds.motif}">📖 命运·${ds.act} ${ds.idx}/${ds.total}</span>`
+                  : (ds && ds.finished) ? `<span class="dst-chip dst-done">📖 命运已写就 ${ds.total}/${ds.total}</span>` : "";
+    return `<div class="goal-row"><span class="goal-lbl">🎯 ${g.emoji}${g.name}${s._goalDone ? " ✅" : ""}</span><span class="goal-bar"><i style="width:${pct}%"></i></span><span class="goal-pct">${pct}%</span><span class="ms-cnt">🏆 ${(s.milestones || []).length}</span>${dstChip}</div>`;
+  }
+  function tickMs() {
+    const fresh = C._util.checkMilestones(s);
+    fresh.forEach(m => { weekLog.push("🏆 解锁里程碑：" + m.emoji + " " + m.name); s.timeline.push({ age: s.age, text: "🏆 " + m.name }); });
+    // ★路线任务推进★：完成当前引导任务 → 播报 + 推进到下一个（解锁新行动）
+    if (C._util.tickQuests) {
+      const fq = C._util.tickQuests(s);
+      fq.forEach(q => { weekLog.push("✅ 任务完成：" + q.title + "！"); s.timeline.push({ age: s.age, text: "✅ " + q.title }); add(s, "mood", 4); });
+      if (fq.length && C._util.currentQuest) { const nx = C._util.currentQuest(s); if (nx) weekLog.push("📌 新任务：" + nx.quest.title + "——" + (nx.quest.hint || "")); }
+    }
+    if (!s._goalDone && C._util.goalDone(s)) { s._goalDone = true; const g = C._util.goalById(s.goal); weekLog.push("🎯 人生目标【" + (g ? g.name : "") + "】达成！这一生，你没白活。"); s.timeline.push({ age: s.age, text: "🎯 达成人生目标：" + (g ? g.name : "") }); add(s, "mood", 12); }
+  }
+  function renderGoalPick() {
+    const unl = (s && s.unlocks) || {};
+    const cards = C.goals.map(g => {
+      const locked = g.locked && !unl[g.locked];
+      const reqTxt = locked ? `<span class="lock-req">🔒 ${(C._util.unlockById(g.locked) || {}).reqText || "尚未解锁"}</span>` : "";
+      return `<div class="bgcard goalcard ${locked ? "locked" : ""}" ${locked ? "" : `data-goal="${g.id}"`}><div class="bg-emoji">${locked ? "🔒" : g.emoji}</div><div class="bg-name">${g.name} <span class="goal-path">${g.path}</span></div><div class="bg-desc">${g.desc}</div><div class="bg-start">🎯 ${g.target}</div>${reqTxt}</div>`;
+    }).join("");
+    app().innerHTML = `<div class="screen"><div class="scene-hero" style="${C.images.styleBg("goalpick", 1200)}"><span class="scene-cap">立志 · 你这一生图个什么</span></div><h2>你这一生，图个什么？</h2><p class="sub">选一个人生目标——它会成为你这局追逐的方向（仪表盘常驻进度条）；也决定你死时，是印证了老祖宗那句「打工是不可能打工的」，还是打了它的脸。<br>🔒 灰色目标需在图鉴里达成对应条件后跨局解锁。</p><div class="bggrid">${cards}</div></div>`;
+    document.querySelectorAll(".goalcard[data-goal]").forEach(el => el.onclick = () => {
+      s.goal = el.dataset.goal; const g = C._util.goalById(s.goal);
+      const note = C._util.applyGoalMods ? C._util.applyGoalMods(s) : "";   // 施加针对性难度旋钮
+      s.timeline.push({ age: 18, text: "立下人生目标：" + (g ? g.name : "") + "。" });
+      if (note) { weekLog.push("🎯 " + note); s.timeline.push({ age: 18, text: note }); }
+      screen = "play"; render();
+    });
+  }
+
+  /* ============================ 小游戏 ============================ */
+  function startMinigame(id) {
+    const g = (C._util.mgById ? C._util.mgById(id) : null); if (!g) { screen = "play"; render(); return; }
+    if (g.stake && s.cash < g.stake) { s._mgMsg = `玩「${g.name}」大约要花 ¥${g.stake.toLocaleString()}，你兜里不够。`; screen = "mgmenu"; render(); return; }
+    if (g.stake) add(s, "cash", -g.stake);
+    commitPendingAct();                                    // 真的开玩了，才结算「找点乐子」这周的时间
+    mgId = id; mg = { round: 0, wins: 0, losses: 0, flashy: false, done: false, result: "", log: [] };
+    screen = "minigame"; render();
+  }
+  function mgPlayRound(moveIdx) {
+    const g = C._util.mgById(mgId); if (!g || mg.done) return;
+    const move = g.moves[moveIdx];
+    const stat = (s.stats[g.statKey] || 30);
+    const luck = (s.world ? s.world.momentum : 0) / 600;
+    let p = 0.5 + (stat - 50) / 180 + (move.edge || 0) + luck;
+    p = Math.max(0.12, Math.min(0.9, p));
+    mg.round++;
+    // 每回合约一成「势均力敌·平手」：谁也没占便宜 → 整局可能打平（让 onDraw 文案真正用得上）
+    if (rnd(0.1)) { mg.draws = (mg.draws || 0) + 1; mg.log.push(`第${mg.round}回合：${move.label} → 势均力敌，打了个平手 ➖`); }
+    else if (rnd(p)) { mg.wins++; if (move.flashy) mg.flashy = true; mg.log.push(`第${mg.round}回合：${move.label} → 你赢了这手 ✅`); }
+    else { mg.losses++; mg.log.push(`第${mg.round}回合：${move.label} → 这手输了 ❌`); }
+    const need = Math.ceil(g.rounds / 2);
+    if (mg.wins >= need || mg.losses >= need || mg.round >= g.rounds) {
+      mg.done = true;
+      mg.outcome = mg.wins > mg.losses ? "win" : mg.wins < mg.losses ? "lose" : "draw";
+      const info = { wins: mg.wins, total: g.rounds, flashy: mg.flashy && mg.outcome === "win" };
+      let res = "";
+      try { res = mg.outcome === "win" ? g.onWin(s, info) : mg.outcome === "lose" ? g.onLose(s, info) : g.onDraw(s, info); } catch (x) { res = ""; }
+      if (info.flashy) { add(s, "mood", 5); add(s, "reputation", 2); res += "（这一局赢得太漂亮，传开了——心气和名声都涨了一截。）"; }
+      mg.result = res;
+      if (res) { s.timeline.push({ age: s.age, text: "🎮 " + res }); }
+      try { tickMs(); } catch (x) {}
+    }
+    render();
+  }
+  function renderMgMenu() {
+    const list = (C._util.mgAvailable ? C._util.mgAvailable(s) : []);
+    const boards = (C._util.bgAvailable ? C._util.bgAvailable(s) : []);
+    const msg = s._mgMsg ? `<div class="logbox"><div class="log">⚠️ ${s._mgMsg}</div></div>` : ""; s._mgMsg = null;
+    const bgCards = boards.map(g => `<div class="bgcard mgcard bg-real" data-bg="${g.id}">
+      <div class="bg-emoji">${g.emoji}</div><div class="bg-name">${g.name} <span class="real-tag">真·对弈</span></div>
+      <div class="bg-desc">${g.where}</div>
+      <div class="bg-start">♟️ 真棋盘 · 点击落子 · 与${g.opponent}对弈</div></div>`).join("");
+    const cards = list.map(g => `<div class="bgcard mgcard" data-mg="${g.id}">
+      <div class="bg-emoji">${g.emoji}</div><div class="bg-name">${g.name}</div>
+      <div class="bg-desc">${g.where}</div>
+      <div class="bg-start">🎯 拼${SN[g.statKey] || g.statKey}　${g.stake ? "💸 约 ¥" + g.stake.toLocaleString() : "免费"}</div></div>`).join("");
+    app().innerHTML = `<div class="screen">${navBar("play")}<h2 style="margin-top:8px">🎮 找点乐子</h2>
+      <p class="sub">忙里偷闲，去会会这些有意思的人和地方。标「真·对弈」的是真棋盘，自己动手下；其余赢了有彩头、输了也解压。</p>${msg}
+      <div class="bggrid">${bgCards}${cards || (bgCards ? "" : '<p class="sub">这个年纪、这个地方，暂时没什么好玩的去处。</p>')}</div>
+      <button class="btn" id="mgback" style="margin-top:16px">← 算了，继续生活</button></div>`;
+    bindNav();
+    document.querySelectorAll(".mgcard[data-mg]").forEach(el => el.onclick = () => startMinigame(el.dataset.mg));
+    document.querySelectorAll(".mgcard[data-bg]").forEach(el => el.onclick = () => startBoardGame(el.dataset.bg));
+    document.getElementById("mgback").onclick = () => { clearPendingAct(); screen = "play"; render(); };
+  }
+  /* ---------- 真·棋盘游戏（五子棋等）：点击落子 + AI 对弈 ---------- */
+  function startBoardGame(id) {
+    const g = (C._util.bgById ? C._util.bgById(id) : null); if (!g) { screen = "play"; render(); return; }
+    commitPendingAct();                                    // 真的坐下对弈了，才结算「找点乐子」这周的时间
+    bgId = id; bgGame = g; bgBoard = g.newBoard(); bgOver = false; bgResult = ""; bgLast = null; bgSel = null; bgTargets = []; bgKo = null; bgPasses = 0;
+    screen = "boardgame"; render();
+  }
+  // —— 围棋：落子(提子/打劫) + 停手 + 数子终局 ——
+  function bgGoEnd() {
+    const g = bgGame; const sc = g.score(bgBoard);
+    const out = sc.b > sc.w ? "win" : sc.b < sc.w ? "lose" : "draw";
+    bgFinish(out);
+    bgResult = `终局数子：你(黑) ${Math.round(sc.b)} 目 vs 对手(白) ${sc.w.toFixed(1)} 目。${bgResult}`;
+    render();
+  }
+  function bgGoAITurn() {
+    const g = bgGame; let m = null; try { m = g.aiPlace(bgBoard, bgKo); } catch (e) { m = { pass: true }; }
+    if (!m || m.pass) { bgPasses++; if (bgPasses >= 2) { bgGoEnd(); return; } render(); return; }
+    const r = g.tryPlace(bgBoard, m.x, m.y, 2, bgKo);
+    if (r && r.ok) { bgBoard = r.nb; bgKo = r.ko; bgLast = { x: m.x, y: m.y }; bgPasses = 0; }
+    render();
+  }
+  function bgGoMove(x, y) {
+    const g = bgGame; if (!g || bgOver) return;
+    const r = g.tryPlace(bgBoard, x, y, 1, bgKo); if (!r || !r.ok) return;
+    bgBoard = r.nb; bgKo = r.ko; bgLast = { x: x, y: y }; bgPasses = 0;
+    bgGoAITurn();
+  }
+  function bgGoPass() {
+    if (bgOver) return; bgPasses++;
+    if (bgPasses >= 2) { bgGoEnd(); return; }
+    bgGoAITurn();
+  }
+  function bgFinish(outcome) {
+    bgOver = true;
+    const g = bgGame; let res = "";
+    try { res = outcome === "win" ? g.onWin(s, {}) : outcome === "lose" ? g.onLose(s, {}) : g.onDraw(s, {}); } catch (x) { res = ""; }
+    bgResult = res; bgOutcome = outcome;
+    if (res) s.timeline.push({ age: s.age, text: "🎮 " + res });
+    try { tickMs(); } catch (x) {}
+  }
+  let bgOutcome = "";
+  // —— 落子型（五子棋）——
+  function bgPlayerMove(x, y) {
+    const g = bgGame; if (!g || bgOver || !bgBoard) return;
+    if (!g.legal(bgBoard, x, y)) return;
+    g.place(bgBoard, x, y, 1); bgLast = { x: x, y: y };
+    if (g.winFrom && g.winFrom(bgBoard, x, y, 1)) { bgFinish("win"); render(); return; }
+    if (g.full(bgBoard)) { bgFinish("draw"); render(); return; }
+    let m = null; try { m = g.aiMove(bgBoard); } catch (x2) { m = null; }
+    if (m && g.legal(bgBoard, m.x, m.y)) {
+      g.place(bgBoard, m.x, m.y, 2); bgLast = { x: m.x, y: m.y };
+      if (g.winFrom && g.winFrom(bgBoard, m.x, m.y, 2)) { bgFinish("lose"); render(); return; }
+      if (g.full(bgBoard)) { bgFinish("draw"); render(); return; }
+    }
+    render();
+  }
+  // —— 走子型（象棋）：选子 → 走子 → AI 应招 ——
+  function bgMoveClick(x, y) {
+    const g = bgGame; if (!g || bgOver || !bgBoard) return;
+    const owner = g.ownerAt(bgBoard, x, y);
+    if (bgSel) {
+      if (bgTargets.some(t => t[0] === x && t[1] === y)) { bgApplyMove(bgSel[0], bgSel[1], x, y); return; }
+      if (owner === 1) { bgSel = [x, y]; bgTargets = g.legalMoves(bgBoard, x, y); render(); return; }
+      bgSel = null; bgTargets = []; render(); return;
+    }
+    if (owner === 1) { bgSel = [x, y]; bgTargets = g.legalMoves(bgBoard, x, y); render(); }
+  }
+  function bgApplyMove(fx, fy, tx, ty) {
+    const g = bgGame;
+    g.move(bgBoard, fx, fy, tx, ty); bgLast = { fx: fx, fy: fy, tx: tx, ty: ty }; bgSel = null; bgTargets = [];
+    let w = g.winner(bgBoard);
+    if (w === 1) { bgFinish("win"); render(); return; }
+    if (w === 2) { bgFinish("lose"); render(); return; }
+    let m = null; try { m = g.aiMove(bgBoard); } catch (e) { m = null; }
+    if (m) { g.move(bgBoard, m.fx, m.fy, m.tx, m.ty); bgLast = m; }
+    else { bgFinish("win"); render(); return; }   // AI 无着 = 你赢
+    w = g.winner(bgBoard);
+    if (w === 1) { bgFinish("win"); render(); return; }
+    if (w === 2) { bgFinish("lose"); render(); return; }
+    render();
+  }
+  // 中国象棋盘线：交叉点 (i,j) 落在 svg 坐标 (i+0.5, j+0.5)，棋子居中于格 → 正好压在线交叉处。
+  // 含：10 横线、9 竖线（内侧竖线在楚河处断开）、上下九宫斜线、楚河汉界。
+  function xiangqiBoardSVG(W, Ht) {
+    const ln = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    let s = "";
+    for (let j = 0; j < Ht; j++) s += ln(0.5, j + 0.5, W - 0.5, j + 0.5);          // 横线
+    for (let i = 0; i < W; i++) {
+      const x = i + 0.5;
+      if (i === 0 || i === W - 1) s += ln(x, 0.5, x, Ht - 0.5);                    // 边竖线贯通
+      else { s += ln(x, 0.5, x, 4.5); s += ln(x, 5.5, x, Ht - 0.5); }             // 内竖线在楚河断开
+    }
+    // 九宫斜线（上 y=0..2 / 下 y=7..9，文件 x=3..5）
+    s += ln(3.5, 0.5, 5.5, 2.5) + ln(5.5, 0.5, 3.5, 2.5);
+    s += ln(3.5, 7.5, 5.5, 9.5) + ln(5.5, 7.5, 3.5, 9.5);
+    const txt = `<text x="2.4" y="5.32" font-size="0.62" fill="#7a4a1a" text-anchor="middle" font-family="serif">楚 河</text><text x="6.6" y="5.32" font-size="0.62" fill="#7a4a1a" text-anchor="middle" font-family="serif">漢 界</text>`;
+    return `<svg class="xq-svg" viewBox="0 0 ${W} ${Ht}" preserveAspectRatio="none"><g stroke="#6b4423" stroke-width="0.045" stroke-linecap="round">${s}</g>${txt}</svg>`;
+  }
+  // 围棋/五子棋盘线：N×N 交点棋盘，线穿格心 → 棋子落在交叉点上（而非格子里）。含星位。
+  function gridBoardSVG(N) {
+    const ln = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    let s = "";
+    for (let i = 0; i < N; i++) { s += ln(0.5, i + 0.5, N - 0.5, i + 0.5); s += ln(i + 0.5, 0.5, i + 0.5, N - 0.5); }
+    const mid = Math.floor(N / 2), o = N >= 13 ? 3 : 2;
+    const pts = [[o, o], [o, N - 1 - o], [N - 1 - o, o], [N - 1 - o, N - 1 - o], [mid, mid]];
+    if (N >= 13) { pts.push([o, mid], [mid, o], [mid, N - 1 - o], [N - 1 - o, mid]); }
+    const stars = pts.map(p => `<circle cx="${p[0] + 0.5}" cy="${p[1] + 0.5}" r="0.11" fill="#6b4423"/>`).join("");
+    return `<svg class="xq-svg" viewBox="0 0 ${N} ${N}" preserveAspectRatio="none"><g stroke="#6b4423" stroke-width="0.05" stroke-linecap="round">${s}</g>${stars}</svg>`;
+  }
+  function renderBoardGame() {
+    const g = bgGame; if (!g || !bgBoard) { screen = "play"; render(); return; }
+    const isMove = g.mode === "move";
+    const isGo = g.mode === "go";
+    const W = g.width || g.size, Ht = g.height || g.size;
+    let cells = "";
+    for (let y = 0; y < Ht; y++) for (let x = 0; x < W; x++) {
+      if (isMove) {
+        const code = bgBoard[y * W + x]; const ch = g.pieceChar(code); const owner = g.ownerAt(bgBoard, x, y);
+        const sel = bgSel && bgSel[0] === x && bgSel[1] === y ? " bg-sel" : "";
+        const tgt = bgTargets.some(t => t[0] === x && t[1] === y) ? " bg-tgt" : "";
+        const last = bgLast && ((bgLast.tx === x && bgLast.ty === y) || (bgLast.fx === x && bgLast.fy === y)) ? " bg-last" : "";
+        const piece = ch ? `<i class="xq-piece ${owner === 1 ? "xq-r" : "xq-b"}">${ch}</i>` : (tgt ? '<i class="xq-dot"></i>' : "");
+        cells += `<div class="bg-cell xq-cell${sel}${tgt}${last}" data-x="${x}" data-y="${y}">${piece}</div>`;
+      } else {
+        const v = bgBoard[y * W + x];
+        const stone = v === 1 ? '<i class="bg-stone bg-black"></i>' : v === 2 ? '<i class="bg-stone bg-white"></i>' : "";
+        const last = bgLast && bgLast.x === x && bgLast.y === y ? " bg-last" : "";
+        cells += `<div class="bg-cell${last}" data-x="${x}" data-y="${y}">${stone}</div>`;
+      }
+    }
+    const hint = isMove ? "你执<b style=\"color:var(--red)\">红</b>先行。点选自己的棋子，再点目标格落子。"
+      : isGo ? "你执黑●先行。点交叉点落子，包住对方即可提子。无处可下/想终局就「停手」，双方连续停手即数子。"
+      : "你执黑●，先手。点击棋盘交叉点落子。";
+    const statusTop = bgOver
+      ? `<div class="ev-title">${bgOutcome === "win" ? "🏆 你赢了！" : bgOutcome === "lose" ? "🤝 你输了" : "🤝 和棋"}</div><div class="ev-text">${bgResult || ""}</div>`
+      : `<div class="ev-title">${g.emoji} ${g.name} · 对弈中</div><div class="ev-text">${g.intro}　<b style="color:var(--amber2)">${hint}</b>${isGo && bgPasses === 1 ? '　<b style="color:var(--red)">对方已停手，你再停手即终局。</b>' : ""}</div>`;
+    const btns = bgOver
+      ? `<button class="btn choice" id="bgagain">再来一局 🔄</button><button class="btn primary choice" id="bgdone">结束，回去生活 →</button>`
+      : (isGo ? `<button class="btn" id="bgpass">停手 / 终局</button><button class="btn" id="bgresign">认输离桌</button>` : `<button class="btn" id="bgresign">认输离桌</button>`);
+    app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:${isMove ? 460 : 560}px;margin:4vh auto 0">
+      <div class="ev-tag">${g.emoji} ${g.name} · 对手：${g.opponent}</div>
+      ${statusTop}
+      <div class="bg-board${isMove ? " xq-board xq-lined" : " go-board xq-lined"}" style="grid-template-columns:repeat(${W},1fr)">${isMove ? xiangqiBoardSVG(W, Ht) : gridBoardSVG(W)}${cells}</div>
+      <div class="ev-choices" style="margin-top:14px">${btns}</div></div></div>`;
+    if (!bgOver) {
+      const handler = isMove ? bgMoveClick : isGo ? bgGoMove : bgPlayerMove;
+      document.querySelectorAll(".bg-cell").forEach(el => el.onclick = () => handler(parseInt(el.dataset.x, 10), parseInt(el.dataset.y, 10)));
+      const rs = document.getElementById("bgresign"); if (rs) rs.onclick = () => { bgFinish("lose"); render(); };
+      const ps = document.getElementById("bgpass"); if (ps) ps.onclick = () => bgGoPass();
+    } else {
+      document.getElementById("bgagain").onclick = () => startBoardGame(bgId);
+      document.getElementById("bgdone").onclick = () => { bgId = null; bgGame = null; bgBoard = null; screen = "play"; render(); };
+    }
+  }
+  function renderMinigame() {
+    const g = C._util.mgById(mgId); if (!g) { screen = "play"; render(); return; }
+    const need = Math.ceil(g.rounds / 2);
+    const scoreLine = `<div class="mg-score">本局 ${g.rounds} 回合制 · 先到 ${need} 胜 —— 你 <b style="color:var(--green)">${mg.wins}</b> : <b style="color:var(--red)">${mg.losses}</b> ${g.opponent}</div>`;
+    const logHtml = mg.log.length ? `<div class="mg-log">${mg.log.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
+    if (!mg.done) {
+      const btns = g.moves.map((m, i) => `<button class="btn choice mg-move" data-i="${i}"><b>${m.label}</b><br><small style="color:var(--dim)">${m.desc}</small></button>`).join("");
+      app().innerHTML = `<div class="screen event"><div class="ev-card">
+        <div class="ev-tag">${g.emoji} ${g.name} · 对手：${g.opponent}</div>
+        <div class="ev-title">${g.emoji} 第 ${mg.round + 1} 回合</div>
+        <div class="ev-text">${mg.round === 0 ? g.intro : "该你了——这一手，怎么走？"}　<span style="color:var(--amber2)">（拼的是你的「${SN[g.statKey] || g.statKey}」）</span></div>
+        ${scoreLine}${logHtml}
+        <div class="ev-choices">${btns}</div></div></div>`;
+      document.querySelectorAll(".mg-move").forEach(b => b.onclick = () => mgPlayRound(parseInt(b.dataset.i, 10)));
+    } else {
+      const head = mg.outcome === "win" ? "🏆 你赢了！" : mg.outcome === "lose" ? "🤝 你输了" : "🤝 平局";
+      app().innerHTML = `<div class="screen event"><div class="ev-card">
+        <div class="ev-tag">${g.emoji} ${g.name} · 终局 ${mg.wins}:${mg.losses}</div>
+        <div class="ev-title">${head}</div>
+        <div class="ev-text">${mg.result || "玩了一局，尽兴而归。"}</div>
+        ${logHtml}
+        <div class="ev-choices"><button class="btn choice" id="mgagain">再来一局 🔄</button><button class="btn primary choice" id="mgdone">结束，回去生活 →</button></div></div></div>`;
+      document.getElementById("mgagain").onclick = () => startMinigame(mgId);
+      document.getElementById("mgdone").onclick = () => { mgId = null; mg = null; screen = "play"; render(); };
+    }
+  }
+
+  let _lastScreen = null;
+  function render() {
+    const changed = screen !== _lastScreen; _lastScreen = screen;
+    ({ title: renderTitle, cohort: renderCohort, birthplace: renderBirthplace, namepick: renderNamePick, legacykids: renderLegacyKids, create: renderCreate, goalpick: renderGoalPick, play: renderPlay, event: renderEvent, phone: renderPhone, shop: renderShop, market: renderMarket, social: renderSocial, map: renderMap, travel: renderTravel, dead: renderDead, gallery: renderGallery, mgmenu: renderMgMenu, minigame: renderMinigame, boardgame: renderBoardGame }[screen] || renderTitle)();
+    // 只有真正切换页面时才放入场动画；同一页内（点行动/导航刷新）不再整页闪一下
+    if (changed) { const sc = app().querySelector(".screen"); if (sc) sc.classList.add("screen-enter"); }
+  }
+  window.GAME = { boot: () => { screen = "title"; render(); } };
+})();

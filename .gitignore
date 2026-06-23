@@ -1,0 +1,7 @@
+# 部署只需要 prototype/ + main.py 及配置；以下无需上线
+prototype/_test/
+unity/
+docs/
+*.log
+__pycache__/
+.DS_Store

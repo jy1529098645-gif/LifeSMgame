@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>荒诞人生模拟器 · 原型 v0.4</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <!-- 模块化内容层（v0.5）：核心层 → 各内容模块（可多 agent 并行填充）→ 装配层 → 引擎。
+       新增内容模块：在 _assemble.js 之前插一行 <script> 即可。经典脚本，file:// 可直接运行。 -->
+  <script src="content/core.js"></script>
+  <script src="content/tracks.js"></script>
+  <script src="content/events-track.js"></script>
+  <script src="content/events-life.js"></script>
+  <script src="content/news-policy.js"></script>
+  <script src="content/names.js"></script>
+  <script src="content/dynamic.js"></script>
+  <script src="content/social.js"></script>
+  <script src="content/consumption.js"></script>
+  <script src="content/jobs.js"></script>
+  <script src="content/events-era.js"></script>
+  <script src="content/events-crisis.js"></script>
+  <script src="content/events-sudden.js"></script>
+  <script src="content/events-extra.js"></script>
+  <script src="content/events-absurd.js"></script>
+  <script src="content/events-choice.js"></script>
+  <script src="content/events-family.js"></script>
+  <script src="content/family-system.js"></script>
+  <script src="content/events-relation.js"></script>
+  <script src="content/civil.js"></script>
+  <script src="content/goals.js"></script>
+  <script src="content/events-goal.js"></script>
+  <script src="content/images.js"></script>
+  <script src="content/events-job-deep.js"></script>
+  <script src="content/events-civil-deep.js"></script>
+  <script src="content/events-social-deep.js"></script>
+  <script src="content/events-love-deep.js"></script>
+  <script src="content/events-drama.js"></script>
+  <script src="content/consumption-cars.js"></script>
+  <script src="content/events-quit.js"></script>
+  <script src="content/events-consume-link.js"></script>
+  <script src="content/stocks.js"></script>
+  <script src="content/companies.js"></script>
+  <script src="content/meta.js"></script>
+  <script src="content/geo-china.js"></script>
+  <script src="content/geo-svg.js"></script>
+  <script src="content/personas.js"></script>
+  <script src="content/events-persona.js"></script>
+  <script src="content/events-world.js"></script>
+  <script src="content/events-history.js"></script>
+  <script src="content/events-xuan.js"></script>
+  <script src="content/events-saga-rival.js"></script>
+  <script src="content/events-saga-fortune.js"></script>
+  <script src="content/events-saga-secret.js"></script>
+  <script src="content/events-saga-love.js"></script>
+  <script src="content/events-study.js"></script>
+  <script src="content/events-degree.js"></script>
+  <script src="content/events-venture.js"></script>
+  <script src="content/events-saga-family2.js"></script>
+  <script src="content/events-saga-trial.js"></script>
+  <script src="content/events-saga-career2.js"></script>
+  <script src="content/deaths.js"></script>
+  <script src="content/events-echo.js"></script>
+  <script src="content/scenarios.js"></script>
+  <script src="content/cofounders.js"></script>
+  <script src="content/minigames.js"></script>
+  <script src="content/boardgames.js"></script>
+  <script src="content/social-actions.js"></script>
+  <script src="content/creation-regional.js"></script>
+  <script src="content/events-leisure.js"></script>
+  <script src="content/travel.js"></script>
+  <script src="content/weather.js"></script>
+  <script src="content/events-weather.js"></script>
+  <script src="content/events-crash.js"></script>
+  <script src="content/destiny.js"></script>
+  <script src="content/destiny-corp.js"></script>
+  <script src="content/destiny-freedom.js"></script>
+  <script src="content/destiny-ipo.js"></script>
+  <script src="content/destiny-official.js"></script>
+  <script src="content/destiny-peace.js"></script>
+  <script src="content/destiny-tycoon.js"></script>
+  <script src="content/destiny-globe.js"></script>
+  <script src="content/destiny-family.js"></script>
+  <script src="content/destiny-academia.js"></script>
+  <script src="content/routes.js"></script>
+  <script src="content/route-corp.js"></script>
+  <script src="content/route-freedom.js"></script>
+  <script src="content/route-ipo.js"></script>
+  <script src="content/route-official.js"></script>
+  <script src="content/route-peace.js"></script>
+  <script src="content/route-tycoon.js"></script>
+  <script src="content/route-globe.js"></script>
+  <script src="content/route-family.js"></script>
+  <script src="content/route-academia.js"></script>
+  <!-- 叙事动态世界升级·第一阶段：行业周期 / 影响力 / 社会画像 / 运行时状态接口 -->
+  <script src="content/world-model.js"></script>
+  <script src="content/influence.js"></script>
+  <script src="content/social-profile.js"></script>
+  <script src="content/founder-core.js"></script>
+  <script src="content/work-scenes.js"></script>
+  <script src="content/main-arcs.js"></script>
+  <script src="content/main-arc-coastal.js"></script>
+  <script src="content/main-arc-studyabroad.js"></script>
+  <script src="content/main-arc-corp.js"></script>
+  <script src="content/main-arc-fraud.js"></script>
+  <script src="content/main-arc-marriage.js"></script>
+  <script src="content/main-arc-hometown.js"></script>
+  <script src="content/main-arc-richkid.js"></script>
+  <script src="content/chapters.js"></script>
+  <script src="content/events-backlash.js"></script>
+  <script src="content/events-legacy.js"></script>
+  <script src="content/events-cast.js"></script>
+  <script src="content/events-world-pressure.js"></script>
+  <script src="content/events-thread.js"></script>
+  <script src="content/events-founder-jobs.js"></script>
+  <script src="content/events-founder-life.js"></script>
+  <!-- 大框架改造·批次1：主线阶段 / 周时间稀缺 / 场景 / 记忆 / 提醒中心（兼容层骨架） -->
+  <script src="content/notify.js"></script>
+  <script src="content/memory-system.js"></script>
+  <script src="content/scene-manager.js"></script>
+  <script src="content/week-scheduler.js"></script>
+  <script src="content/stage-manager.js"></script>
+  <script src="content/runtime-state.js"></script>
+  <script src="content/_assemble.js"></script>
+  <script src="engine.js"></script>
+  <script>window.GAME.boot();</script>
+</body>
+</html>
