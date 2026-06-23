@@ -93,6 +93,18 @@
       { id: "nouveau", name: "突然暴发户", desc: "17 岁那年家里拆迁/中标，一夜暴富。钱多了底气足了，但根基浅、易飘。", tradeoff: true, assetTier: "rich", realloc: { charm: 6, mind: 6, strategy: -6, insight: -6 }, flags: ["nouveau_riche"] },
       { id: "abroad_family", name: "供得起留学", desc: "家境殷实，给你铺了出国的路（解锁留学行动）。", assetTier: "upper", realloc: { insight: 6, charm: 6, body: -6, strategy: -6 }, flags: ["can_abroad"] },
       { id: "fallen", name: "家道中落", desc: "曾经的小康，因变故一夜返贫。看透了世态炎凉，却也丢了底气与体面。", tradeoff: true, assetTier: "poor", realloc: { mind: 9, strategy: 6, charm: -9, body: -6 }, flags: ["fallen"] }
+    ] },
+    /* —— 大框架改造·批次2：大学专业 —— 你在读大三，选的专业将决定哪些岗位向你敞开（doc §2.3）。
+     * id 形如 major_cs，会写入 flag「bg_major_major_cs」，newState 据此设 s.major。realloc 净零。 */
+    { id: "major", title: "大学专业（你读到大三的方向）", note: "专业是求职的硬门槛：对口行业更容易上岸，壁垒行业（医疗/金融/体制）跨专业会被刷。", options: [
+      { id: "major_cs",      name: "💻 计算机/软件", desc: "敲代码、刷算法、通宵改 bug——最对口这十年的风口（互联网/创业）。", realloc: { knowledge: 8, insight: 4, charm: -6, body: -6 } },
+      { id: "major_mech",    name: "⚙️ 机械/制造",   desc: "画图纸、下车间、跑产线，硬核工科底子（先进制造/国企）。", realloc: { knowledge: 6, body: 6, charm: -6, insight: -6 } },
+      { id: "major_biz",     name: "📊 工商管理",   desc: "市场运营管理样样懂点，能说会道（销售/咨询/管理）。", realloc: { charm: 6, strategy: 6, knowledge: -6, body: -6 } },
+      { id: "major_finance", name: "💰 金融/经济",   desc: "估值模型行情，离钱最近（金融/专业服务，壁垒高）。", realloc: { strategy: 8, insight: 4, body: -6, charm: -6 } },
+      { id: "major_med",     name: "🩺 临床医学",   desc: "五年起步、规培漫长，但医疗这道门只为你开。", tradeoff: true, realloc: { knowledge: 8, mind: 6, charm: -8, strategy: -6 } },
+      { id: "major_law",     name: "⚖️ 法学",       desc: "背法条跑实务，体制与法务的敲门砖。", realloc: { strategy: 6, mind: 6, body: -6, insight: -6 } },
+      { id: "major_art",     name: "🎨 艺术/设计",   desc: "审美与表达是武器，也常是「不好就业」的代名词（传媒/互联网）。", tradeoff: true, realloc: { charm: 6, insight: 6, knowledge: -6, strategy: -6 } },
+      { id: "major_edu",     name: "📚 师范/文科",   desc: "文史哲师范类，稳但起薪不高、跨行难（教育/体制/传媒）。", realloc: { knowledge: 6, mind: 6, body: -6, strategy: -6 } }
     ] }
   ];
   const assetTierCash = { poor: 800, worker: 20000, upper: 200000, rich: 4000000 };
@@ -394,6 +406,15 @@
   // 创业选赛道：候选里混着「当年真风口 + 著名泡沫 + 长青小众」，kind 隐藏，要玩家自己甄别；
   // 可只押一个，也可【组合下注】押多个分散风险(更易押中风口，但精力被摊薄、上限更低)。→ 再选启动资金。
   function startupCandidates(s) {
+    // ★批次8：首次创业的赛道从【经历】里长出来——生成机会卡，按来源/成本/风险呈现（doc §8）。
+    // 二次及以后创业（已有创业经历）回退到自由选赛道。
+    if (typeof generateOpportunities === "function" && !has(s, "ever_founded")) {
+      const cards = generateOpportunities(s);
+      if (cards && cards.length >= 2) {
+        s._oppMap = {}; cards.forEach(c => { s._oppMap[c.trackName] = c; });
+        return cards.map(c => { const t = (typeof trackByName === "function") ? trackByName(c.trackName) : null; return t || { name: c.trackName, emoji: c.emoji, vibe: "" }; });
+      }
+    }
     if (typeof STARTUP_TRACKS === "undefined") return shuf([s.eraWind, ...shuf(INVEST_TRACKS.filter(t => t !== s.eraWind)).slice(0, 4)]).map(n => ({ name: n, emoji: "🚀", vibe: "" }));
     const windT = (typeof trackByName === "function" && s.eraWind) ? trackByName(s.eraWind) : null;
     const bubbles = shuf(STARTUP_TRACKS.filter(t => t.kind === "bubble")).slice(0, 3);
@@ -411,8 +432,15 @@
       ? `下海创业。已押：${picked.join(" + ")}。\n可以就押这些，也可以再加一个组合下注分散风险——但押得越多，精力越分散，单个的上限也越低。`
       : "你决定下海创业——可赛道选错，再拼命也是白搭，看着火的未必真火，看着冷的也许正憋着大招。你打算押哪个方向？（可只押一个，也可组合押多个）";
     const _tr = (typeof knownTrendsText === "function") ? knownTrendsText(s) : "";
-    const txt2 = txt + (_tr ? `\n📡 你从新闻里嗅到的趋势：${_tr}——押赛道前，不妨对照着想想。` : "");
-    const choices = cands.map(t => ({ label: `${t.emoji} ${t.name}${t.vibe ? "　—　" + t.vibe : ""}`, enter: (s) => { (s._suPick = s._suPick || []).push(t.name); }, next: (s) => suPickNode(s) }));
+    const _oppIntro = (s._oppMap && !picked.length) ? "\n💡 这些机会，是从你这一路的经历里长出来的——不是菜单上凭空的选项。" : "";
+    const txt2 = txt + _oppIntro + (_tr ? `\n📡 你从新闻里嗅到的趋势：${_tr}——押赛道前，不妨对照着想想。` : "");
+    const choices = cands.map(t => {
+      const opp = s._oppMap && s._oppMap[t.name];   // ★批次8：机会卡 → 标注来源/启动成本/风险
+      const label = opp
+        ? `${t.emoji} ${t.name}　<span style="opacity:.8">（来源：${opp.source}）</span>\n　💸启动约 ¥${opp.initialCost.toLocaleString()}　⚠️风险：${opp.risk}　潜力：${opp.potential}`
+        : `${t.emoji} ${t.name}${t.vibe ? "　—　" + t.vibe : ""}`;
+      return { label, enter: (s) => { (s._suPick = s._suPick || []).push(t.name); }, next: (s) => suPickNode(s) };
+    });
     if (picked.length >= 1) choices.unshift({ label: `✅ 就押这些（${picked.length} 个赛道），开干 →`, next: (s) => startupFundNode(s) });
     if (picked.length >= 3) return { text: () => `下海创业。已押：${picked.join(" + ")}。三路齐下，野心不小——但摊子铺得越大，越考验你的本事。`, choices: [{ label: `✅ 三路齐下，开干 →`, next: (s) => startupFundNode(s) }] };
     if (!picked.length) choices.push({ label: "想想还是算了", effect: (s) => { add(s, "insight", 2); s._suPick = null; s._suPool = null; return "你最终没敢迈出那一步。也许是怂，也许是清醒。"; } });
@@ -422,7 +450,7 @@
     const tracks = (s._suPick || []).slice(); if (!tracks.length) tracks.push(s.eraWind || INVEST_TRACKS[0]);
     s._suPick = null; s._suPool = null;
     const label = tracks.join(" + ");
-    const setup = (loan) => { flag(s, "startup"); s.startup = { progress: loan ? 9 : 5, valuation: 0, tracks: tracks.slice(), track: tracks[0], foundedAge: s.age, foundedWeek: s.week }; flag(s, "risk_hustle"); if (loan) { flag(s, "has_loan"); add(s, "cash", 300000); add(s, "stress", 10); } };
+    const setup = (loan) => { flag(s, "startup"); flag(s, "ever_founded"); s.startup = { progress: loan ? 9 : 5, valuation: 0, tracks: tracks.slice(), track: tracks[0], foundedAge: s.age, foundedWeek: s.week, fromOpp: (s._oppMap && s._oppMap[tracks[0]]) ? s._oppMap[tracks[0]].source : null }; s._oppMap = null; flag(s, "risk_hustle"); if (loan) { flag(s, "has_loan"); add(s, "cash", 300000); add(s, "stress", 10); } if (typeof rememberFact === "function") rememberFact(s, { id: "first_venture", once: true, type: "opportunity", text: `创业立项：押「${tracks.join("+")}」。`, tags: ["opportunity", "venture"], intensity: 3 }); };
     return { text: () => `押定「${label}」。启动资金，怎么来？`, choices: [
       { label: "花自己的积蓄，稳一点", effect: (s) => { setup(false); return `你押的是「${label}」。掏出多年积蓄起步，谨慎而踏实——船小，但好调头。`; } },
       { label: "找银行贷款，借鸡生蛋（+¥30万，但每月要还）", effect: (s) => { setup(true); return `你押的是「${label}」，还背上一笔贷款。账上一下宽裕，项目跑得更快——可每月的还款，从此像悬在头顶的剑。`; } }

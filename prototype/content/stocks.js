@@ -47,7 +47,7 @@ function initStocks(s) {
   }
   // catalysts: 板块→{dir,mag,ttl,early?,note}，由新闻推送、tickStocks 消化并衰减
   // newsLog: 最近一次"新闻→盘面"映射，供理财页展示基本面互通
-  s.market = { prices, hold, hist, candles, catalysts: {}, newsLog: [], week: 0, realized: 0, invested: 0 };
+  s.market = { prices, hold, hist, candles, catalysts: {}, newsLog: [], week: 0, realized: 0, invested: 0, basis: {} };
 }
 
 // 生成一段开局前的历史 K 线（OHLC），围绕 price0 做几何随机游走
@@ -105,6 +105,15 @@ function tickStocks(s) {
     const noise = (Math.random() * 2 - 1) * vol;
     let np = p * (1 + drift + noise);
     np = Math.max(st.price0 * 0.05, Math.min(st.price0 * 120, np)); // 防归零 + 防爆涨（封顶 120×，杜绝"亿元一股"）
+    // ★批次6：持仓的大额涨跌 → 弹提醒（让玩家不会在不知情下账户剧烈波动，doc §7.2/§10.1）
+    const held = s.market.hold[st.id] || 0;
+    if (held > 0 && p > 0) {
+      const chg = np / p - 1;
+      if (Math.abs(chg) >= 0.12 && typeof notify === "function") {
+        const swing = Math.round(held * (np - p));
+        notify(s, { kind: chg >= 0 ? "money" : "cost", title: `${st.name} ${chg >= 0 ? "大涨" : "大跌"} ${(chg * 100).toFixed(0)}%`, body: `你的持仓一周${chg >= 0 ? "浮盈" : "浮亏"} ¥${Math.abs(swing).toLocaleString()}（账面）`, amount: swing });
+      }
+    }
     s.market.prices[st.id] = np;
     const h = s.market.hist[st.id]; h.push(np); if (h.length > MKT_CAP) h.shift();
     // 同步记录这一周的 K 线（开=上周收，收=本周价，按波动率合成上下影线）
@@ -188,6 +197,8 @@ function buyStock(s, id, shares) {
   const price = s.market.prices[id]; const cost = price * shares;
   if (s.cash < cost) return false;
   s.cash -= cost; s.market.hold[id] += shares; s.market.invested += cost;
+  if (!s.market.basis) s.market.basis = {};
+  s.market.basis[id] = (s.market.basis[id] || 0) + cost;   // ★批次6：成本基准（算盈亏用）
   return true;
 }
 function sellStock(s, id, shares) {
@@ -195,13 +206,26 @@ function sellStock(s, id, shares) {
   const have = s.market.hold[id] || 0; shares = Math.min(shares, have);
   if (shares <= 0) return false;
   const price = s.market.prices[id]; const proceeds = price * shares;
+  // ★批次6：按比例结转成本 → 算出本次实现盈亏 → 赚/亏明确弹提醒（doc §7.5/§10.1）
+  if (!s.market.basis) s.market.basis = {};
+  const basis = s.market.basis[id] || 0;
+  const costOut = have > 0 ? basis * (shares / have) : 0;
+  const pnl = proceeds - costOut;
+  s.market.basis[id] = Math.max(0, basis - costOut);
+  s.market.realized = (s.market.realized || 0) + pnl;
   s.cash += proceeds; s.market.hold[id] -= shares;
+  const st = stockById(id);
+  if (typeof notifyMoney === "function" && Math.abs(pnl) >= 1) notifyMoney(s, pnl, `卖出「${st ? st.name : id}」${pnl >= 0 ? "落袋" : "割肉"}（成本 ¥${Math.round(costOut).toLocaleString()} → 到手 ¥${Math.round(proceeds).toLocaleString()}）`);
   return true;
 }
 // 一键全部清仓（变现），返回总额
 function liquidateStocks(s) {
   if (!s.market) return 0;
-  let total = 0;
-  for (const st of STOCKS) { const n = s.market.hold[st.id] || 0; if (n > 0) { total += s.market.prices[st.id] * n; s.market.hold[st.id] = 0; } }
-  s.cash += total; return Math.round(total);
+  let total = 0, cost = 0;
+  if (!s.market.basis) s.market.basis = {};
+  for (const st of STOCKS) { const n = s.market.hold[st.id] || 0; if (n > 0) { total += s.market.prices[st.id] * n; cost += s.market.basis[st.id] || 0; s.market.hold[st.id] = 0; s.market.basis[st.id] = 0; } }
+  s.cash += total;
+  const pnl = total - cost;
+  if (typeof notifyMoney === "function" && total > 0) notifyMoney(s, pnl, `清仓离场，盈亏 ${pnl >= 0 ? "+" : "-"}¥${Math.abs(Math.round(pnl)).toLocaleString()}`);
+  return Math.round(total);
 }

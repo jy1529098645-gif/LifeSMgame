@@ -20,6 +20,16 @@
   let bpSel = null;                            // 出生地选择：{provinceId, city, county, village}
   let mgId = null, mg = null;                  // 小游戏：当前游戏 id + 对局状态 {round,wins,flashy,done,result}
   let bgId = null, bgGame = null, bgBoard = null, bgOver = false, bgResult = "", bgLast = null, bgSel = null, bgTargets = [], bgKo = null, bgPasses = 0;  // 真·棋盘游戏
+  let bgHistory = [], bgUndos = 0;  // ★批次5：悔棋——每局最多悔 2 次，每次悔一步（含对方应招）
+  const BG_UNDO_MAX = 2;
+  function bgSnapshot() { bgHistory.push({ board: bgBoard.slice(), ko: bgKo, last: bgLast ? Object.assign({}, bgLast) : null, passes: bgPasses }); if (bgHistory.length > 8) bgHistory.shift(); }
+  function bgUndo() {
+    if (bgOver || bgUndos >= BG_UNDO_MAX || !bgHistory.length) return;
+    const h = bgHistory.pop();
+    bgBoard = h.board; bgKo = h.ko; bgLast = h.last; bgPasses = h.passes;
+    bgSel = null; bgTargets = []; bgUndos++;
+    render();
+  }
   let mktRange = 52;                            // 理财页 K 线显示窗口（周）：26/52/156/0=全部
   let mktChartType = "candle";                  // 理财页图表类型：candle=蜡烛图 / line=折线图
   // 难度档：影响开局家底、生活成本、死亡率（收入侧靠生活成本反向体现）
@@ -341,11 +351,21 @@
     if (st.gender === "男") { add(st, "body", 2); add(st, "strategy", 2); }
     else { add(st, "charm", 2); add(st, "mind", 2); }
     d.flags.forEach(f => flag(st, f));
+    // ★批次2：从捏人 flag 解析大学专业 → s.major（求职门槛用）+ 框定「大三在校」起点
+    const mf = d.flags.find(f => f.indexOf("bg_major_major_") === 0);
+    if (mf) st.major = mf.replace("bg_major_major_", "");
+    st.education = { degree: "本科在读", major: st.major || null, school: (d.birthplace && d.birthplace.school) || null };
+    if (st.major && C._util.majorById) { const mj = C._util.majorById(st.major); if (mj && C._util.rememberFact) { /* 记忆延迟到 ensureRuntime 之后写 */ st._openMajor = mj; } }
     if (d.legacyChild) { st.legacyParentName = (d.legacyChild.parentName || (C._util.loadMeta().legacy || {}).fromName || "上一代"); st.legacyChild = d.legacyChild; }
     C._util.initSocial(st);           // 生成社交圈
     C._util.initWorld(st);            // 初始化动态世界（物价/景气/风口/势头）+ 城市/工作
     C._util.initStocks(st);           // 初始化股市/理财组合
     if (C._util.ensureRuntime) C._util.ensureRuntime(st);   // 行业/影响力/社会画像/记忆/cast 等新结构
+    // ★批次2：写入出身/专业记忆（人生回响地基，doc §9.2）
+    if (C._util.rememberFact) {
+      C._util.rememberFact(st, { id: "origin", once: true, type: "origin", text: `出身：${d.cohort.name}，${d.picks.slice(0, 2).join("、")}。`, tags: ["origin"], intensity: 2 });
+      if (st._openMajor) { C._util.rememberFact(st, { id: "major", once: true, type: "major", text: `大学读「${st._openMajor.name}」——它将决定哪些门为你敞开。`, tags: ["major", st.major], intensity: 2 }); delete st._openMajor; }
+    }
     if (C._util.pickMainArc) C._util.pickMainArc(st);       // 依出身/地区/求学/目标，挑一条人生核心剧本
     // 传承：上一世留下的家底 + 血脉特质（封顶，不滚雪球）。在出身/难度倍率之后注入。
     let lg = null; if (C._util.applyLegacy) { try { lg = C._util.applyLegacy(st); } catch (e) { } }
@@ -635,6 +655,12 @@
     s._overtimeMode = false;          // 硬撑是逐周的主动选择，每周重置
     applyWeekWeather(s);              // 结算刚过去这一周的天气影响
     s.hours = stageOf(s.age).weeklyHours;
+    // ★批次3：通勤固定占用本周时间 → 在职者自由行动明显减少（doc §3.1/§3.2）
+    if (s.job && typeof commuteHoursOf === "function") {
+      const occ = commuteHoursOf(s);
+      if (occ > 0) { s.hours = Math.max(8, s.hours - occ); s._commuteReserved = occ; }
+      else s._commuteReserved = 0;
+    } else s._commuteReserved = 0;
     rollWeekPlan(s);                  // 生成新一周的天气与空排程
     refreshNews(s);
     tickMs();
@@ -1481,7 +1507,7 @@
     }
     if (C._util.weekBudgetSummary) {
       const wb = C._util.weekBudgetSummary(s);
-      weekBudgetHtml = `<div class="weekbudget"><span class="wb-status">⏳ ${wb.status}</span> 自由 <b>${wb.free}h</b> / 固定 ${wb.fixed}h${wb.blocks.length ? `<div class="wb-blocks">${wb.blocks.map(x => `<span class="wb-blk">${x.label}${x.hours}h</span>`).join("")}</div>` : ""}</div>`;
+      weekBudgetHtml = `<div class="weekbudget"><span class="wb-status">⏳ ${wb.status}</span> 可支配 <b>${wb.free}h</b> / 固定占用 ${wb.fixed}h${wb.blocks.length ? `<div class="wb-blocks">${wb.blocks.map(x => `<span class="wb-blk">${x.label}${x.hours}h</span>`).join("")}</div>` : ""}</div>`;
     }
     if (C._util.sceneMeta) { const sc = C._util.sceneMeta(s); if (sc) sceneAmbHtml = `<div class="scene-amb">📍 <b>${sc.name}</b>：${sc.ambient}</div>`; }
     if (C._util.memoryDigest) { const md = C._util.memoryDigest(s, 5); if (md.length) memHtml = `<div class="membox"><div class="membox-h">🧠 人生记忆</div>${md.map(m => `<div class="mem">· ${m.text}</div>`).join("")}</div>`; }
@@ -2731,6 +2757,7 @@
     const g = (C._util.bgById ? C._util.bgById(id) : null); if (!g) { screen = "play"; render(); return; }
     commitPendingAct();                                    // 真的坐下对弈了，才结算「找点乐子」这周的时间
     bgId = id; bgGame = g; bgBoard = g.newBoard(); bgOver = false; bgResult = ""; bgLast = null; bgSel = null; bgTargets = []; bgKo = null; bgPasses = 0;
+    bgHistory = []; bgUndos = 0;   // ★批次5：新一局重置悔棋
     screen = "boardgame"; render();
   }
   // —— 围棋：落子(提子/打劫) + 停手 + 数子终局 ——
@@ -2751,6 +2778,7 @@
   function bgGoMove(x, y) {
     const g = bgGame; if (!g || bgOver) return;
     const r = g.tryPlace(bgBoard, x, y, 1, bgKo); if (!r || !r.ok) return;
+    bgSnapshot();   // ★批次5：落子前留底，供悔棋
     bgBoard = r.nb; bgKo = r.ko; bgLast = { x: x, y: y }; bgPasses = 0;
     bgGoAITurn();
   }
@@ -2772,6 +2800,7 @@
   function bgPlayerMove(x, y) {
     const g = bgGame; if (!g || bgOver || !bgBoard) return;
     if (!g.legal(bgBoard, x, y)) return;
+    bgSnapshot();   // ★批次5：落子前留底，供悔棋
     g.place(bgBoard, x, y, 1); bgLast = { x: x, y: y };
     if (g.winFrom && g.winFrom(bgBoard, x, y, 1)) { bgFinish("win"); render(); return; }
     if (g.full(bgBoard)) { bgFinish("draw"); render(); return; }
@@ -2796,6 +2825,7 @@
   }
   function bgApplyMove(fx, fy, tx, ty) {
     const g = bgGame;
+    bgSnapshot();   // ★批次5：走子前留底，供悔棋
     g.move(bgBoard, fx, fy, tx, ty); bgLast = { fx: fx, fy: fy, tx: tx, ty: ty }; bgSel = null; bgTargets = [];
     let w = g.winner(bgBoard);
     if (w === 1) { bgFinish("win"); render(); return; }
@@ -2863,9 +2893,11 @@
     const statusTop = bgOver
       ? `<div class="ev-title">${bgOutcome === "win" ? "🏆 你赢了！" : bgOutcome === "lose" ? "🤝 你输了" : "🤝 和棋"}</div><div class="ev-text">${bgResult || ""}</div>`
       : `<div class="ev-title">${g.emoji} ${g.name} · 对弈中</div><div class="ev-text">${g.intro}　<b style="color:var(--amber2)">${hint}</b>${isGo && bgPasses === 1 ? '　<b style="color:var(--red)">对方已停手，你再停手即终局。</b>' : ""}</div>`;
+    const canUndo = !bgOver && bgUndos < BG_UNDO_MAX && bgHistory.length > 0;
+    const undoBtn = bgOver ? "" : `<button class="btn${canUndo ? "" : " dis"}" id="bgundo" ${canUndo ? "" : "disabled"} title="每局最多悔 2 步">↩ 悔棋（剩 ${Math.max(0, BG_UNDO_MAX - bgUndos)}）</button>`;
     const btns = bgOver
       ? `<button class="btn choice" id="bgagain">再来一局 🔄</button><button class="btn primary choice" id="bgdone">结束，回去生活 →</button>`
-      : (isGo ? `<button class="btn" id="bgpass">停手 / 终局</button><button class="btn" id="bgresign">认输离桌</button>` : `<button class="btn" id="bgresign">认输离桌</button>`);
+      : (isGo ? `${undoBtn}<button class="btn" id="bgpass">停手 / 终局</button><button class="btn" id="bgresign">认输离桌</button>` : `${undoBtn}<button class="btn" id="bgresign">认输离桌</button>`);
     app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:${isMove ? 460 : 560}px;margin:4vh auto 0">
       <div class="ev-tag">${g.emoji} ${g.name} · 对手：${g.opponent}</div>
       ${statusTop}
@@ -2876,6 +2908,7 @@
       document.querySelectorAll(".bg-cell").forEach(el => el.onclick = () => handler(parseInt(el.dataset.x, 10), parseInt(el.dataset.y, 10)));
       const rs = document.getElementById("bgresign"); if (rs) rs.onclick = () => { bgFinish("lose"); render(); };
       const ps = document.getElementById("bgpass"); if (ps) ps.onclick = () => bgGoPass();
+      const ub = document.getElementById("bgundo"); if (ub && canUndo) ub.onclick = () => bgUndo();
     } else {
       document.getElementById("bgagain").onclick = () => startBoardGame(bgId);
       document.getElementById("bgdone").onclick = () => { bgId = null; bgGame = null; bgBoard = null; screen = "play"; render(); };

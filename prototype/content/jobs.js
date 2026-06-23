@@ -26,6 +26,37 @@ const JOBS = [
 ];
 function jobById(id) { return JOBS.find(j => j.id === id); }
 
+/* —— 大框架改造·批次2：专业(major) —— 学历之外，专业也成为岗位硬门槛（doc §2.3/§8）。
+ * 每个专业 realloc 净零（配合捏人加点制），并标注「对口行业」与「壁垒行业」。*/
+const MAJORS = [
+  { id: "cs",      name: "计算机/软件", emoji: "💻", desc: "敲代码、刷算法、通宵改 bug，最对口这十年的风口。", realloc: { knowledge: 8, insight: 4, charm: -6, body: -6 }, fit: ["互联网", "创业", "传媒内容"] },
+  { id: "mech",    name: "机械/制造",   emoji: "⚙️", desc: "画图纸、下车间、跑产线，硬核工科的底子。", realloc: { knowledge: 6, body: 6, charm: -6, insight: -6 }, fit: ["先进制造", "国企央企", "综合职能"] },
+  { id: "biz",     name: "工商管理",   emoji: "📊", desc: "市场、运营、管理样样懂一点，能说会道。", realloc: { charm: 6, strategy: 6, knowledge: -6, body: -6 }, fit: ["销售商务", "专业服务", "经营管理", "综合职能"] },
+  { id: "finance", name: "金融/经济",   emoji: "💰", desc: "估值、模型、行情，离钱最近的专业。", realloc: { strategy: 8, insight: 4, body: -6, charm: -6 }, fit: ["金融", "专业服务"] },
+  { id: "med",     name: "临床医学",   emoji: "🩺", desc: "五年起步、规培漫长，但医疗这道门只为你开。", realloc: { knowledge: 8, mind: 6, charm: -8, strategy: -6 }, fit: ["医疗健康"] },
+  { id: "law",     name: "法学",       emoji: "⚖️", desc: "背法条、跑实务，体制与法务的敲门砖。", realloc: { strategy: 6, mind: 6, body: -6, insight: -6 }, fit: ["公共部门", "专业服务"] },
+  { id: "art",     name: "艺术/设计",   emoji: "🎨", desc: "审美与表达是你的武器，也常是「不好就业」的代名词。", realloc: { charm: 6, insight: 6, knowledge: -6, strategy: -6 }, fit: ["传媒内容", "互联网"] },
+  { id: "edu",     name: "师范/文科",   emoji: "📚", desc: "文史哲师范类，稳，但起薪不高、跨行难。", realloc: { knowledge: 6, mind: 6, body: -6, strategy: -6 }, fit: ["教育", "公共部门", "传媒内容"] }
+];
+function majorById(id) { return MAJORS.find(m => m.id === id) || null; }
+function majorName(s) { const m = majorById(s && s.major); return m ? m.name : "未定专业"; }
+// 壁垒行业：跨专业进入要大打折扣（医疗最硬，金融/教育/体制次之）
+const MAJOR_GATED = { "医疗健康": ["med"], "金融": ["finance", "biz"], "教育": ["edu"], "公共部门": ["law", "edu"] };
+// 专业-岗位匹配系数：对口加成 / 壁垒行业跨专业重罚 / 一般跨专业轻罚
+function majorFit(s, job) {
+  const mid = s && s.major; if (!mid) return 1;
+  const m = majorById(mid); if (!m) return 1;
+  if (m.fit && m.fit.includes(job.industry)) return 1.2;
+  const need = MAJOR_GATED[job.industry];
+  if (need) return need.includes(mid) ? 1.2 : 0.5;   // 壁垒行业：对口才行，跨专业腰斩
+  return 0.92;                                         // 普通行业：跨专业轻微折扣
+}
+// 专业是否「够不着」某岗位（壁垒行业 + 严重不对口 → 求职界面提示「你看不懂这个机会」）
+function majorBlocks(s, job) {
+  const need = MAJOR_GATED[job.industry];
+  return !!(need && s && s.major && !need.includes(s.major));
+}
+
 function industryHeat(s, job) {
   const w = s.world || {};
   let h = w.jobMarket ? (0.7 + w.jobMarket / 200) : 1;
@@ -54,24 +85,37 @@ function applyJob(s, job) {
   if (has(s, "startup_exp") && ["创业", "互联网", "经营管理"].includes(job.industry)) p *= 1.18;
   if (has(s, "bigtech") && ["互联网", "专业服务", "创业"].includes(job.industry)) p *= 1.12;
   if (job.req && job.req.network) p *= Math.min(1.25, (s.network || 0) / job.req.network);
+  const mFit = majorFit(s, job); p *= mFit;            // ★批次2：专业对口/壁垒门槛
   p *= industryHeat(s, job) * (1 + luckBias(s));
   p = Math.max(0.03, Math.min(0.95, p));
+  if (typeof recordBeat === "function") recordBeat(s, "first_resume");   // 主线节拍：投出第一份简历
   if (Math.random() > p) {
     bumpMomentum(s, -3);
     s._jobhuntFails = (s._jobhuntFails || 0) + 1;   // 连投不中累计「求职疲劳」，达阈值给保底兜底活
     const hi = ["「我们想要更有经验的候选人」", "「你的背景和岗位匹配度不高」", "简历石沉大海，HR 已读不回", "「您的能力我们小庙容不下」（婉拒）", "「不好意思，这个岗位暂停招聘了」"];
     const lo = ["「最近不招人，再看看吧」", "「先把简历留下，有需要联系你」（不会有了）", "连个自动回复都没有"];
-    const reason = (job.tier >= 3 ? hi : lo)[Math.floor(Math.random() * (job.tier >= 3 ? hi : lo).length)];
+    // ★专业不对口：直接点破短板（doc §2.3 面试暴露短板）
+    const reason = (mFit <= 0.55 && majorBlocks(s, job))
+      ? `HR 看了眼你的专业：「我们这行是要科班出身的，你「${majorName(s)}」的背景……恐怕不太合适。」`
+      : (job.tier >= 3 ? hi : lo)[Math.floor(Math.random() * (job.tier >= 3 ? hi : lo).length)];
     return { ok: false, text: `你投出「${job.name}」的简历，满怀期待地等着。结果——${reason}。` };
   }
   return { ok: true };
 }
 // 录用
 function hireJob(s, job) {
+  const firstJob = !has(s, "ever_employed");
   s.job = Object.assign({}, job, { _raise: 0, level: 0 });
   flag(s, "employed"); if (job.flag) flag(s, job.flag);
   bumpMomentum(s, 7);
   s._jobhuntFails = 0;            // 上岸即清零求职疲劳
+  // ★批次2：主线节拍 + 第一份工作进记忆（doc §9.2）
+  if (typeof recordBeat === "function") { recordBeat(s, "first_offer"); recordBeat(s, "onboard"); recordBeat(s, "first_interview"); }
+  if (firstJob) {
+    flag(s, "ever_employed");
+    if (typeof rememberFact === "function") rememberFact(s, { id: "first_job", once: true, type: "first_job", text: `第一份正式工作：「${job.name}」。`, tags: ["first_job", job.industry], intensity: 3 });
+    if (typeof notify === "function") notify(s, { kind: "work", title: "拿到第一份 offer", body: `「${job.name}」——人生第一份正式工作。` });
+  }
   if (typeof applyWorkScene === "function") applyWorkScene(s, s.job);   // 装配工作场景 + 写回社会画像
 }
 
