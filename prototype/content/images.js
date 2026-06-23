@@ -59,7 +59,22 @@
     phone:    "1545612700-748b9ff50b3f",    // 霓虹都市夜：手机资讯
 
     // 结局
-    dead:    "1444723121867-7a241cacace9"
+    dead:    "1444723121867-7a241cacace9",
+
+    // —— 场景背景（中国式家长化·scene-manager 的 artKey）。暂用现有实景占位，key 必须存在（doc §6.3/§11.1）——
+    scene_school:      "1493809842364-78817add7ffb", // 校园/窗边
+    scene_dorm:        "1493809842364-78817add7ffb", // 宿舍（占位同校园）
+    scene_office:      "1497366216548-37526070297c", // 写字楼内景
+    scene_commute:     "1542051841857-5f90071e7989", // 霓虹夜街/通勤
+    scene_rental:      "1502920917128-1aa500764cbd", // 居室/出租屋
+    scene_park:        "1470770841072-f978cf4d019e", // 自然/公园棋摊
+    scene_hospital:    "1470770841072-f978cf4d019e", // 医院（占位自然）
+    scene_banquet:     "1519501025264-65ba15a82390", // 饭局/餐桌
+    scene_netgroup:    "1611974789855-9c2a0a7236a3", // 投资群/K线
+    scene_arbitration: "1486406146926-c627a92ad1ab", // 仲裁/会议
+    scene_startup:     "1454165804606-c3d57bc86b40", // 创业白板
+    scene_home:        "1502920917128-1aa500764cbd", // 家
+    scene_daily:       "1516541196182-6bdb0516ed27"  // 日常
   };
 
   // 暗调渐变叠层：从上到下压暗，保证叠在图上的文字清晰可读
@@ -81,6 +96,10 @@
   function stageKey(stageId) {
     return _IDS[stageId] ? stageId : "youth";
   }
+  // 场景 artKey → 背景 key（带兜底）：scene-manager 的 sceneMeta(s).artKey
+  function sceneKey(artKey) {
+    return (artKey && _IDS[artKey]) ? artKey : null;
+  }
   // 事件 module → 插画 key（带兜底）
   function eventKey(mod) {
     return _IDS["ev_" + mod] ? "ev_" + mod : "ev_default";
@@ -90,7 +109,7 @@
     return _IDS["shop_" + kind] ? "shop_" + kind : "shop_default";
   }
 
-  window.GAME_IMAGES = { url, styleBg, stageKey, eventKey, shopKey, _IDS };
+  window.GAME_IMAGES = { url, styleBg, stageKey, sceneKey, eventKey, shopKey, _IDS };
 
   // —— 自注入样式：所有图片相关的类名都收敛在本文件，避免与 style.css 的并发改动冲突 ——
   const CSS = `

@@ -140,7 +140,7 @@
     { id: "study", name: "学习充电", emoji: "📖", hours: 18, desc: "啃书、上网课、考证。投资自己，回报在看不见的远方。", hint: "🧠学识+　🙂心情-2",
       resolve: (s) => { add(s, "knowledge", 1.5 + statEdge(s, "mind") * 4 + rnd(0.3) * 2); add(s, "insight", 1); add(s, "mood", -2); return { log: "你把自己钉在书桌前。窗外的天色暗了又亮，外卖盒堆成小山，脑子里的知识却实打实地厚了一层——只是太久没开口说话，舌头都有些发涩。" }; } },
     { id: "parttime", name: "兼职打工", emoji: "🛎️", hours: 16, desc: "发传单、做家教、端盘子，赚点零花，提前尝尝社会的滋味。",
-      resolve: (s) => { const m = Math.round(300 + s.stats.charm * 28 + s.stats.body * 6 + Math.random() * 400); add(s, "cash", m); add(s, "strategy", 1); add(s, "health", -2); return { log: `你跑了一周的腿，陪了一周的笑脸。攥着到手的 ¥${m.toLocaleString()}，你第一次懂了每一分钱背后的腰酸背痛。` }; } },
+      resolve: (s) => { const m = Math.round(300 + s.stats.charm * 28 + s.stats.body * 6 + Math.random() * 400); add(s, "cash", m); add(s, "strategy", 1); add(s, "health", -2); if (typeof recordBeat === "function") recordBeat(s, "first_intern"); return { log: `你跑了一周的腿，陪了一周的笑脸。攥着到手的 ¥${m.toLocaleString()}，你第一次懂了每一分钱背后的腰酸背痛。` }; } },
     { id: "work", name: "上班搬砖", emoji: "💼", hours: 40, desc: "去单位上班攒月薪——工资月底一次性发（高薪岗另有年终奖）；薪资随物价/景气/势头浮动。需先有正式工作（没工作请先「找工作」或「兼职打工」糊口）。", hint: "💼工资月底发　❤️健康-3　😣压力+",
       require: (s) => !!s.job,   // ★没有正式工作就不能「上班」——零工糊口走「兼职打工」/「找工作」
       resolve: (s) => {
@@ -152,9 +152,9 @@
         if (s.job) {
           s._monthWork = (s._monthWork || 0) + 1;   // 本月出勤周数（月底按出勤发薪）
           // 升职加薪：魅力(会做人)+学识(有本事)+谋略(会站队)越高，爬得越快——能力强的人薪资一路碾压
-          if (rnd(0.035 + statEdge(s, "charm") * 0.1 + statEdge(s, "knowledge") * 0.08 + statEdge(s, "strategy") * 0.05)) { s.job._raise = (s.job._raise || 0) + 0.08 + statEdge(s, "knowledge") * 0.05; add(s, "mood", 6); bumpMomentum(s, 4); return { log: `这周老板找你谈话——居然是涨薪！「年轻人好好干。」你嘴上谦虚，心里乐开了花。月薪涨了一截。`, mark: true }; }
+          if (rnd(0.035 + statEdge(s, "charm") * 0.1 + statEdge(s, "knowledge") * 0.08 + statEdge(s, "strategy") * 0.05)) { s.job._raise = (s.job._raise || 0) + 0.08 + statEdge(s, "knowledge") * 0.05; add(s, "mood", 6); bumpMomentum(s, 4); if (typeof recordBeat === "function") recordBeat(s, "first_raise_or_cut"); return { log: `这周老板找你谈话——居然是涨薪！「年轻人好好干。」你嘴上谦虚，心里乐开了花。月薪涨了一截。`, mark: true }; }
           // 裁员：洞察(早有准备)+谋略(站对位置)高的人更不容易被优化
-          if (s.world && s.world.jobMarket < 30 && rnd(Math.max(0.015, 0.07 - statEdge(s, "insight") * 0.08 - statEdge(s, "strategy") * 0.04))) { s.job = null; delete s.flags.employed; add(s, "mood", -10); bumpMomentum(s, -8); return { log: `寒气还是传到了你这。一纸「优化」通知，你被裁了。抱着纸箱走出写字楼，阳光刺眼。`, mark: true }; }
+          if (s.world && s.world.jobMarket < 30 && rnd(Math.max(0.015, 0.07 - statEdge(s, "insight") * 0.08 - statEdge(s, "strategy") * 0.04))) { s.job = null; delete s.flags.employed; flag(s, "been_laid_off"); add(s, "mood", -10); bumpMomentum(s, -8); if (typeof recordBeat === "function") recordBeat(s, "first_raise_or_cut"); return { log: `寒气还是传到了你这。一纸「优化」通知，你被裁了。抱着纸箱走出写字楼，阳光刺眼。`, mark: true }; }
           // 「老板画饼」等职场糟心事：套长冷却(≈2年)，让位给工作场景/创业前史事件，避免它一辈子刷屏
           s._cdAct = s._cdAct || {};
           if (rnd(0.14) && (s.week - (s._cdAct.work_pua || -999)) >= 100) { s._cdAct.work_pua = s.week; return { event: "ev_work_pua" }; }

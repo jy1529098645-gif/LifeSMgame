@@ -46,6 +46,16 @@ const MAIN_STAGES = [
 ];
 const _STAGE_INDEX = {}; MAIN_STAGES.forEach((st, i) => { _STAGE_INDEX[st.id] = i; });
 
+// 阶段目标（beat）→ 玩家可读标签（doc §5.1，banner 展示 2-3 个目标）
+const BEAT_LABELS = {
+  pick_major: "想清楚专业方向", first_intern: "尝试一次实习/兼职", first_network: "认识一个早期人物",
+  first_resume: "投出第一份简历", first_interview: "参加一次面试", first_offer: "拿到第一个 offer",
+  onboard: "正式入职", first_commute: "体会通勤压力", first_paycheck: "拿到第一份工资",
+  first_conflict: "经历一次职场不公", first_raise_or_cut: "经历升迁或被裁", industry_insight: "攒下行业认知",
+  first_opportunity: "发现一个创业机会", mentor_push: "得到贵人点拨", co_founder_lead: "遇到潜在合伙人",
+  resign_choice: "做出离职的决断", mvp: "做出第一版 MVP", first_customer: "拿下第一个客户", first_funding: "拿到第一笔融资"
+};
+
 function mainStageDef(id) { return MAIN_STAGES[_STAGE_INDEX[id]] || null; }
 
 function ensureMainStage(s) {
@@ -87,17 +97,33 @@ function mainStageOf(s) {
   return "college_junior";
 }
 
+// 当前阶段的目标(beat)是否至少完成一个（软门槛：完成目标才推进，doc §5.3）
+function _stageGoalStarted(s, stageId) {
+  const def = mainStageDef(stageId); if (!def) return true;
+  return def.beats.some(b => hasBeat(s, b));
+}
+// 身份硬变化（拿到/失去工作、公司成立/收束）→ 强制推进，不受目标门槛限制
+function _hardStateChanged(s) {
+  const emp = !!s.job; const su = !!(s.startup && !_hasFlag(s, "startup_failed"));
+  const changed = (s._lastEmpState !== emp) || (s._lastSuState !== su);
+  s._lastEmpState = emp; s._lastSuState = su;
+  return changed;
+}
+
 // 每周由引擎调用：检测主线阶段转场，写记忆/提醒/时间线
 function mainStageTick(s) {
   const ms = ensureMainStage(s);
   // 记录首次拿到工作的周（用于 first_job/work_grind 分界）
   if (s.job && s._jobSinceWk == null) s._jobSinceWk = s.week || 0;
   if (!s.job && s._jobSinceWk != null && !(s.startup && s.startup.fulltime)) s._jobSinceWk = null;
+  const hardChange = _hardStateChanged(s);
   const target = mainStageOf(s);
   if (target && target !== ms.id) {
     const prev = ms.id;
     const def = mainStageDef(target);
     const forward = prev == null || (_STAGE_INDEX[target] > (_STAGE_INDEX[prev] != null ? _STAGE_INDEX[prev] : -1));
+    // ★软门槛：向前推进（且非身份硬变化）时，要求当前阶段至少完成一个目标——避免「条件一到就跳关」
+    if (forward && prev != null && !hardChange && !_stageGoalStarted(s, prev)) return ms.id;
     ms.id = target;
     ms.sinceWk = s.week || 0;
     ms.log.push({ id: target, age: s.age, week: s.week, from: prev });
@@ -136,6 +162,7 @@ function mainStageSummary(s) {
     id, title: def.title, emoji: def.emoji, desc: def.desc, quest: def.quest,
     index: _STAGE_INDEX[id], total: MAIN_STAGES.length,
     beats: def.beats.map(b => ({ name: b, done: hasBeat(s, b) })),
+    goals: def.beats.map(b => ({ label: BEAT_LABELS[b] || b, done: hasBeat(s, b) })),   // ★带标签的阶段目标
     beatsDone, beatsTotal: def.beats.length
   };
 }

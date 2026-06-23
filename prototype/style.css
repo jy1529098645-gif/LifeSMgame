@@ -667,3 +667,10 @@ h2{font-size:26px;margin-bottom:6px}
   padding-bottom:8px;margin-bottom:8px;border-bottom:1px dashed var(--line)}
 .membox .mem{font-size:12px;color:var(--dim);line-height:1.6;padding:1px 0}
 .play-side>.scene-amb,.play-side>.membox{margin-bottom:14px}
+
+/* 第二轮·中国式家长化：行动格 / 阶段目标 */
+.weekbudget .wb-slots{color:var(--amber2);letter-spacing:2px;font-size:14px}
+.msb-goals{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.msb-goal{font-size:12px;color:var(--dim);line-height:1.5}
+.msb-goal.done{color:var(--green)}
+.msb-goal .gck{display:inline-block;width:14px}

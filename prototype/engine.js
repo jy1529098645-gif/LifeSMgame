@@ -364,7 +364,7 @@
     // ★批次2：写入出身/专业记忆（人生回响地基，doc §9.2）
     if (C._util.rememberFact) {
       C._util.rememberFact(st, { id: "origin", once: true, type: "origin", text: `出身：${d.cohort.name}，${d.picks.slice(0, 2).join("、")}。`, tags: ["origin"], intensity: 2 });
-      if (st._openMajor) { C._util.rememberFact(st, { id: "major", once: true, type: "major", text: `大学读「${st._openMajor.name}」——它将决定哪些门为你敞开。`, tags: ["major", st.major], intensity: 2 }); delete st._openMajor; }
+      if (st._openMajor) { C._util.rememberFact(st, { id: "major", once: true, type: "major", text: `大学读「${st._openMajor.name}」——它将决定哪些门为你敞开。`, tags: ["major", st.major], intensity: 2 }); if (C._util.recordBeat) C._util.recordBeat(st, "pick_major"); delete st._openMajor; }
     }
     if (C._util.pickMainArc) C._util.pickMainArc(st);       // 依出身/地区/求学/目标，挑一条人生核心剧本
     // 传承：上一世留下的家底 + 血脉特质（封顶，不滚雪球）。在出身/难度倍率之后注入。
@@ -521,7 +521,7 @@
       if (s.job) {
         const ratio = Math.max(0.6, Math.min(1, (s._monthWork || 0) / 4));
         const salary = Math.round(C._util.jobSalary(s) * ratio);
-        if (salary > 0) { add(s, "cash", salary); income.push({ emoji: "💼", label: `${s.job.name}·月薪${ratio < 1 ? `(出勤${Math.round(ratio * 100)}%)` : ""}`, amount: salary }); }
+        if (salary > 0) { add(s, "cash", salary); income.push({ emoji: "💼", label: `${s.job.name}·月薪${ratio < 1 ? `(出勤${Math.round(ratio * 100)}%)` : ""}`, amount: salary }); if (C._util.recordBeat) C._util.recordBeat(s, "first_paycheck"); }
       }
       s._monthWork = 0;
       // 🧹 零工等已当周即时到账的零散收入（只汇总展示，不重复发）
@@ -667,8 +667,11 @@
 
     // 结局判定（每周一次，概率性）
     if (checkEndings()) return false;
-    // 环境/随机事件（叙事由属性/阶级/标记决定）
-    const amb = drawAmbient();
+    // 环境/随机事件：先按「本周做了什么」走因果路由（pickWeeklyEvent），无命中再回退旧 drawAmbient（doc §7.2）
+    const routed = C._util.pickWeeklyEvent
+      ? C._util.pickWeeklyEvent(s, { lastActions: s._lastPlan || (s._weekActs ? Object.keys(s._weekActs) : []) })
+      : null;
+    const amb = routed || drawAmbient();
     if (amb) { enterEvent(amb); screen = "event"; return true; }
     return true;
   }
@@ -1461,9 +1464,12 @@
     // → 菜单随人生阶段 + 当前处境(婚育/宠物/体制/阶级/海外/房产…)动态增减，而非单一固定
     // 有人生路线(routes.js)时：行动 = 路线行动池(已解锁) ∪ 上下文行动 ∩ require（按路线渐进解锁）；
     // 无路线时回退旧逻辑(本阶段行动 ∪ anyStage) ∩ require。
-    const avail = C._util.routeFilterActions
-      ? C._util.routeFilterActions(s, C.actions, st)
-      : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })());
+    // ★中国式家长化驱动：行动来自「阶段+场景」精选（getWeekActions），旧 routeFilterActions 退为兜底
+    const avail = C._util.getWeekActions
+      ? C._util.getWeekActions(s, st)
+      : (C._util.routeFilterActions
+        ? C._util.routeFilterActions(s, C.actions, st)
+        : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })()));
     const done = s._weekActs || {};
     // 本周是否已排满：只要还塞得进至少一件「日常」行动（排除辞职/搬家/旅行/留学/投资/全职创业这些决策类），就算没满，不许结束本周
     const FILL_EXCLUDE = { quit: 1, relocate: 1, travel: 1, abroad: 1, venture: 1, invest: 1 };
@@ -1485,7 +1491,12 @@
     const allocHtml = `<div class="alloc-h">${s.hours >= 0
         ? `本周精力：剩余 <b>${s.hours}</b> / ${st.weeklyHours} 小时 —— 排满才能结束本周；每天正常 ${DAY_SOFT}h，剩下到 16h 是吃饭/休息区，<b style="color:var(--red)">只有硬撑才填得进（变红）</b>`
         : `本周精力：<b style="color:var(--red)">已挤占吃饭/休息 ${-s.hours}h</b> —— 硬撑一时爽，周末身体会找你算账（健康/心情↓、压力↑）`}</div>`;
-    const sceneHero = `<div class="scene-hero" style="${C.images.styleBg(C.images.stageKey(st.id), 1200)}"><span class="scene-cap">${st.name} · ${s.city ? s.city.name : ""} · ${s.year}年</span></div>`;
+    // ★场景图随当前场景变化（学校/公司/通勤/公园/出租屋…），缺图回退到阶段氛围图（doc §6.4/§12.1）
+    const _sm = C._util.sceneMeta ? C._util.sceneMeta(s) : null;
+    const _sKey = (_sm && C.images.sceneKey) ? C.images.sceneKey(_sm.artKey) : null;
+    const _heroKey = _sKey || C.images.stageKey(st.id);
+    const _heroCap = _sm ? `${_sm.name} · ${s.city ? s.city.name : ""} · ${s.year}年` : `${st.name} · ${s.city ? s.city.name : ""} · ${s.year}年`;
+    const sceneHero = `<div class="scene-hero" style="${C.images.styleBg(_heroKey, 1200)}"><span class="scene-cap">${_heroCap}</span></div>`;
     // ★任务引导横幅★：常驻「当前任务 + 下一步提示」，治「不知道干嘛」
     let questHtml = "";
     if (C._util.currentQuest) {
@@ -1502,12 +1513,14 @@
       const mss = C._util.mainStageSummary(s);
       if (mss) {
         const dots = mss.beats.map(b => `<span class="msb-dot${b.done ? " on" : ""}"></span>`).join("");
-        mainStageHtml = `<div class="mainstage-banner"><div class="msb-top"><span class="msb-tag">🧭 创业主线 ${mss.index + 1}/${mss.total}</span><b class="msb-title">${mss.emoji} ${mss.title}</b></div><div class="msb-quest">${mss.quest}</div><div class="msb-beats">${dots}<span class="msb-cnt">${mss.beatsDone}/${mss.beatsTotal}</span></div></div>`;
+        const goalsHtml = (mss.goals && mss.goals.length) ? `<div class="msb-goals">${mss.goals.map(g => `<div class="msb-goal${g.done ? " done" : ""}"><span class="gck">${g.done ? "✅" : "⬜"}</span>${g.label}</div>`).join("")}</div>` : "";
+        mainStageHtml = `<div class="mainstage-banner"><div class="msb-top"><span class="msb-tag">🧭 创业主线 ${mss.index + 1}/${mss.total}</span><b class="msb-title">${mss.emoji} ${mss.title}</b></div><div class="msb-quest">${mss.quest}</div>${goalsHtml}<div class="msb-beats">${dots}<span class="msb-cnt">目标 ${mss.beatsDone}/${mss.beatsTotal}</span></div></div>`;
       }
     }
     if (C._util.weekBudgetSummary) {
       const wb = C._util.weekBudgetSummary(s);
-      weekBudgetHtml = `<div class="weekbudget"><span class="wb-status">⏳ ${wb.status}</span> 可支配 <b>${wb.free}h</b> / 固定占用 ${wb.fixed}h${wb.blocks.length ? `<div class="wb-blocks">${wb.blocks.map(x => `<span class="wb-blk">${x.label}${x.hours}h</span>`).join("")}</div>` : ""}</div>`;
+      const slotDots = "▰".repeat(Math.max(0, wb.slots || 0)) + "▱".repeat(Math.max(0, 3 - (wb.slots || 0)));
+      weekBudgetHtml = `<div class="weekbudget"><span class="wb-status">⏳ ${wb.status}</span> 本周行动格 <b class="wb-slots">${slotDots}</b>（约 ${wb.slots} 件）· 可支配 ${wb.free}h / 固定占用 ${wb.fixed}h${wb.blocks.length ? `<div class="wb-blocks">${wb.blocks.map(x => `<span class="wb-blk">${x.label}${x.hours}h</span>`).join("")}</div>` : ""}</div>`;
     }
     if (C._util.sceneMeta) { const sc = C._util.sceneMeta(s); if (sc) sceneAmbHtml = `<div class="scene-amb">📍 <b>${sc.name}</b>：${sc.ambient}</div>`; }
     if (C._util.memoryDigest) { const md = C._util.memoryDigest(s, 5); if (md.length) memHtml = `<div class="membox"><div class="membox-h">🧠 人生记忆</div>${md.map(m => `<div class="mem">· ${m.text}</div>`).join("")}</div>`; }

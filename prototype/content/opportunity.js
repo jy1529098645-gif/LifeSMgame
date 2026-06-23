@@ -88,4 +88,25 @@ function oppCardFor(s, trackName) {
   return cards;
 }
 
+/* —— 创业契机期：每周检查是否长出机会卡，主动展示给玩家（doc §10.2）。展示≠立项，
+ * 只是把「你的经历正在变成机会」摆到台面上，立项仍走离职决断 / startupNode。 —— */
+if (typeof EVENTS !== "undefined") EVENTS.push({
+  id: "ev_opp_preview", module: "venture", ambient: true, importance: "turning",
+  cond: s => (typeof mainStageId === "function" && mainStageId(s) === "opportunity_build") && !s.startup && !has(s, "ever_founded") &&
+    (typeof generateOpportunities === "function") && generateOpportunities(s).filter(c => c.id.indexOf("opp_fallback") !== 0).length >= 1 &&
+    (s.week - (s._oppPrevWk || -99)) >= 14 && rnd(0.4),
+  title: "💡 你的经历，正在长出机会",
+  text: s => {
+    const cards = generateOpportunities(s).filter(c => c.id.indexOf("opp_fallback") !== 0).slice(0, 3);
+    s._oppPrevWk = s.week;
+    const lines = cards.map(c => `· ${c.emoji}「${c.trackName}」\n　来源：${c.source}｜启动约 ¥${c.initialCost.toLocaleString()}｜风险：${c.risk}\n　${c.hook}`).join("\n\n");
+    const gap = (typeof founderGap === "function") ? founderGap(s) : "";
+    return `这些年踩过的坑、攒下的人脉和本事，正在你眼前拧成几条具体的路：\n\n${lines}\n\n${gap ? `你离出手只差补上「${gap}」这块短板。` : "你已经准备得差不多了。"}真正下决心离职创业那天，这些机会就是你的牌。`;
+  },
+  choices: [
+    { label: "记下这些机会，继续攒底牌", effect: s => { if (typeof recordBeat === "function") recordBeat(s, "first_opportunity"); flag(s, "saw_opportunities"); add(s, "insight", 1); if (typeof addFounderPrep === "function") addFounderPrep(s, "industryInsight", 2); return "你把这几条路认真记进了心里，也更清楚自己还缺什么。机会已经在那儿了——剩下的，是攒够离开的勇气和本钱。"; } },
+    { label: "现在还不是时候", effect: s => { add(s, "strategy", 1); return "你看了看这些机会，又看了看银行卡余额和家里的责任，把念头先压了下去。时机这东西，急不得。"; } }
+  ]
+});
+
 if (typeof window !== "undefined") window.OPP_SOURCES = OPP_SOURCES;

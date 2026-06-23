@@ -24,6 +24,8 @@ window.CONTENT = {
     jobSalary, jobById, applyJob, hireJob,
     MAJORS, majorById, majorName, majorFit, majorBlocks,
     generateOpportunities, oppCardFor,
+    getWeekActions, getActionPreview, canRunAction, STAGE_ACTIONS, SCENE_ACTIONS,
+    pickWeeklyEvent, ACTION_EVENT_BIAS,
     REVEAL, HIDDEN_NPCS, npcDef, meetPerson, personReveal, personKnown, personMet, personLabel,
     COMPANIES, companyById, companyJob, companiesForCity, sampleCompanies, grantRSU, jobReachable, companyPositions,
     countryById, cityById, citiesByCountry, citiesOf, cityPickerNode, cityFull, genName, genCNName, genPerson,
