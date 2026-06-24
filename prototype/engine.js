@@ -1057,7 +1057,7 @@
           </div>
           <div class="res">籍贯：${birthTxt}</div>${familyStatus()}</div>
         <div class="worth"><small title="现金+资产+持仓市值的总身价（导航栏右上角是可用现金，不重复显示）">${s.year} 年 · 身价</small><b>¥${Math.round(netWorth(s)).toLocaleString()}</b>
-          ${(() => { const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null; if (!mb) return ""; const runway = mb.total > 0 ? ((s.cash || 0) + (s.assets || 0)) / mb.total : 99; const warn = runway < 6; return `<div class="res ${warn ? "runway-warn" : ""}" title="每月账单合计；坐吃山空能撑的月数（现金+资产÷月账单）">🧾 月账单 ≈¥${mb.total.toLocaleString()}${has(s, "starving") ? "　🆘已断炊" : runway < 99 ? `　⏳可撑 ${runway < 0 ? 0 : Math.floor(runway)} 个月` : ""}</div>`; })()}
+          ${(() => { const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null; if (!mb) return ""; const runway = mb.total > 0 ? ((s.cash || 0) + (s.assets || 0)) / mb.total : 99; const warn = runway < 6; const wToBill = (4 - (s.week % 4)) % 4 || 4; const dayTxt = s.job ? `　💰发薪/账单：还有 ${wToBill} 周` : `　🧾房租/账单：还有 ${wToBill} 周`; return `<div class="res ${warn ? "runway-warn" : ""}" title="每月账单合计；坐吃山空能撑的月数（现金+资产÷月账单）；距下次月度结算（发薪+扣账单）的周数">🧾 月账单 ≈¥${mb.total.toLocaleString()}${has(s, "starving") ? "　🆘已断炊" : runway < 99 ? `　⏳可撑 ${runway < 0 ? 0 : Math.floor(runway)} 个月` : ""}${dayTxt}</div>`; })()}
           ${(w.priceIndex || 1) >= 1.25 ? `<div class="res" style="color:var(--dim)" title="按开局物价折算的实际购买力——通胀让名义数字虚胖，这才是真金白银">≈ 开局购买力 ¥${Math.round(netWorth(s) / w.priceIndex).toLocaleString()}（物价×${(w.priceIndex).toFixed(2)}）</div>` : ""}
           <div class="res">❤️健康 ${Math.round(s.health)}　🙂心情 ${Math.round(s.mood)}　😣压力 ${Math.round(s.stress)}</div>
           <div class="res">🤝人脉 ${Math.round(s.network)}　⭐声誉 ${Math.round(s.reputation)}　${su}</div></div>
@@ -1493,11 +1493,28 @@
     // 有人生路线(routes.js)时：行动 = 路线行动池(已解锁) ∪ 上下文行动 ∩ require（按路线渐进解锁）；
     // 无路线时回退旧逻辑(本阶段行动 ∪ anyStage) ∩ require。
     // ★中国式家长化驱动：行动来自「阶段+场景」精选（getWeekActions），旧 routeFilterActions 退为兜底
-    const avail = C._util.getWeekActions
+    const _weekActs = C._util.getWeekActions
       ? C._util.getWeekActions(s, st)
       : (C._util.routeFilterActions
         ? C._util.routeFilterActions(s, C.actions, st)
         : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })()));
+    // ★城市俯瞰图：当前选中的区域决定本周能做的行动（区域是行动入口，doc §3-§5）
+    let cityMapHtml = "", curDistName = "";
+    let avail = _weekActs;
+    if (C._util.CITY_DISTRICTS && C._util.districtActions) {
+      const curDist = C._util.districtForStage(s);
+      s._cityDistrict = curDist;
+      const recDist = C._util.recommendedDistrict ? C._util.recommendedDistrict(s) : null;
+      const dActs = C._util.districtActions(s, curDist);
+      avail = dActs.length ? dActs : _weekActs;
+      const curD = C._util.districtById(curDist); curDistName = curD ? `${curD.icon} ${curD.name}` : "";
+      const dots = C._util.CITY_DISTRICTS.map(d => {
+        const sel = d.id === curDist, rec = d.id === recDist;
+        const n = C._util.districtActions(s, d.id).length;
+        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-ico">${d.icon}</span><span class="cm-name">${d.name}</span>${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${n ? `<span class="cm-n">${n}</span>` : ""}</button>`;
+      }).join("");
+      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 点一个地方去做事${recDist ? "（⭐ 主线建议去处）" : ""}</div><div class="citymap-grid">${dots}</div></div>`;
+    }
     const done = s._weekActs || {};
     // ★行动格（slots）真正接管周回合（doc §2）：用完格子即可结束本周；hours 退为体力/过劳的次级成本。
     if (C._util.ensureWeekSlots) C._util.ensureWeekSlots(s);
@@ -1561,12 +1578,13 @@
     app().innerHTML = `<div class="screen play">${navBar("play")}
       <div class="play-cols">
         <section class="play-main">
-          <div class="play-main-h">📋 本周怎么过 —— 安排你的时间</div>
+          <div class="play-main-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 在城市里过你的一周</div>
+          ${cityMapHtml}
           ${mainStageHtml}
-          ${questHtml}
           ${tipHtml}
           ${allocHtml}
           ${weekBudgetHtml}
+          ${cityMapHtml ? `<div class="tracks-h">📍 在「${curDistName}」你可以做：</div>` : ""}
           <div class="tracks">${rows}</div>
           ${lockedHtml}
           <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary ${weekFull ? "" : "dis"}" id="endweek" ${weekFull ? "" : "disabled"} title="${weekFull ? "" : "本周还有行动格没用，安排满了才能过完这周"}">${weekFull ? "结束本周 →" : `⏳ 还剩 ${slotsLeft} 格`}</button></div>
@@ -1581,6 +1599,8 @@
         </aside>
       </div></div>`;
     bindNav();
+    // ★城市俯瞰图：点区域 → 切换到该区域（行动随之变化）
+    document.querySelectorAll(".cm-dist").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; render(); });
     document.querySelectorAll(".track").forEach(el => el.onclick = () => {
       const a = C.actions.find(x => x.id === el.dataset.id);
       // ★行动格门槛：格子不够就不能点（决策类 slotCost=0 不受限）

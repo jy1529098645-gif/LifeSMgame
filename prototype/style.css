@@ -680,3 +680,26 @@ h2{font-size:26px;margin-bottom:6px}
 .msb-goal.req.done{color:var(--green)}
 .goal-req{font-size:10px;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:0 4px;margin-left:4px}
 .ap-slot{color:var(--amber2);font-weight:700}
+
+/* ============ 城市俯瞰图主界面（成都2026） ============ */
+.citymap{background:radial-gradient(120% 100% at 50% 0%,rgba(91,140,255,.10),rgba(255,255,255,.02));
+  border:1px solid var(--line);border-radius:14px;padding:10px 12px 6px;margin-bottom:12px}
+.citymap-h{font-size:12px;color:var(--amber2);font-weight:700;letter-spacing:.5px;margin-bottom:6px}
+.citymap-grid{position:relative;width:100%;height:230px;border-radius:10px;
+  background:linear-gradient(180deg,rgba(20,28,44,.55),rgba(14,14,20,.7));overflow:hidden;
+  background-image:linear-gradient(rgba(91,140,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(91,140,255,.06) 1px,transparent 1px);
+  background-size:28px 28px}
+.cm-dist{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:1px;
+  background:rgba(22,22,28,.82);border:1px solid var(--line);border-radius:10px;padding:5px 7px;cursor:pointer;
+  color:var(--txt);font-family:inherit;transition:.14s;min-width:54px;white-space:nowrap}
+.cm-dist:hover{border-color:var(--amber);transform:translate(-50%,-50%) scale(1.07);z-index:5}
+.cm-dist .cm-ico{font-size:18px;line-height:1}
+.cm-dist .cm-name{font-size:10px;color:var(--dim)}
+.cm-dist.sel{border-color:var(--amber2);background:rgba(240,167,60,.18);box-shadow:0 0 0 1px var(--amber2),0 0 12px rgba(240,167,60,.35);z-index:6}
+.cm-dist.sel .cm-name{color:var(--amber2)}
+.cm-dist.rec{border-color:var(--blue)}
+.cm-dist .cm-star{position:absolute;top:-7px;right:-6px;font-size:11px}
+.cm-dist .cm-n{position:absolute;top:-7px;left:-6px;background:var(--blue);color:#fff;font-size:9px;font-weight:700;
+  min-width:14px;height:14px;line-height:14px;border-radius:7px;text-align:center}
+.tracks-h{font-size:13px;font-weight:700;color:var(--amber2);margin:4px 0 8px;padding-top:4px;border-top:1px dashed var(--line)}
+@media(max-width:560px){.citymap-grid{height:200px}.cm-dist .cm-name{display:none}.cm-dist{min-width:0}}
