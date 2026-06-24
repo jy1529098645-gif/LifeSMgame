@@ -82,9 +82,33 @@ function facilityIndex(d, f) { return d && d.facilities ? Math.max(0, d.faciliti
 
 function _legalAct(s, a) { if (!a) return false; if (a.require) { try { return !!a.require(s); } catch (e) { return false; } } return true; }
 function _actById(id) { return (typeof actions !== "undefined") ? actions.find(a => a.id === id) : null; }
-function cityAsset(name) { return "assets/img/city/" + name + ".svg"; }
-function regionAsset(d) { return cityAsset("region-" + d.id); }
-function facilityAsset(d, f) { return cityAsset("facility-" + d.id + "-f" + facilityIndex(d, f)); }
+const AI_REGION_ASSETS = new Set([
+  "campus",
+  "talent_market",
+  "office_cbd",
+  "tech_park",
+  "rental",
+  "mall",
+  "park",
+  "clinic",
+  "arbitration"
+]);
+const AI_FACILITY_ASSETS = new Set([
+  "campus:f0",
+  "campus:f1",
+  "campus:f2",
+  "campus:f3",
+  "campus:f4"
+]);
+
+function cityAsset(name, ext) { return "assets/img/city/" + name + "." + ext; }
+function regionAsset(d) {
+  return cityAsset("region-" + d.id, AI_REGION_ASSETS.has(d.id) ? "png" : "svg");
+}
+function facilityAsset(d, f) {
+  const i = facilityIndex(d, f);
+  return cityAsset("facility-" + d.id + "-f" + i, AI_FACILITY_ASSETS.has(d.id + ":f" + i) ? "png" : "svg");
+}
 function facilityDefaultText(s, d, f, a, ok) {
   const n = f.name || "这里";
   if (f.action === "city_back") return `你走到${n}口，扶梯下方的人流一阵一阵涌出来。站牌、闸机、外卖骑手和赶时间的上班族挤在一起。你看了眼路线，决定先回到城市总览。`;
