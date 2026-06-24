@@ -1524,15 +1524,9 @@
         return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%;width:${d.w || 18}%;height:${d.h || 14}%" title="${d.desc}"><span class="cm-name">${d.name}</span>${badges}</button>`;
       }).join("");
       const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
-      const overview = C._util.CITY_DISTRICTS.map(d => {
-        const n = C._util.districtActions(s, d.id).length;
-        const rec = d.id === recDist;
-        const sig = C._util.districtSignal ? C._util.districtSignal(s, d.id) : {};
-        return `<button class="district-card${rec ? " rec" : ""}${sig.hot ? " hot" : ""}" data-dist="${d.id}"><span class="dc-ico">${d.icon}</span><span class="dc-main"><b>${d.name}</b><em>${d.desc}</em></span><span class="dc-meta">${rec ? "主线建议" : sig.hot ? "有故事" : `${n} 项行动`}</span></button>`;
-      }).join("");
       districtPanelHtml = curD
-        ? `<div class="district-detail"><div class="dd-top"><div><span class="dd-kicker">当前区域</span><h3>${curD.icon} ${curD.name}</h3></div><button class="btn tiny" id="cityOverview">返回城市总览</button></div><div class="dd-layout"><div class="dd-zoom" style="--zx:${curD.zoomX || curD.x}%;--zy:${curD.zoomY || curD.y}%"><img src="assets/img/city-overview-chengdu-mvp.png" alt=""><span class="dd-zoom-label">${curD.name}</span></div><div class="dd-copy"><p>${curD.desc}</p><div class="dd-facilities">${(curD.facilities || []).map(f => `<span>${f}</span>`).join("")}</div><div class="dd-facts"><span>可做行动 ${dActs.length || _weekActs.length}</span><span>${curDist === recDist ? "主线建议区域" : "自由探索区域"}</span></div></div></div></div>`
-        : `<div class="district-overview"><div class="do-top"><span>城市总览</span><b>先点一个区域，再安排本周行动</b></div><div class="district-list">${overview}</div></div>`;
+        ? `<div class="district-detail"><div class="dd-top"><div><span class="dd-kicker">当前区域</span><h3>${curD.icon} ${curD.name}</h3></div><button class="btn tiny" id="cityOverview">返回城市图</button></div><div class="dd-layout"><div class="dd-zoom" style="--zx:${curD.zoomX || curD.x}%;--zy:${curD.zoomY || curD.y}%"><img src="assets/img/city-overview-chengdu-mvp.png" alt=""><span class="dd-zoom-label">${curD.name}</span></div><div class="dd-copy"><p>${curD.desc}</p><div class="dd-facilities">${(curD.facilities || []).map(f => `<span>${f}</span>`).join("")}</div><div class="dd-facts"><span>可做行动 ${dActs.length || _weekActs.length}</span><span>${curDist === recDist ? "主线建议区域" : "自由探索区域"}</span></div></div></div></div>`
+        : "";
       cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 城市片区图${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid">${svg}${dots}</div></div>`;
     }
     const done = s._weekActs || {};
@@ -1542,26 +1536,20 @@
     const slotsUsed = (s.weekSlots && s.weekSlots.used) || 0;
     const slotsLeft = Math.max(0, slotsTotal - slotsUsed);
     const slotCostOf = (a) => C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;
-    const weekFull = C._util.weekSlotsFull ? C._util.weekSlotsFull(s) : (slotsLeft <= 0);
+    const weekFull = window.MVP_00_CAREER ? true : (C._util.weekSlotsFull ? C._util.weekSlotsFull(s) : (slotsLeft <= 0));
     const rows = avail.map(a => {
       const didThis = !a.repeatWeek && done[a.id];                                  // 可多次的行动(repeatWeek)不被「本周已做」锁住
       const sc = slotCostOf(a);
-      const noSlot = sc > 0 && slotsLeft < sc;                                       // 格子不够 → 禁用
+      const noSlot = !window.MVP_00_CAREER && sc > 0 && slotsLeft < sc;               // 格子不够 → 禁用
       const dis = noSlot || didThis;
-      const scLabel = sc === 0 ? "决策·不占格" : sc === 1 ? "1 格" : `${sc} 格`;
       const prev = a.preview || a.hint || "";
       const cost = didThis ? `<span class="ap-cost">✓ 本周已做</span>`
-        : `<span class="ap-cost ap-slot">${scLabel}${a.hours ? ` · ${a.hours}h` : ""}${a.repeatWeek && (s._actCount && s._actCount[a.id]) ? ` · 已 ${s._actCount[a.id]} 次` : a.repeatWeek ? " · 可多次" : ""}</span>`;
+        : `<span class="ap-cost ap-slot">${a.hours ? `${a.hours}h` : "行动"}${a.repeatWeek && (s._actCount && s._actCount[a.id]) ? ` · 已 ${s._actCount[a.id]} 次` : a.repeatWeek ? " · 可多次" : ""}</span>`;
       return `<div class="track ${dis ? "dis" : ""}" data-id="${a.id}">
       <div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span>${cost}</div>
       <div class="tk-desc">${a.desc}</div>${prev ? `<div class="tk-hint">${prev}</div>` : ""}</div>`; }).join("");
     const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
-    const tipHtml = (s.age <= 23 && !has(s, "employed") && !has(s, "startup")) ? `<div class="tip">💡 新手提示：每周只有有限的<b>行动格</b>——想清楚把它花在哪。想有收入就去「找工作/兼职」，光按「结束本周」会坐吃山空。</div>` : "";
-    // 行动格条：本回合还能安排几件事（doc §2.4）
-    const slotPips = "▰".repeat(slotsUsed) + "▱".repeat(slotsLeft);
-    const allocHtml = `<div class="alloc-h">${slotsTotal > 0
-        ? `本周行动格 <b class="alloc-slots">${slotPips}</b>　已用 <b>${slotsUsed}</b> / ${slotsTotal} —— 用完即可结束本周（旧时间 ${Math.max(0, s.hours)}h 仅影响体力/过劳）`
-        : `<b style="color:var(--amber2)">本周被工作/通勤/重病占满，几乎没有可自由支配的时间</b> —— 直接结束本周吧`}</div>`;
+    const tipHtml = (s.age <= 23 && !has(s, "employed") && !has(s, "startup")) ? `<div class="tip map-tip">💡 直接点击城市图上的片区进入：找工作去人才市场，想回血去公园或商圈，身体报警就去医院。</div>` : "";
     // ★场景图随当前场景变化（学校/公司/通勤/公园/出租屋…），缺图回退到阶段氛围图（doc §6.4/§12.1）
     const _sm = C._util.sceneMeta ? C._util.sceneMeta(s) : null;
     const _sKey = (_sm && C.images.sceneKey) ? C.images.sceneKey(_sm.artKey) : null;
@@ -1579,7 +1567,7 @@
     const lockedHints = (C._util.routeLockedHints ? C._util.routeLockedHints(s) : []);
     const lockedHtml = lockedHints.length ? `<div class="locked-hints">${lockedHints.map(h => `<span class="lh">${h.why}</span>`).join("")}</div>` : "";
     // ★大框架改造·批次1：主线阶段 / 周时间预算 / 场景 / 人生记忆 的状态可视化
-    let mainStageHtml = "", weekBudgetHtml = "", sceneAmbHtml = "", memHtml = "";
+    let mainStageHtml = "", sceneAmbHtml = "", memHtml = "";
     if (C._util.mainStageSummary) {
       const mss = C._util.mainStageSummary(s);
       if (mss) {
@@ -1587,11 +1575,6 @@
         const goalsHtml = (mss.goals && mss.goals.length) ? `<div class="msb-goals">${mss.goals.map(g => `<div class="msb-goal${g.done ? " done" : ""}${g.required ? " req" : ""}"><span class="gck">${g.done ? "✅" : g.required ? "🔲" : "⬜"}</span>${g.label}${g.required && !g.done ? ' <span class="goal-req">必做</span>' : ""}</div>`).join("")}</div>` : "";
         mainStageHtml = `<div class="mainstage-banner"><div class="msb-top"><span class="msb-tag">📖 职场沉浮 · 人生剧本 ${mss.index + 1}/${mss.total}</span><b class="msb-title">${mss.emoji} ${mss.title}</b></div><div class="msb-quest">${mss.quest}</div>${goalsHtml}<div class="msb-beats">${dots}<span class="msb-cnt">目标 ${mss.beatsDone}/${mss.beatsTotal}</span></div></div>`;
       }
-    }
-    if (C._util.weekBudgetSummary) {
-      const wb = C._util.weekBudgetSummary(s);
-      const slotDots = "▰".repeat(Math.max(0, wb.slots || 0)) + "▱".repeat(Math.max(0, 3 - (wb.slots || 0)));
-      weekBudgetHtml = `<div class="weekbudget"><span class="wb-status">⏳ ${wb.status}</span> 本周行动格 <b class="wb-slots">${slotDots}</b>（约 ${wb.slots} 件）· 可支配 ${wb.free}h / 固定占用 ${wb.fixed}h${wb.blocks.length ? `<div class="wb-blocks">${wb.blocks.map(x => `<span class="wb-blk">${x.label}${x.hours}h</span>`).join("")}</div>` : ""}</div>`;
     }
     if (C._util.sceneMeta) { const sc = C._util.sceneMeta(s); if (sc) sceneAmbHtml = `<div class="scene-amb">📍 <b>${sc.name}</b>：${sc.ambient}</div>`; }
     if (C._util.memoryDigest) { const md = C._util.memoryDigest(s, 5); if (md.length) memHtml = `<div class="membox"><div class="membox-h">🧠 人生记忆</div>${md.map(m => `<div class="mem">· ${m.text}</div>`).join("")}</div>`; }
@@ -1602,13 +1585,11 @@
           ${cityMapHtml}
           ${mainStageHtml}
           ${tipHtml}
-          ${allocHtml}
-          ${weekBudgetHtml}
           ${districtPanelHtml}
-          ${cityMapHtml && curDistName ? `<div class="tracks-h">📍 在「${curDistName}」你可以做：${curDistDesc ? `<span class="td-desc">${curDistDesc}</span>` : ""}</div>` : ""}
-          ${rows ? `<div class="tracks">${rows}</div>` : ""}
+          ${cityMapHtml && curDistName ? `<div class="tracks-h district-actions-h">📍 ${curDistName} · 可做的事${curDistDesc ? `<span class="td-desc">${curDistDesc}</span>` : ""}</div>` : ""}
+          ${rows ? `<div class="tracks district-actions">${rows}</div>` : ""}
           ${lockedHtml}
-          <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary ${weekFull ? "" : "dis"}" id="endweek" ${weekFull ? "" : "disabled"} title="${weekFull ? "" : "本周还有行动格没用，安排满了才能过完这周"}">${weekFull ? "结束本周 →" : `⏳ 还剩 ${slotsLeft} 格`}</button></div>
+          <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary" id="endweek">结束本周 →</button></div>
         </section>
         <aside class="play-side">
           ${dashboard()}
@@ -1622,14 +1603,13 @@
     bindNav();
     // ★城市俯瞰图：点区域 → 切换到该区域（行动随之变化）
     document.querySelectorAll(".cm-dist").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; render(); });
-    document.querySelectorAll(".district-card").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; render(); });
     const cityOverviewBtn = document.getElementById("cityOverview"); if (cityOverviewBtn) cityOverviewBtn.onclick = () => { s._cityDistrict = null; render(); };
     document.querySelectorAll(".track").forEach(el => el.onclick = () => {
       const a = C.actions.find(x => x.id === el.dataset.id);
       // ★行动格门槛：格子不够就不能点（决策类 slotCost=0 不受限）
       const _sc = C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;
       const _left = C._util.weekSlotsLeft ? C._util.weekSlotsLeft(s) : 99;
-      if (_sc > 0 && _left < _sc) return;
+      if (!window.MVP_00_CAREER && _sc > 0 && _left < _sc) return;
       if (!a.repeatWeek && s._weekActs && s._weekActs[a.id]) return;   // 默认每周一次；repeatWeek 行动(如投简历)可反复做
       if (s._cityDistrict) { s._cityVisited = s._cityVisited || {}; s._cityVisited[s._cityDistrict] = true; }   // 标记本周去过该区域
       // 先看这件事会通向哪——这些「打开子界面」的行动 resolve 本身无副作用，可先试探再决定是否计时
