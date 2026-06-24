@@ -128,7 +128,17 @@ const AI_FACILITY_ASSETS = new Set([
   "park:f1",
   "park:f2",
   "park:f3",
-  "park:f4"
+  "park:f4",
+  "clinic:f0",
+  "clinic:f1",
+  "clinic:f2",
+  "clinic:f3",
+  "clinic:f4",
+  "arbitration:f0",
+  "arbitration:f1",
+  "arbitration:f2",
+  "arbitration:f3",
+  "arbitration:f4"
 ]);
 
 function cityAsset(name, ext) { return "assets/img/city/" + name + "." + ext; }
