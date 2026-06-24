@@ -139,6 +139,7 @@ function mapSvg(d, focusIndex = -1, facilityName = "") {
   const focus = focusIndex >= 0 ? `<circle cx="${facilityPoints[focusIndex][0]}" cy="${facilityPoints[focusIndex][1]}" r="142" fill="#ffd66b" opacity=".18"/><circle cx="${facilityPoints[focusIndex][0]}" cy="${facilityPoints[focusIndex][1]}" r="88" fill="none" stroke="#ffe08a" stroke-width="7" opacity=".9"/>` : "";
   const title = facilityName || d.name;
   const sub = facilityName ? `${d.name} · 设施放大图` : "区域放大图 · 与城市总览同一俯瞰角度";
+  const landmarkLayer = facilityName ? landmarks(d, focusIndex) : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
 ${defs(d)}
 <rect width="1280" height="720" fill="url(#ground)"/>
@@ -147,7 +148,7 @@ ${waterAndGreen(d.theme)}
 ${roads()}
 <g filter="url(#softShadow)">${blocks(d.theme, focusIndex)}</g>
 ${focus}
-${landmarks(d, focusIndex)}
+${landmarkLayer}
 <g>
   <rect x="44" y="38" width="${facilityName ? 430 : 450}" height="86" rx="12" fill="#fff8e7" opacity=".86"/>
   <text x="68" y="82" font-size="34" fill="#263238" font-weight="800">${esc(title)}</text>
