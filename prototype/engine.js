@@ -1520,8 +1520,8 @@
         const sel = d.id === curDist, rec = d.id === recDist;
         const n = C._util.districtActions(s, d.id).length;
         const sig = C._util.districtSignal ? C._util.districtSignal(s, d.id) : {};
-        const badges = `${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${sig.hot ? '<span class="cm-hot"></span>' : ""}${n ? `<span class="cm-n">${n}</span>` : ""}`;
-        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-ico">${d.icon}</span><span class="cm-name">${d.name}</span>${badges}</button>`;
+        const badges = `${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${sig.hot ? '<span class="cm-hot"></span>' : ""}`;
+        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%;width:${d.w || 18}%;height:${d.h || 14}%" title="${d.desc}"><span class="cm-name">${d.name}</span>${badges}</button>`;
       }).join("");
       const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
       const overview = C._util.CITY_DISTRICTS.map(d => {
@@ -1531,9 +1531,9 @@
         return `<button class="district-card${rec ? " rec" : ""}${sig.hot ? " hot" : ""}" data-dist="${d.id}"><span class="dc-ico">${d.icon}</span><span class="dc-main"><b>${d.name}</b><em>${d.desc}</em></span><span class="dc-meta">${rec ? "主线建议" : sig.hot ? "有故事" : `${n} 项行动`}</span></button>`;
       }).join("");
       districtPanelHtml = curD
-        ? `<div class="district-detail"><div class="dd-top"><div><span class="dd-kicker">当前区域</span><h3>${curD.icon} ${curD.name}</h3></div><button class="btn tiny" id="cityOverview">返回城市总览</button></div><p>${curD.desc}</p><div class="dd-facts"><span>可做行动 ${dActs.length || _weekActs.length}</span><span>${curDist === recDist ? "主线建议区域" : "自由探索区域"}</span></div></div>`
+        ? `<div class="district-detail"><div class="dd-top"><div><span class="dd-kicker">当前区域</span><h3>${curD.icon} ${curD.name}</h3></div><button class="btn tiny" id="cityOverview">返回城市总览</button></div><div class="dd-layout"><div class="dd-zoom" style="--zx:${curD.zoomX || curD.x}%;--zy:${curD.zoomY || curD.y}%"><img src="assets/img/city-overview-chengdu-mvp.png" alt=""><span class="dd-zoom-label">${curD.name}</span></div><div class="dd-copy"><p>${curD.desc}</p><div class="dd-facilities">${(curD.facilities || []).map(f => `<span>${f}</span>`).join("")}</div><div class="dd-facts"><span>可做行动 ${dActs.length || _weekActs.length}</span><span>${curDist === recDist ? "主线建议区域" : "自由探索区域"}</span></div></div></div></div>`
         : `<div class="district-overview"><div class="do-top"><span>城市总览</span><b>先点一个区域，再安排本周行动</b></div><div class="district-list">${overview}</div></div>`;
-      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 城市俯瞰图${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid">${svg}${dots}</div></div>`;
+      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 城市片区图${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid">${svg}${dots}</div></div>`;
     }
     const done = s._weekActs || {};
     // ★行动格（slots）真正接管周回合（doc §2）：用完格子即可结束本周；hours 退为体力/过劳的次级成本。

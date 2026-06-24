@@ -970,7 +970,7 @@ h2{font-size:26px;margin-bottom:6px}
 /* Real city overview map: photographic board + district drilldown. */
 .citymap-grid{
   height:520px;
-  background:#090d14;
+  background:#d7e3e6;
 }
 .cm-photo{
   position:absolute;
@@ -983,7 +983,7 @@ h2{font-size:26px;margin-bottom:6px}
   height:100%;
   object-fit:cover;
   display:block;
-  filter:saturate(.95) contrast(1.08) brightness(.74);
+  filter:saturate(1.04) contrast(1.02) brightness(1);
   transform:scale(1.015);
 }
 .cm-vignette{
@@ -991,10 +991,7 @@ h2{font-size:26px;margin-bottom:6px}
   inset:0;
   pointer-events:none;
   border-radius:8px;
-  background:
-    radial-gradient(72% 52% at 50% 46%,rgba(255,255,255,.04),transparent 58%),
-    linear-gradient(180deg,rgba(4,8,14,.08),rgba(4,8,14,.50)),
-    radial-gradient(90% 70% at 50% 50%,transparent 52%,rgba(0,0,0,.48) 100%);
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02));
 }
 .cm-rec-glow{
   position:absolute;
@@ -1012,12 +1009,45 @@ h2{font-size:26px;margin-bottom:6px}
   pointer-events:none;
 }
 .cm-dist{
-  background:rgba(8,12,18,.70);
-  border-color:rgba(232,241,255,.34);
-  backdrop-filter:blur(5px);
+  min-width:0;
+  padding:0;
+  justify-content:center;
+  background:rgba(255,196,86,.10);
+  border:2px solid rgba(255,196,86,.95);
+  border-radius:18px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.32), inset 0 0 30px rgba(255,196,86,.13), 0 8px 20px rgba(0,0,0,.16);
+  backdrop-filter:none;
 }
 .cm-dist.sel{
-  background:rgba(74,44,12,.92);
+  background:rgba(255,196,86,.24);
+  border-color:#fff3c8;
+  box-shadow:0 0 0 2px rgba(255,176,55,.85), inset 0 0 34px rgba(255,196,86,.22), 0 0 28px rgba(255,176,55,.35);
+}
+.cm-dist.rec:not(.sel){
+  border-color:#6ed2ff;
+  background:rgba(78,178,255,.12);
+}
+.cm-dist .cm-name{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  max-width:90%;
+  padding:5px 9px;
+  border-radius:999px;
+  background:rgba(8,12,18,.78);
+  color:#fff6dc;
+  font-size:12px;
+  font-weight:800;
+  line-height:1.1;
+  box-shadow:0 2px 8px rgba(0,0,0,.32);
+  white-space:normal;
+}
+.cm-dist:hover{
+  background:rgba(255,196,86,.20);
+  border-color:#fff3c8;
+}
+.cm-dist .cm-n,.cm-dist .cm-ico{
+  display:none;
 }
 .district-overview,.district-detail{
   margin:12px 0;
@@ -1120,6 +1150,64 @@ h2{font-size:26px;margin-bottom:6px}
   line-height:1.55;
   font-size:13px;
 }
+.dd-layout{
+  display:grid;
+  grid-template-columns:minmax(260px,.9fr) minmax(280px,1fr);
+  gap:12px;
+  align-items:stretch;
+}
+.dd-zoom{
+  position:relative;
+  min-height:220px;
+  overflow:hidden;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,.16);
+  background:#111;
+}
+.dd-zoom img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:var(--zx) var(--zy);
+  transform:scale(2.35);
+  filter:saturate(1.03) contrast(1.03) brightness(1.02);
+}
+.dd-zoom::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  border:2px solid rgba(255,196,86,.78);
+  box-shadow:inset 0 0 40px rgba(255,196,86,.16);
+  pointer-events:none;
+}
+.dd-zoom-label{
+  position:absolute;
+  left:10px;
+  top:10px;
+  padding:5px 9px;
+  border-radius:999px;
+  background:rgba(8,12,18,.78);
+  color:#fff6dc;
+  font-size:12px;
+  font-weight:800;
+}
+.dd-copy{
+  min-width:0;
+}
+.dd-facilities{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:10px;
+}
+.dd-facilities span{
+  padding:5px 8px;
+  border-radius:999px;
+  border:1px solid rgba(136,174,232,.26);
+  background:rgba(136,174,232,.08);
+  color:#d7e7ff;
+  font-size:11px;
+}
 .dd-facts{
   display:flex;
   flex-wrap:wrap;
@@ -1145,4 +1233,6 @@ h2{font-size:26px;margin-bottom:6px}
 @media(max-width:720px){
   .citymap-grid{height:330px}
   .district-list{grid-template-columns:1fr}
+  .dd-layout{grid-template-columns:1fr}
+  .dd-zoom{min-height:180px}
 }

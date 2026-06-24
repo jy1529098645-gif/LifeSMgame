@@ -11,18 +11,16 @@
 
 // 成都·区域表（x/y 为俯瞰图百分比坐标）。actions = 该区域可做的行动 id（复用 C.actions）。
 const CITY_DISTRICTS = [
-  { id: "campus",       name: "学校/宿舍", icon: "🎓", x: 17, y: 25, desc: "宿舍、自习室、社团海报，和快毕业的焦虑。", actions: ["study", "prep_interview", "ask_senior", "parttime", "rest", "browse"] },
-  { id: "talent_market",name: "招聘会/人才市场", icon: "📨", x: 51, y: 82, desc: "展板、二维码、排队投简历的人，和看不见尽头的竞争。", actions: ["jobhunt", "prep_interview", "ask_senior"] },
-  { id: "office_cbd",   name: "写字楼区", icon: "🏢", x: 49, y: 43, desc: "玻璃幕墙很亮，工牌挂在胸前的人走得很快。", actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "learn_industry"] },
-  { id: "tech_park",    name: "产业园/外包园区", icon: "💻", x: 82, y: 18, desc: "工位、外包项目、甲方需求和凌晨上线。", actions: ["work", "learn_industry", "side_project", "validate_need"] },
-  { id: "rental",       name: "出租屋/城中村", icon: "🏚️", x: 73, y: 55, desc: "押一付三、隔音很差、楼下永远在装修。", actions: ["rest", "move_near_office", "side_project", "cook_home"] },
-  { id: "metro",        name: "地铁/通勤", icon: "🚇", x: 50, y: 88, desc: "早高峰、迟到风险、被挤成纸片的人。", actions: ["move_near_office", "browse", "rest"] },
-  { id: "mall",         name: "商圈/便利店", icon: "🛒", x: 20, y: 76, desc: "吃饭、买衣服、便利店饭团，和工资到账后的短暂错觉。", actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize"] },
-  { id: "park",         name: "公园/棋牌角", icon: "♟️", x: 18, y: 48, desc: "石桌上的残局，嘴毒的大爷，和看不出底细的人。", actions: ["leisure", "exercise", "talk_to_mentor"] },
-  { id: "clinic",       name: "医院/社区诊所", icon: "🏥", x: 79, y: 79, desc: "排队、挂号、体检报告，和舍不得花的钱。", actions: ["health_check", "rest"] },
-  { id: "phone",        name: "手机/网络", icon: "📱", x: 90, y: 66, desc: "招聘软件、朋友圈、小红书、反诈提醒和焦虑信息流。", actions: ["browse", "jobhunt", "invest", "reply_family"] },
-  { id: "home",         name: "家/和父母通话", icon: "🏠", x: 35, y: 19, desc: "饭桌上的唠叨、催促与底气，电话那头渐白的头发。", actions: ["reply_family", "rest", "browse"] },
-  { id: "arbitration",  name: "劳动仲裁窗口", icon: "⚖️", x: 60, y: 29, desc: "攥着证据的人、冷脸 HR 和写满条款的桌子。", actions: ["collect_evidence"] }
+  { id: "campus",       name: "学校片区", icon: "🎓", x: 17, y: 25, w: 24, h: 20, zoomX: 18, zoomY: 24, desc: "宿舍、自习室、社团海报，和快毕业的焦虑。", facilities: ["宿舍楼", "自习室", "校招宣讲厅", "食堂", "地铁口"], actions: ["study", "prep_interview", "ask_senior", "parttime", "rest", "browse"] },
+  { id: "talent_market",name: "人才市场区", icon: "📨", x: 51, y: 82, w: 23, h: 14, zoomX: 50, zoomY: 86, desc: "展板、二维码、排队投简历的人，和看不见尽头的竞争。", facilities: ["招聘大厅", "简历打印店", "面试等候区", "地铁口"], actions: ["jobhunt", "prep_interview", "ask_senior", "browse"] },
+  { id: "office_cbd",   name: "写字楼区", icon: "🏢", x: 49, y: 43, w: 29, h: 26, zoomX: 49, zoomY: 44, desc: "玻璃幕墙很亮，工牌挂在胸前的人走得很快。", facilities: ["公司前台", "开放工位", "会议室", "楼下咖啡", "地铁口"], actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "learn_industry", "move_near_office"] },
+  { id: "tech_park",    name: "产业园区", icon: "💻", x: 82, y: 18, w: 25, h: 20, zoomX: 83, zoomY: 18, desc: "工位、外包项目、甲方需求和凌晨上线。", facilities: ["外包楼", "共享会议室", "项目驻场区", "园区食堂", "地铁口"], actions: ["work", "learn_industry", "side_project", "validate_need", "move_near_office"] },
+  { id: "rental",       name: "城中村租住区", icon: "🏚️", x: 73, y: 55, w: 24, h: 20, zoomX: 73, zoomY: 56, desc: "押一付三、隔音很差、楼下永远在装修。", facilities: ["握手楼", "中介门店", "小卖部", "夜宵摊", "地铁口"], actions: ["rest", "move_near_office", "side_project", "cook_home", "browse"] },
+  { id: "mall",         name: "商圈生活区", icon: "🛒", x: 20, y: 76, w: 24, h: 19, zoomX: 20, zoomY: 76, desc: "吃饭、买衣服、便利店饭团，和工资到账后的短暂错觉。", facilities: ["便利店", "商场", "快餐店", "服装店", "地铁口"], actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize", "browse"] },
+  { id: "park",         name: "公园休闲区", icon: "♟️", x: 18, y: 48, w: 25, h: 23, zoomX: 17, zoomY: 48, desc: "石桌上的残局，嘴毒的大爷，和看不出底细的人。", facilities: ["湖边步道", "棋牌角", "健身器材", "茶摊", "地铁口"], actions: ["leisure", "exercise", "talk_to_mentor", "browse"] },
+  { id: "clinic",       name: "医院片区", icon: "🏥", x: 79, y: 79, w: 25, h: 18, zoomX: 79, zoomY: 79, desc: "排队、挂号、体检报告，和舍不得花的钱。", facilities: ["门诊楼", "体检中心", "药房", "急诊入口", "地铁口"], actions: ["health_check", "rest", "browse"] },
+  { id: "home",         name: "老家联系区", icon: "🏠", x: 35, y: 19, w: 23, h: 16, zoomX: 35, zoomY: 20, desc: "饭桌上的唠叨、催促与底气，电话那头渐白的头发。", facilities: ["家族群", "父母来电", "亲戚饭局", "快递站", "地铁口"], actions: ["reply_family", "rest", "browse"] },
+  { id: "arbitration",  name: "劳动仲裁区", icon: "⚖️", x: 60, y: 29, w: 20, h: 15, zoomX: 60, zoomY: 29, desc: "攥着证据的人、冷脸 HR 和写满条款的桌子。", facilities: ["仲裁窗口", "证据打印店", "调解室", "法律咨询台", "地铁口"], actions: ["collect_evidence", "browse"] }
 ];
 function districtById(id) { return CITY_DISTRICTS.find(d => d.id === id) || null; }
 
@@ -46,7 +44,7 @@ function recommendedDistrict(s) {
     if (s.job && (s.job.industry === "互联网")) return "tech_park";
     return "office_cbd";
   }
-  return "phone";
+  return "talent_market";
 }
 // 当前场景 → 默认落脚区域
 function districtForScene(s) {
@@ -143,9 +141,9 @@ function districtSignal(s, distId) {
   let hot = false;
   if (distId === "arbitration") hot = !!(s.workChains && s.workChains.arb > 0 && s.workChains.arb < 9);
   else if (distId === "clinic") hot = !!(s.healthChain && s.healthChain.stage > 0) || (s.health || 100) < 45;
-  else if (distId === "phone") hot = !!(s.fraud && s.fraud.stage > 0 && s.fraud.stage < 9) || ((s.cash || 0) < 8000 && !s.job);
+  else if (distId === "talent_market") hot = ((s.cash || 0) < 8000 && !s.job);
   else if (distId === "park") hot = !!(s.people && (s.people.chess_exec || s.people.chess_fallen));
-  else if (distId === "metro" || distId === "rental") hot = !!(s.commute && s.commute.far);
+  else if (distId === "rental") hot = !!(s.commute && s.commute.far);
   else if (distId === "office_cbd" || distId === "tech_park") hot = !!(s.workChains && (s.workChains.blame || s.workChains.credit || s.workChains.sever));
   else if (distId === "home") hot = (typeof threadLevel === "function" && threadLevel(s, "family_pressure") >= 30);
   const broke = (s.cash || 0) < 100;   // 连便利店都吃不起
