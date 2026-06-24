@@ -2140,9 +2140,18 @@
   }
 
   /* ============================ 📱 手机：一台真能用的手机 ============================ */
+  // 「绿泡泡」图标：仿微信的两枚白色对话气泡（绿底由 .ph-ic-wx 提供）
+  const WX_ICON = '<svg class="appsvg" viewBox="0 0 100 100" aria-hidden="true">'
+    + '<ellipse cx="41" cy="44" rx="28" ry="23" fill="#fff"/>'
+    + '<path d="M26 61 L17 73 L34 65 Z" fill="#fff"/>'
+    + '<circle cx="33" cy="41" r="3.4" fill="#07a84e"/><circle cx="50" cy="41" r="3.4" fill="#07a84e"/>'
+    + '<ellipse cx="69" cy="64" rx="22" ry="18" fill="#fff"/>'
+    + '<path d="M82 77 L90 87 L76 79 Z" fill="#fff"/>'
+    + '<circle cx="63" cy="62" r="2.7" fill="#07a84e"/><circle cx="76" cy="62" r="2.7" fill="#07a84e"/>'
+    + '</svg>';
   // app 注册表：主屏图标网格按此顺序排列
   const PHONE_APPS = [
-    { id: "wechat", icon: "💬", name: "微信", green: true },
+    { id: "wechat", icon: "💬", svg: WX_ICON, name: "绿泡泡", green: true },
     { id: "news", icon: "📰", name: "头条" },
     { id: "msg", icon: "🔔", name: "通知" },
     { id: "contacts", icon: "📇", name: "通讯录" },
@@ -2177,7 +2186,7 @@
     const nw = Math.round(netWorth(s));
     const icons = PHONE_APPS.map(a => {
       const bd = badges[a.id] || 0;
-      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : ""}">${a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
+      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : ""}">${a.svg || a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
     }).join("");
     return `<div class="ph-home">
       <div class="ph-widgets">
@@ -2286,7 +2295,7 @@
   ];
   function wxChatList() {
     const cs = wxContacts();
-    if (!cs.length) return `<div class="ph-empty">还没有微信好友。多出去走动、认识些人吧。</div>`;
+    if (!cs.length) return `<div class="ph-empty">还没有绿泡泡好友。多出去走动、认识些人吧。</div>`;
     return `<div class="wx-list">${cs.map(c => `<div class="wx-row" data-wxopen="${c.pid}">
       <span class="wx-av">${wxFace(c.fav, c.star)}${c.crisis ? '<i class="wx-dot"></i>' : ""}</span>
       <span class="wx-mid"><span class="wx-top"><b>${c.name}</b><small>${c.role}</small></span><span class="wx-prev">${wxLastLine(c)}</span></span>
@@ -2336,8 +2345,8 @@
   }
   function wxMe() {
     return `<div class="wx-me">
-      <div class="wx-me-top"><span class="wx-me-av">🙂</span><div class="wx-me-id"><b>${s.playerName || "无名之人"}</b><small>微信号：lifesim_${s.age}${(s.playerName || "me").length}</small><small>📍 ${s.city ? C._util.cityFull(s.city) : "地球某处"}</small></div></div>
-      <div class="wx-me-wallet"><span>💰 微信钱包 · 零钱</span><b>¥${Math.round(s.cash || 0).toLocaleString()}</b></div>
+      <div class="wx-me-top"><span class="wx-me-av">🙂</span><div class="wx-me-id"><b>${s.playerName || "无名之人"}</b><small>泡泡号：bubble_${s.age}${(s.playerName || "me").length}</small><small>📍 ${s.city ? C._util.cityFull(s.city) : "地球某处"}</small></div></div>
+      <div class="wx-me-wallet"><span>💰 泡泡钱包 · 零钱</span><b>¥${Math.round(s.cash || 0).toLocaleString()}</b></div>
       <div class="ap-foot"><button class="btn" data-app="wallet">打开钱包 →</button></div>
     </div>`;
   }
@@ -2347,7 +2356,7 @@
     const tabs = [["chats", "💬 聊天"], ["moments", "📸 朋友圈"], ["me", "👤 我"]].map(([k, t]) => `<button class="wx-tab ${tab === k ? "on" : ""}" data-wxtab="${k}">${t}</button>`).join("");
     const body = tab === "moments" ? wxMoments() : tab === "me" ? wxMe() : wxChatList();
     const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
-    return phoneHeader("💬 微信", "绿泡泡 · " + (tab === "moments" ? "朋友圈" : tab === "me" ? "个人" : "聊天"))
+    return phoneHeader("🟢 绿泡泡", tab === "moments" ? "朋友圈" : tab === "me" ? "个人" : "聊天")
       + `<div class="wx-tabs">${tabs}</div>${msg}${body}`;
   }
   // 微信交互：回复 / 借钱 / 点赞 / 发朋友圈（都真改状态）
@@ -2364,7 +2373,7 @@
       const amt = 2000 + Math.round(f * 80); add(s, "cash", amt); wxFav(p, -3); add(s, "network", 1);
       log.push({ me: false, text: `没问题，给你转 ¥${amt.toLocaleString()} 了，先应急。` });
       s._phoneMsg = `💸 ${p.name} 二话不说借了你 ¥${amt.toLocaleString()}——人情债也是债，记得还。（对方好感 -3）`;
-      s.timeline.push({ age: s.age, text: `微信向 ${p.name} 借到 ¥${amt.toLocaleString()}。` });
+      s.timeline.push({ age: s.age, text: `用绿泡泡向 ${p.name} 借到 ¥${amt.toLocaleString()}。` });
     } else {
       wxFav(p, -4);
       log.push({ me: false, text: pick(["不好意思啊，我最近也紧……", "哎我这阵子也周转不开诶。", "下次吧下次，见谅。"]) });
@@ -2385,7 +2394,7 @@
     log.push({ me: true, text: r.my });
     log.push({ me: false, text: typeof r.reply === "function" ? r.reply(p) : r.reply });
     if (log.length > 12) s._wxlog[p.id] = log.slice(-12);
-    if (r.cost) s.timeline.push({ age: s.age, text: `微信上${id === "hb" ? "给 " + p.name + " 发了红包" : "请 " + p.name + " 吃饭"}（¥${r.cost}）。` });
+    if (r.cost) s.timeline.push({ age: s.age, text: `用绿泡泡${id === "hb" ? "给 " + p.name + " 发了红包" : "请 " + p.name + " 吃饭"}（¥${r.cost}）。` });
     render();
   }
   function wxLike(pid) {
@@ -2623,9 +2632,11 @@
     document.querySelectorAll("[data-wxpost]").forEach(b => b.onclick = () => { wxPost(b.dataset.wxpost); });
     // 理财买卖/区间/图表
     bindMarket();
-    // 电脑：搞钱工作台 / 学习充电站
+    // 电脑：搞钱工作台 / 学习充电站 / 网购 / 游戏厅
     document.querySelectorAll("[data-gig]").forEach(b => b.onclick = () => { pcWorkDo(b.dataset.gig); });
     document.querySelectorAll("[data-course]").forEach(b => b.onclick = () => { pcStudyDo(b.dataset.course); });
+    document.querySelectorAll(".buybtn[data-buy]").forEach(b => b.onclick = () => { const it = C.consumption.find(x => x.id === b.dataset.buy); if (it) { buy(it); render(); } });
+    const pg = document.getElementById("pcGamePlay"); if (pg) pg.onclick = () => { pcGameDo(); };
   }
 
   /* ============================ 💻 电脑（笔记本 / 台式）============================ */
@@ -2633,10 +2644,14 @@
   const PC_APPS = [
     { id: "trade", icon: "📈", name: "交易台" },
     { id: "work", icon: "💼", name: "搞钱工作台" },
-    { id: "data", icon: "📊", name: "数据看板" },
     { id: "study", icon: "📚", name: "学习充电站" },
+    { id: "shop", icon: "🛒", name: "网购" },
+    { id: "mail", icon: "📧", name: "邮箱" },
+    { id: "data", icon: "📊", name: "数据看板" },
+    { id: "games", icon: "🎮", name: "游戏厅" },
+    { id: "assistant", icon: "🤖", name: "智能助手" },
     { id: "browser", icon: "🌐", name: "浏览器" },
-    { id: "wechat", icon: "💬", name: "微信", green: true }
+    { id: "wechat", icon: "💬", svg: WX_ICON, name: "绿泡泡", green: true }
   ];
   const PC_GIGS = [
     { id: "freelance", icon: "💻", label: "接私活 · 写代码", stat: "knowledge", base: 1200, mood: -1, stress: 2, txt: "熬夜赶完需求，钱到账，人也熬虚了。" },
@@ -2675,7 +2690,7 @@
   }
   function pcHome() {
     const nw = Math.round(netWorth(s));
-    const icons = PC_APPS.map(a => `<button class="pc-app" data-app="${a.id}"><span class="pc-ic${a.green ? " ph-ic-wx" : ""}">${a.icon}</span><span class="pc-nm">${a.name}</span></button>`).join("");
+    const icons = PC_APPS.map(a => `<button class="pc-app" data-app="${a.id}"><span class="pc-ic${a.green ? " ph-ic-wx" : ""}">${a.svg || a.icon}</span><span class="pc-nm">${a.name}</span></button>`).join("");
     return `<div class="pc-home">
       <div class="pc-widgets">
         <div class="pc-w pc-w-clock"><div class="pc-clock">${phoneClock()}</div><div class="pc-date">${s.year}年${seasonName()} · ${s.age}岁</div></div>
@@ -2724,9 +2739,66 @@
       ${infl ? `<div class="pc-data-line">🏛️ 影响力：${infl}</div>` : ""}
       <div class="stk-sec">行业风向</div>${industryBoardHTML() || '<div class="ph-empty">暂无行业数据。</div>'}`;
   }
+  // —— 网购：复用消费品库，电脑大屏一站买齐 ——
+  function pcShop() {
+    const msg = s._buyMsg ? `<div class="wl-msg">${s._buyMsg}</div>` : "";
+    return phoneHeader("🛒 网购 · 一站买齐", "和「消费」同款货架，下单更方便") + msg
+      + `<div class="shop pc-shop">${shopGroupsHTML()}</div>`;
+  }
+  // —— 邮箱：正式来信（offer / 对账单 / 证书 / 钓鱼），随状态生成 ——
+  function pcMail() {
+    const list = [];
+    const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null;
+    if (s._pcWorkWk === s.week) list.push({ av: "💼", who: "接单平台", sub: "稿酬已结算", text: "您本周的任务报酬已打款至绑定账户，请注意查收。期待下次合作。", to: "wallet" });
+    if (s._pcStudyWk === s.week) list.push({ av: "🎓", who: "在线学堂", sub: "结课证书", text: "恭喜完成本周课程！证书已发放到账户，继续保持学习节奏。" });
+    if (!s.job && !has(s, "startup_done")) list.push({ av: "🧑‍💼", who: "猎头 · Linda", sub: "一个机会", text: "看到你的背景，手上有几个岗位很匹配。方便的话回个话，详聊。（去「人生」页投简历/面试）", to: "play" });
+    if (s.job) list.push({ av: "🏢", who: "公司 HR", sub: "工资条", text: `本月薪酬明细已生成。税后到手已发放，相关社保公积金照常缴纳。` });
+    if (mb) list.push({ av: "🏦", who: "银行对账", sub: "月度账单", text: `本月各项支出合计约 ¥${mb.total.toLocaleString()}。可在「钱包」查看坐吃山空可撑月数。`, to: "wallet" });
+    list.push({ av: "🎣", who: "中奖通知（可疑）", sub: "您已被抽中", text: "尊敬的用户：您荣获一等奖 ¥888,888，请点击链接填写银行卡领取……（一眼诈骗，已自动归类垃圾邮件）", spam: true });
+    const rows = list.map(m => `<button class="mail-row${m.spam ? " spam" : ""}" ${m.to ? `data-${["play", "social", "shop", "market"].includes(m.to) ? "screen" : "app"}="${m.to}"` : ""}>
+      <span class="mail-av">${m.av}</span>
+      <span class="mail-mid"><span class="mail-top"><b>${m.who}</b><small>${m.sub}</small></span><span class="mail-prev">${m.text}</span></span>
+    </button>`).join("");
+    return phoneHeader("📧 邮箱", `${list.length} 封邮件`) + `<div class="mail-list">${rows}</div>`;
+  }
+  // —— 游戏厅：放松解压（重复可玩，效用递减）+ 一键进真·小游戏/棋牌 ——
+  function pcGames() {
+    const n = s._pcGameN || 0;
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    const mood = n >= 6 ? "玩太久了，眼睛发酸，越玩越空。" : n >= 3 ? "再来一把……就一把。" : "酣畅淋漓，压力小了不少。";
+    return phoneHeader("🎮 游戏厅", `已玩 ${n} 局`) + msg
+      + `<div class="rl-stage"><div class="rl-clip">🕹️ ${n ? "GG！又是一局酣战。" : "选个游戏，放松一下。"}</div><div class="rl-mood">${mood}</div></div>`
+      + `<div class="ap-foot"><button class="btn primary" id="pcGamePlay">🎮 来一局（放松）</button><button class="btn" data-screen="mgmenu">🎲 进小游戏厅 →</button></div>`
+      + `<p class="ap-note">打游戏能解压、降压力，但玩多了心情红利递减、人也更累。劳逸结合才走得远。</p>`;
+  }
+  function pcGameDo() {
+    s._pcGameN = (s._pcGameN || 0) + 1;
+    const moodGain = s._pcGameN <= 2 ? 3 : s._pcGameN <= 5 ? 1 : 0;
+    add(s, "mood", moodGain); add(s, "stress", -Math.max(1, 3 - Math.floor(s._pcGameN / 2)));
+    if (s._pcGameN >= 7) add(s, "health", -1);
+    render();
+  }
+  // —— 智能助手：根据当前处境给出可操作建议（只读参谋）——
+  function pcAssistant() {
+    const tips = [];
+    const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null;
+    const runway = mb && mb.total > 0 ? ((s.cash || 0) + (s.assets || 0)) / mb.total : 99;
+    if (runway < 6) tips.push("⚠️ 你的现金流告急（可撑不到半年）。优先开「搞钱工作台」接活，或减少大额消费。");
+    if (s.health < 35) tips.push("❤️ 健康偏低，是唯一直接影响寿命的维度。少熬夜、去「游戏厅/旅行」降压，必要时就医。");
+    if (s.mood < 35) tips.push("🙂 心情低迷会拖累状态。刷会短视频、打两局游戏、给好友发个红包都能回血。");
+    if (s.stress > 70) tips.push("😣 压力爆表，容易出事。安排放松，别硬扛。");
+    if (s.knownSignals) { const hot = Object.keys(s.knownSignals).filter(id => (s.knownSignals[id].confidence || 0) >= 50 && SIGNAL_LABEL[id]); if (hot.length) tips.push(`📡 你已嗅到风向：${hot.slice(0, 3).map(id => SIGNAL_LABEL[id]).join("、")}。在「交易台」顺着趋势埋伏。`); }
+    if (s.eraWind) tips.push(`🌪️ 当下风口大致在「${s.eraWind}」一带。多读「浏览器」新闻、在交易台对应板块找机会。`);
+    const minK = C.STAT_KEYS.reduce((a, k) => (s.stats[k] < s.stats[a] ? k : a), C.STAT_KEYS[0]);
+    tips.push(`📚 你最弱的一项是「${STAT_CN[minK] || minK}」（${Math.round(s.stats[minK])}）。去「学习充电站」针对性补一补。`);
+    if ((s.network || 0) < 25) tips.push("🤝 人脉偏薄。多在「绿泡泡」走动、发红包，关键时刻才有人接得住你。");
+    tips.push("💡 一周能接一次私活、上一门课，记得每周都用上——复利在时间这边。");
+    return phoneHeader("🤖 智能助手", "看了你的处境，给几条建议")
+      + `<div class="pc-tips">${tips.map(t => `<div class="pc-tip-row">${t}</div>`).join("")}</div>`;
+  }
   function pcScreenBody() {
     if (pcApp === "home") return pcHome();
-    const m = { trade: pcTrade, work: pcWork, data: pcData, study: pcStudy, browser: appNews, wechat: appWechat };
+    const m = { trade: pcTrade, work: pcWork, data: pcData, study: pcStudy, shop: pcShop, mail: pcMail, games: pcGames, assistant: pcAssistant, browser: appNews, wechat: appWechat };
     return (m[pcApp] || pcHome)();
   }
   function renderPc() {
@@ -2740,18 +2812,15 @@
     } else {
       inner = `<div class="pc-screen ${onHome ? "is-home" : ""}">${pcScreenBody()}</div>`;
     }
+    const nw = Math.round(netWorth(s));
     app().innerHTML = `<div class="screen">${navBar("pc")}
-      <div class="play-cols">
-        <section class="play-main">
-          <div class="pcdev ${kind === "desktop" ? "desktop" : "laptop"}">
-            <div class="pc-topbar"><span class="pc-dots"><i></i><i></i><i></i></span><span class="pc-wtitle">${title} · 荒诞人生 OS</span><button class="pc-close" id="pcClose">✕</button></div>
-            <div class="pc-body">${inner}</div>
-            ${kind === "laptop" ? `<div class="pc-hinge"></div>` : ""}
-          </div>
-        </section>
-        <aside class="play-side">${dashboard()}
-          <div class="scene-hero" style="${C.images.styleBg("market", 1200)}"><span class="scene-cap">${title} · 比手机顺手的家伙</span></div>
-        </aside>
+      <div class="pc-stage">
+        <div class="pcdev ${kind === "desktop" ? "desktop" : "laptop"}">
+          <div class="pc-topbar"><span class="pc-dots"><i></i><i></i><i></i></span><span class="pc-wtitle">${title} · 荒诞人生 OS</span><button class="pc-close" id="pcClose">✕</button></div>
+          <div class="pc-body">${inner}</div>
+        </div>
+        ${kind === "laptop" ? `<div class="pc-deck"></div>` : `<div class="pc-stand"></div><div class="pc-foot"></div>`}
+        <div class="pc-statusline">📅 ${s.year}年${seasonName()} · ${s.age}岁　💰 现金 ¥${Math.round(s.cash || 0).toLocaleString()}　📊 身价 ¥${nw.toLocaleString()}　❤️ ${Math.round(s.health)}　🙂 ${Math.round(s.mood)}</div>
       </div></div>`;
     bindNav();
     const close = document.getElementById("pcClose"); if (close) close.onclick = () => { screen = "play"; render(); };
@@ -2963,10 +3032,11 @@
     s.timeline.push({ age: s.age, text: `买了「${item.name}」（¥${item.price.toLocaleString()}）。` });
     s._buyMsg = `🛒 你拿下了「${item.name}」。${(item.social || 0) >= 6 ? "消息很快传开，圈子里看你的眼神都不一样了——大多数人热络了几分，也有人撇了撇嘴。" : "钱花出去，心情好了不少。"}`;
   }
-  function renderShop() {
+  // 消费品分组（可复用：消费大屏 / 电脑网购）
+  function shopGroupsHTML() {
     const owned = id => has(s, "bought_" + id);
     const kinds = [...new Set(C.consumption.map(i => i.kind))];
-    const groups = kinds.map(kd => {
+    return kinds.map(kd => {
       const items = C.consumption.filter(i => i.kind === kd).map(it => {
         const can = s.cash >= it.price; const got = owned(it.id);
         return `<div class="shopcard ${got ? "got" : (can ? "" : "poor")}">
@@ -2979,6 +3049,9 @@
       }).join("");
       return `<div class="shop-kind">「${kd}」</div>${items}`;
     }).join("");
+  }
+  function renderShop() {
+    const groups = shopGroupsHTML();
     const msg = s._buyMsg ? `<div class="logbox"><div class="log">${s._buyMsg}</div></div>` : "";
     app().innerHTML = `<div class="screen">${navBar("shop")}
       <div class="play-cols">
