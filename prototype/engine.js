@@ -1738,7 +1738,7 @@
       }).join("");
       const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
       districtPanelHtml = "";
-      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— ${curD ? curD.name : "城市片区图"}${recDist && !curD ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid${curD ? " detail" : ""}">${svg}${dots}</div></div>`;
+      cityMapHtml = `<div class="citymap"><div class="citymap-h">${curD ? `${curD.icon} ${curD.name}` : `🗺️ 城市大地图${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}`}</div><div class="citymap-grid${curD ? " detail" : ""}">${svg}${dots}</div></div>`;
     }
     const done = s._weekActs || {};
     // ★行动格（slots）真正接管周回合（doc §2）：用完格子即可结束本周；hours 退为体力/过劳的次级成本。
