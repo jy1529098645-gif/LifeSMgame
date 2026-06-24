@@ -6,6 +6,13 @@
   --green:#5fd38b; --red:#ff6b6b; --blue:#5b8cff; --purple:#a98bff; --pink:#ff7eb0;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* 全局极细滚动条（省地方） */
+*{scrollbar-width:thin;scrollbar-color:#3a3a44 transparent}
+*::-webkit-scrollbar{width:5px;height:5px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#3a3a44;border-radius:3px}
+*::-webkit-scrollbar-thumb:hover{background:#50505c}
+*::-webkit-scrollbar-corner{background:transparent}
 body{
   background:radial-gradient(1200px 700px at 70% -10%, #1a1a24 0%, var(--bg) 60%);
   color:var(--txt); font-family:-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
@@ -376,8 +383,9 @@ h2{font-size:26px;margin-bottom:6px}
 /* 朋友圈 */
 .wxw-subtop{display:flex;align-items:center;padding:10px;background:#1b2026;border-bottom:1px solid #000;position:sticky;top:0;z-index:3}
 .wxw-subtop .wxw-title{flex:1}
-.mo-cover{position:relative;height:150px;margin-bottom:42px}
-.mo-cover-bg{position:absolute;inset:0;background-size:cover;background-position:center;filter:brightness(.7)}
+.mo-cover{position:relative;height:160px;margin-bottom:42px;background-size:cover;background-position:center;box-shadow:inset 0 -60px 80px rgba(0,0,0,.35)}
+.mo-cover-btn{position:absolute;left:12px;top:12px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;backdrop-filter:blur(4px)}
+.mo-cover-btn:hover{background:rgba(0,0,0,.55)}
 .mo-cover-me{position:absolute;right:14px;bottom:-30px;display:flex;align-items:flex-end;gap:10px}
 .mo-cover-name{color:#eef0f2;font-size:16px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.8);margin-bottom:8px}
 .mo-cover-av{width:60px;height:60px;border-radius:10px;background:#2a313a;display:flex;align-items:center;justify-content:center;font-size:34px;border:2px solid #0e1217}
@@ -398,6 +406,20 @@ h2{font-size:26px;margin-bottom:6px}
 .mo-pubbtn{flex:1;padding:8px;border:1px solid #2a313a;border-radius:8px;background:#20262d;color:#dfe2e6;font-size:12px;cursor:pointer}
 .mo-pubbtn:disabled{opacity:.4;cursor:not-allowed}
 .mo-pub-tip{display:block;font-size:10px;color:#6f767e;margin-top:6px}
+/* 朋友圈配图 */
+.mo-pics{display:grid;gap:4px;margin-top:8px}
+.mo-pics.n1{grid-template-columns:minmax(0,60%)}
+.mo-pics.n3{grid-template-columns:repeat(3,1fr)}
+.mo-pics.n4{grid-template-columns:repeat(2,1fr);max-width:200px}
+.mo-pic{aspect-ratio:1/1;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:26px;overflow:hidden}
+.mo-pics.n1 .mo-pic{aspect-ratio:4/3}
+/* 群聊发言人名字 */
+.wxb-col{display:flex;flex-direction:column;gap:3px;min-width:0}
+.wxb-who{font-size:11px;color:#8a9099;margin-left:2px}
+.wxb-col .wxb-txt::before{top:8px}
+/* 家人头像/会话强调 */
+.wxw-av.grp{background:linear-gradient(160deg,#1fd25f,#0a7d3c);font-size:20px}
+.wxw-chat.fam .wxw-crow b{color:#ff8fae}
 
 /* 计算器 */
 .cl-disp{text-align:right;font-size:42px;font-weight:300;padding:24px 12px 18px;min-height:44px;font-variant-numeric:tabular-nums;overflow:hidden}

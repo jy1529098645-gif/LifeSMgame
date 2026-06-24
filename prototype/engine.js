@@ -380,6 +380,7 @@
     if (st.gender === "男") { add(st, "body", 2); add(st, "strategy", 2); }
     else { add(st, "charm", 2); add(st, "mind", 2); }
     d.flags.forEach(f => flag(st, f));
+    st.assetTier = d.assetTier || "worker";                          // 出身家底档（绿泡泡亲情剧本/家里兜底用）
     st._familyNet = familyNetFor(d.assetTier, st, st.difficulty);   // 新手保护期：家里能兜多久/给多宽，由出身+难度定
     // ★批次2：从捏人 flag 解析大学专业 → s.major（求职门槛用）+ 框定「大三在校」起点
     const mf = d.flags.find(f => f.indexOf("bg_major_major_") === 0);
@@ -646,6 +647,8 @@
     // 每 4 周 ≈ 一个月：月度收支结算（先发工资收入，再扣账单），生成「月度结算单」弹窗
     if (s.week % 4 === 0) {
       const income = [];   // 本月收入项（月底发薪 + 年终奖 + 已即时到账的零工）
+      // 🧧 爸/妈月初生活费红包（绿泡泡对话里也能看到）；断奶后停发
+      if (!has(s, "family_net_ended") && famMonthlyAllowance() && s._famAllowNotice) income.push({ emoji: "🧧", label: FAM_NAME[s._famAllowNotice.who] + "·生活费", amount: s._famAllowNotice.amt });
       // 💼 月薪：在职就月底发（按本月出勤比例，满 4 周拿满，保底 60%）
       if (s.job) {
         const ratio = Math.max(0.6, Math.min(1, (s._monthWork || 0) / 4));
@@ -2136,20 +2139,114 @@
   // 联系人定位：pid = "cast:KEY"（关键角色，用 trust）或 "soc:IDX"（社交圈，用 attitude）
   function wxPeer(pid) {
     if (!pid) return null;
+    if (pid.indexOf("fam:") === 0) { const k = pid.slice(4); if (!FAM_NAME[k]) return null; return { id: pid, fam: true, famKey: k, group: (k === "home" || k === "clan"), name: FAM_NAME[k], role: FAM_ROLE[k], av: FAM_AV[k] }; }
     if (pid.indexOf("cast:") === 0) { const k = pid.slice(5); const c = s.cast && s.cast[k]; return c ? { id: pid, obj: c, isCast: true, name: c.name, role: c.role } : null; }
     const i = +pid.slice(4); const n = (s.social || [])[i]; return n ? { id: pid, obj: n, isCast: false, idx: i, name: n.name, role: n.role } : null;
   }
-  function wxFavVal(p) { return Math.round(p.isCast ? (p.obj.trust || 50) : (p.obj.attitude || 50)); }
-  function wxFav(p, d) { if (p.isCast) p.obj.trust = Math.max(0, Math.min(100, (p.obj.trust || 50) + d)); else p.obj.attitude = Math.max(0, Math.min(100, (p.obj.attitude || 50) + d)); }
+  function wxFavVal(p) { if (p.fam) return Math.round(famTrust(p.group ? "avg" : p.famKey)); return Math.round(p.isCast ? (p.obj.trust || 50) : (p.obj.attitude || 50)); }
+  function wxFav(p, d) { if (p.fam) { if (!p.group) famAdjust(p.famKey, d); return; } if (p.isCast) p.obj.trust = Math.max(0, Math.min(100, (p.obj.trust || 50) + d)); else p.obj.attitude = Math.max(0, Math.min(100, (p.obj.attitude || 50) + d)); }
   function wxFace(fav, cast) { return cast ? "🎭" : fav >= 70 ? "😊" : fav >= 40 ? "🙂" : "😒"; }
   function wxSeed(str) { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 100000; return h; }
-  // 微信好友 = 关键角色 + 关系靠前的社交圈
+  /* ===== 亲情：爸 / 妈 + 一家人小群 + 大家族大群（绿泡泡专属虚拟联系人，不进 cast）===== */
+  const FAM_AV = { dad: "👨", mom: "👩", home: "💗", clan: "🏮" };
+  const FAM_NAME = { dad: "爸", mom: "妈", home: "💗 一家人", clan: "👨‍👩‍👧‍👦 大家族群" };
+  const FAM_ROLE = { dad: "父亲", mom: "母亲", home: "家庭群 · 就咱仨", clan: "亲戚群 · 七大姑八大姨" };
+  // 三套家庭剧本，随出身/籍贯不同：humble 寒门苦出身 / worker 工薪 / wealthy 优渥
+  const FAM_DATA = {
+    humble: {
+      blurb: "家在小地方，爸妈起早贪黑供你读出来，省吃俭用、话不多，把最好的都留给了你。",
+      dad: { open: ["在外头还顺利不？吃饭莫省，钱不够说一声。", "你妈念叨你好几回了，得空回个话。", "家里都好，你莫挂心，照顾好自己。", "活路再忙也要按时吃饭，身体是本钱。"], reply: ["嗯，晓得了，你也是。", "行，那爸不打扰你忙。", "乖，听话。"] },
+      mom: { open: ["崽啊，天凉了记得加衣裳。", "钱够用不？妈这有，莫亏着自己。", "昨天炖了汤，可惜你不在屋头。", "想你了，过年早点回来嘛。"], reply: ["哎哟知道你忙，妈不多说。", "记得吃饭，啊。", "在外头注意身体。"] },
+      home: [{ w: "妈", t: "崽今天吃饭没得哦？" }, { w: "爸", t: "少问两句，娃儿忙。" }, { w: "妈", t: "炖了排骨，拍给你看 [图片]" }, { w: "妈", t: "天气预报说要降温，记到加衣裳。" }, { w: "爸", t: "钱不够给屋头说，莫硬扛。" }],
+      clan: [{ w: "大伯", t: "都转发个：早起一杯水，养生又长寿🌿" }, { w: "二姨", t: "娃儿在大城市出息咯，几时带对象回来嘛~" }, { w: "三舅", t: "@所有人 周末杀年猪，都回来吃刨汤！" }, { w: "幺姑", t: "哪个晓得这个药酒方子灵不灵哦？" }, { w: "表哥", t: "恭喜恭喜，发个红包接龙图个热闹🧧" }],
+      allow: [1500, 1600, 1700], allowNote: { low: ["这个月就这些，省着点用，莫乱花。", "家里也紧，紧着吃饭要紧。"], high: ["不够再跟妈说，莫饿着自己。", "拿去，在外头别亏待自己。"] }
+    },
+    worker: {
+      blurb: "普通工薪家庭，爸妈是厂里/单位的老实人，最盼你稳定、别折腾，唠叨里全是操心。",
+      dad: { open: ["最近工作咋样？别太拼，身体要紧。", "你妈让我问你周末回不回来吃饭。", "要不考虑考个编制？稳当。", "房租交了没？手头紧就说话。"], reply: ["嗯，知道就好。", "行，你忙吧。", "注意身体。"] },
+      mom: { open: ["按时吃饭啊，别老点外卖。", "对象处得咋样了？妈不催，就问问。", "降温了，多穿点。", "钱够花不？妈给你打点过去。"], reply: ["哎，妈就唠叨这几句。", "记得早点睡。", "在外注意安全。"] },
+      home: [{ w: "妈", t: "今天加班不？别太晚。" }, { w: "爸", t: "周末回来吃饭吧，你妈买了菜。" }, { w: "妈", t: "给你寄了点特产，查收 [图片]" }, { w: "爸", t: "工作稳定最重要，别老想跳。" }, { w: "妈", t: "隔壁王阿姨儿子又升职了……" }],
+      clan: [{ w: "大姨", t: "@大家 转发：这5种食物千万别一起吃！" }, { w: "二叔", t: "娃儿在大公司上班，了不起！" }, { w: "表姐", t: "建了个家族相册，都来传娃娃照片📷" }, { w: "小舅", t: "今年过年聚哪家？投个票。" }, { w: "姑妈", t: "有没得合适的姑娘介绍给我们家娃儿~" }],
+      allow: [1600, 1800, 1900], allowNote: { low: ["这个月先这些，下月发了再补你。", "省着点，别月底吃土。"], high: ["够不够？不够言语一声。", "拿着，该花花，别太省。"] }
+    },
+    wealthy: {
+      blurb: "家境优渥，爸妈见过世面，给得起也舍得给，话里带着分寸，盼你有出息、别躺平。",
+      dad: { open: ["最近在忙什么项目？需要资源跟我说。", "别光顾着玩，正事上点心。", "你妈又给你安排了个饭局，去不去？", "账上钱够吗？不够我让财务转。"], reply: ["嗯，有想法是好事。", "行，自己拿主意。", "注意分寸。"] },
+      mom: { open: ["宝贝，最近气色怎么样？别熬夜。", "周末陪妈去看个展？", "新出的那款表我让人给你留了。", "缺什么直接刷卡，别替我们省。"], reply: ["妈就是想你了。", "照顾好自己。", "早点休息。"] },
+      home: [{ w: "妈", t: "今晚家宴，张姨掌勺，回来吗？" }, { w: "爸", t: "忙就别勉强，正事要紧。" }, { w: "妈", t: "给你订了体检套餐，记得去 [图片]" }, { w: "爸", t: "那个项目我看了，靠谱再投。" }, { w: "妈", t: "李伯伯家闺女回国了，改天聚聚。" }],
+      clan: [{ w: "大伯", t: "@各位 家族基金这季度分红已到账📈" }, { w: "二姑", t: "娃儿这么优秀，考虑接班不？" }, { w: "堂哥", t: "周末游艇趴，都来啊🛥️" }, { w: "姨妈", t: "那块地的事，回头家里碰个头。" }, { w: "舅舅", t: "给孩子们的红包发群里了🧧" }],
+      allow: [1800, 1900, 2000], allowNote: { low: ["先打这些，不够随时说。", "别替我们省，该花花。"], high: ["拿着零花，不够再要。", "别亏待自己，钱不是问题。"] }
+    }
+  };
+  function famArch() {
+    if (s._famArch) return s._famArch;
+    const t = s.assetTier || "worker";
+    const tags = (s.birthplace && s.birthplace.origin && s.birthplace.origin.tags) || [];
+    const humble = ["寒门", "苦瘠", "山村", "旱塬", "缺水", "高寒", "边陲", "农", "矿", "留守", "下岗"];
+    let a = "worker";
+    if (t === "rich" || t === "upper") a = "wealthy";
+    else if (t === "poor" || tags.some(x => humble.some(h => String(x).indexOf(h) >= 0))) a = "humble";
+    s._famArch = a; return a;
+  }
+  function famEnsure() {
+    if (!s._fam) {
+      const base = { humble: 76, worker: 70, wealthy: 64 }[famArch()] || 70;
+      const seed = wxSeed((s.playerName || "") + (s.cohortName || ""));
+      s._fam = { dad: Math.min(92, base - 3 + seed % 7), mom: Math.min(94, base + 2 + (seed * 7) % 7) };
+    }
+    return s._fam;
+  }
+  function famTrust(k) { const f = famEnsure(); return k === "dad" ? f.dad : k === "mom" ? f.mom : Math.round((f.dad + f.mom) / 2); }
+  function famAdjust(k, d) { const f = famEnsure(); if (k === "dad" || k === "mom") f[k] = Math.max(0, Math.min(100, f[k] + d)); }
+  function famBetter() { const f = famEnsure(); return f.dad >= f.mom ? "dad" : "mom"; }
+  function famOpener(p) {
+    const D = FAM_DATA[famArch()];
+    if (p.famKey === "home") return "💗 一家人 · 爸妈和你的小群";
+    if (p.famKey === "clan") return "👨‍👩‍👧‍👦 一大家子，七大姑八大姨都在这。";
+    const pool = (D[p.famKey] || D.mom).open;
+    return pool[(wxSeed(s.playerName || "") + Math.floor(s.week / 4)) % pool.length];
+  }
+  // 群聊气泡线（小群/大家族）：模板 + 玩家在群里发过的话
+  function famGroupLines(key) {
+    const D = FAM_DATA[famArch()];
+    const base = (D[key] || []).slice();
+    const log = (s._wxlog && s._wxlog["fam:" + key]) || [];
+    return base.map(x => ({ me: false, who: x.w, text: x.t })).concat(log);
+  }
+  // 月初固定生活费红包：关系更好的那一方发，金额 1500-2000 整百，受出身约束
+  function famMonthlyAllowance() {
+    const month = Math.floor(s.week / 4);
+    if (s._famAllowMonth === month) return false;
+    s._famAllowMonth = month;
+    const D = FAM_DATA[famArch()];
+    const who = famBetter();
+    const t = famTrust(who);
+    let amt = D.allow[t >= 82 ? 2 : t >= 66 ? 1 : 0];
+    amt = Math.max(1500, Math.min(2000, Math.round(amt / 100) * 100));
+    add(s, "cash", amt);
+    const high = amt >= 1800;
+    const note = pick(D.allowNote[high ? "high" : "low"]);
+    const pid = "fam:" + who;
+    s._wxlog = s._wxlog || {}; const log = s._wxlog[pid] = s._wxlog[pid] || [];
+    log.push({ me: false, text: `[红包] 这个月的生活费，记得查收。` });
+    log.push({ me: false, text: note });
+    if (log.length > 40) s._wxlog[pid] = log.slice(-40);
+    s.timeline.push({ age: s.age, text: `${FAM_NAME[who]}发来这个月生活费 ¥${amt.toLocaleString()}。` });
+    s._famAllowNotice = { who, amt };
+    return true;
+  }
+  // 微信好友 = 亲情(爸/妈/小群/大群) + 关键角色 + 关系靠前的社交圈
   function wxContacts() {
     const arr = [];
-    if (s.cast) Object.keys(s.cast).forEach(k => { const c = s.cast[k]; if (c && c.name) arr.push({ pid: "cast:" + k, name: c.name, role: c.role, fav: Math.round(c.trust || 50), crisis: c.crisis, star: true }); });
-    (s.social || []).map((n, i) => ({ n, i })).sort((a, b) => (b.n.attitude || 0) - (a.n.attitude || 0)).slice(0, 12).forEach(({ n, i }) => arr.push({ pid: "soc:" + i, name: n.name, role: n.role, fav: Math.round(n.attitude || 0) }));
+    arr.push({ pid: "fam:dad", name: "爸", role: "父亲", fav: famTrust("dad"), fam: true, famKey: "dad", av: FAM_AV.dad, star: true });
+    arr.push({ pid: "fam:mom", name: "妈", role: "母亲", fav: famTrust("mom"), fam: true, famKey: "mom", av: FAM_AV.mom, star: true });
+    arr.push({ pid: "fam:home", name: FAM_NAME.home, role: FAM_ROLE.home, fav: famTrust("avg"), fam: true, famKey: "home", group: true, av: FAM_AV.home, star: true });
+    arr.push({ pid: "fam:clan", name: FAM_NAME.clan, role: FAM_ROLE.clan, fav: famTrust("avg"), fam: true, famKey: "clan", group: true, av: FAM_AV.clan, star: true });
+    if (s.cast) Object.keys(s.cast).forEach(k => { const c = s.cast[k]; if (!c || !c.name) return; if (/爸妈|父母|爹娘/.test(c.name + (c.role || ""))) return; /* 父母已拆成独立的爸/妈 */ arr.push({ pid: "cast:" + k, name: c.name, role: c.role, fav: Math.round(c.trust || 50), crisis: c.crisis, star: true }); });
+    (s.social || []).map((n, i) => ({ n, i })).filter(({ n }) => !/爸妈|父母|爹娘|爸爸|妈妈/.test((n.name || "") + (n.role || ""))).sort((a, b) => (b.n.attitude || 0) - (a.n.attitude || 0)).slice(0, 12).forEach(({ n, i }) => arr.push({ pid: "soc:" + i, name: n.name, role: n.role, fav: Math.round(n.attitude || 0) }));
     return arr;
   }
+  function wxAvatarOf(c) { return c.av || wxFace(c.fav, c.star); }
   function wxOpenLine(name, fav, crisis) {
     if (crisis) return (CAST_CRISIS_LABEL[crisis] || "有急事找你") + "……在吗？";
     const pool = fav >= 70 ? ["哈哈最近忙啥呢？", "上次那事多谢你！", "啥时候出来聚聚～"] : fav >= 45 ? ["在吗？", "最近怎么样？", "好久不见。"] : ["嗯。", "有事？", "……"];
@@ -2158,20 +2255,41 @@
   function wxLastLine(c) {
     if (c.crisis) return (CAST_CRISIS_LABEL[c.crisis] || "有急事找你") + "……";
     const log = s._wxlog && s._wxlog[c.pid];
-    if (log && log.length) { const last = log[log.length - 1]; return (last.me ? "我: " : "") + last.text; }
+    if (log && log.length) { const last = log[log.length - 1]; return (last.me ? "我: " : (last.who ? last.who + ": " : "")) + last.text; }
+    if (c.fam) {
+      if (c.famKey === "home") { const h = FAM_DATA[famArch()].home; return "妈: " + h[wxSeed("home") % h.length].t; }
+      if (c.famKey === "clan") { const cl = FAM_DATA[famArch()].clan; const m = cl[wxSeed("clan") % cl.length]; return m.w + ": " + m.t; }
+      const pool = FAM_DATA[famArch()][c.famKey].open; return pool[wxSeed(c.name) % pool.length];
+    }
     return wxOpenLine(c.name, c.fav, null);
   }
   // 熟悉度标签
   function wxFamLabel(fav) { return fav >= 85 ? "❤️ 至交" : fav >= 70 ? "💚 熟络" : fav >= 50 ? "🙂 相识" : fav >= 30 ? "😐 点头之交" : "👋 陌生人"; }
-  // 备注资料：越熟越详细——一层层解锁对方的信息（性格/印象/常驻/癖好/近况）
+  // 生日/年龄的确定性合成（社交圈 NPC 一般没存生日，按名字派生，看着真实即可）
+  const ZODIAC = ["摩羯", "水瓶", "双鱼", "白羊", "金牛", "双子", "巨蟹", "狮子", "处女", "天秤", "天蝎", "射手"];
+  function wxSynthAge(p) { const o = p.obj || {}; if (o.age) return o.age; return 22 + (wxSeed(p.name + "a") % 20); }
+  function wxSynthBday(p) { const o = p.obj || {}; if (o.birthday) return o.birthday; const sd = wxSeed(p.name + "b"); const mo = (sd % 12) + 1; const day = (Math.floor(sd / 12) % 28) + 1; return `${mo}月${day}日 · ${ZODIAC[mo - 1]}座`; }
+  // 备注资料：越熟越详细——一层层解锁对方的信息
   function wxNote(p) {
-    const fav = wxFavVal(p), o = p.obj, lines = [];
+    const fav = wxFavVal(p), lines = [];
+    if (p.fam) {                                  // ★爸妈/家人：不堆资料，血浓于水
+      lines.push(`身份 · ${p.role}`);
+      if (p.group) lines.push(p.famKey === "home" ? "成员 · 爸、妈，还有你" : "成员 · 七大姑八大姨，一大家子");
+      else lines.push(`关系 · ${fav >= 80 ? "无话不说，你的事他都记挂" : fav >= 60 ? "关心你，只是不太会表达" : "有点距离，但终归是家人"}`);
+      lines.push(FAM_DATA[famArch()].blurb);
+      return lines;
+    }
+    const o = p.obj || {};
     lines.push(`身份 · ${p.role}`);
     if (fav >= 30 && !p.isCast && o.kind) lines.push(`性格 · ${o.kind}`);
     if (fav >= 45) {
       if (!p.isCast && o.persona) lines.push(`印象 · ${o.persona.emoji || ""}${o.persona.name || ""}${o.persona.desc ? "，" + o.persona.desc : ""}`);
       if (p.isCast && o.industry && C._util.INDUSTRIES && C._util.INDUSTRIES[o.industry]) lines.push(`行当 · ${C._util.INDUSTRIES[o.industry].name}`);
     }
+    const job = o.job || o.title || o.profession || o.occupation;
+    if (fav >= 50 && (job || o.company)) lines.push(`职位 · ${job || "在职"}${o.company ? " @" + o.company : ""}`);   // 有职位才写职位
+    if (fav >= 55) lines.push(`年龄 · 约 ${wxSynthAge(p)} 岁`);
+    if (fav >= 65) lines.push(`生日 · ${wxSynthBday(p)}`);
     if (fav >= 60 && !p.isCast && o.homeCity) lines.push(`常驻 · ${o.homeCity}${o.residence ? " · " + o.residence : ""}${o.meetable ? " · 可约见" : " · 多远程联系"}`);
     if (fav >= 70 && !p.isCast && o.persona && o.persona.quirk) lines.push(`小癖好 · ${o.persona.quirk}`);
     if (fav >= 75 && p.isCast && o.pressure != null) lines.push(`近况 · ${o.pressure >= 60 ? "压力很大，最近不好过" : o.pressure >= 35 ? "日子还算稳当" : "状态轻松"}${o.crisis ? "，眼下正遇着难处" : ""}`);
@@ -2214,8 +2332,8 @@
     if (!cs.length) return search + `<div class="ph-empty">还没有绿泡泡好友。多出去走动、认识些人吧。</div>`;
     const rows = cs.map(c => {
       const ur = wxUnread(c);
-      return `<div class="wxw-chat" data-wxopen="${c.pid}">
-        <span class="wxw-av">${wxFace(c.fav, c.star)}${ur ? `<i class="wxw-badge">${ur}</i>` : ""}</span>
+      return `<div class="wxw-chat${c.fam ? " fam" : ""}" data-wxopen="${c.pid}">
+        <span class="wxw-av${c.group ? " grp" : ""}">${wxAvatarOf(c)}${ur ? `<i class="wxw-badge">${ur}</i>` : ""}</span>
         <span class="wxw-cmid"><span class="wxw-crow"><b>${c.name}</b><small>${wxTime(c)}</small></span><span class="wxw-cprev">${wxLastLine(c)}</span></span>
       </div>`;
     }).join("");
@@ -2226,9 +2344,9 @@
     const cs = wxContacts();
     const ents = [["🆕", "新的朋友", "screen", "social"], ["👨‍👩‍👧", "群聊", "", ""], ["🏷️", "标签", "", ""], ["📣", "公众号", "app", "news"]];
     const head = `<div class="wxw-search">🔍 搜索</div>` + ents.map(([ic, nm, kind, to]) => `<div class="wxw-ce" ${kind ? `data-${kind === "screen" ? "screen" : "app"}="${to}"` : ""}><span class="wxw-ce-ic">${ic}</span><span>${nm}</span><span class="wxw-ce-go">›</span></div>`).join("");
-    const star = cs.filter(c => c.star), norm = cs.filter(c => !c.star);
-    const sec = (title, arr) => arr.length ? `<div class="wxw-sec">${title}</div>` + arr.map(c => `<div class="wxw-ce contact" data-wxopen="${c.pid}"><span class="wxw-ce-av">${wxFace(c.fav, c.star)}</span><span class="wxw-ce-nm">${c.name}<small>${c.role}</small></span></div>`).join("") : "";
-    return head + sec("★ 关键角色", star) + sec("联系人", norm) + `<div class="wxw-count">${cs.length} 位联系人</div>`;
+    const fam = cs.filter(c => c.fam), star = cs.filter(c => c.star && !c.fam), norm = cs.filter(c => !c.star);
+    const sec = (title, arr) => arr.length ? `<div class="wxw-sec">${title}</div>` + arr.map(c => `<div class="wxw-ce contact" data-wxopen="${c.pid}"><span class="wxw-ce-av">${wxAvatarOf(c)}</span><span class="wxw-ce-nm">${c.name}<small>${c.role}</small></span></div>`).join("") : "";
+    return head + sec("💗 家人", fam) + sec("★ 关键角色", star) + sec("联系人", norm) + `<div class="wxw-count">${cs.length} 位联系人</div>`;
   }
   // —— 发现：朋友圈 + 各功能入口（部分可跳转，部分仅展示）——
   function wxDiscover() {
@@ -2243,31 +2361,43 @@
   }
   // 朋友圈动态文案
   function wxMomentText(c) {
-    const pool = c.fav >= 70 ? ["今天和老友吃饭，聊到深夜，真好。", "生活再难，身边有这些人就值了。", "又是元气满满的一天💪"]
-      : c.fav < 40 ? ["呵呵。", "有些人，认清了就好。", "不想说话。"]
-        : ["周末愉快～", "打工人打工魂😪", "今天天气不错。", "新的一周，加油。", "求推荐好吃的店！"];
+    const pool = c.fav >= 70 ? ["今天和老友吃饭，聊到深夜，真好。", "生活再难，身边有这些人就值了。", "又是元气满满的一天💪", "周末爬了个山，风景绝了。", "终于把拖了半年的事做完了，舒坦。"]
+      : c.fav < 40 ? ["呵呵。", "有些人，认清了就好。", "不想说话。", "成年人的崩溃都是静音的。"]
+        : ["周末愉快～", "打工人打工魂😪", "今天天气不错。", "新的一周，加油。", "求推荐好吃的店！", "通勤路上拍到的晚霞📷", "又是被甲方折磨的一天。", "下班吃顿好的犒劳自己。"];
     return pool[wxSeed(c.name + c.role) % pool.length];
   }
-  // —— 朋友圈整页（封面 + 动态流，微信风）——
+  // 朋友圈配图：渐变色块当"照片"，按种子决定数量(0/1/3/4)
+  const MO_PIC = [["🌅", "linear-gradient(135deg,#ff9a6b,#ff5e8a)"], ["🏞️", "linear-gradient(135deg,#43c6ac,#191654)"], ["🍜", "linear-gradient(135deg,#f7971e,#ffd200)"], ["🐱", "linear-gradient(135deg,#a18cd1,#fbc2eb)"], ["🎂", "linear-gradient(135deg,#ff6a88,#ff99ac)"], ["☕", "linear-gradient(135deg,#c79081,#dfa579)"], ["🌃", "linear-gradient(135deg,#232526,#414345)"], ["🏖️", "linear-gradient(135deg,#2af598,#009efd)"], ["💼", "linear-gradient(135deg,#485563,#29323c)"], ["🍰", "linear-gradient(135deg,#ffecd2,#fcb69f)"]];
+  function wxMoPics(seed) {
+    const cnt = [0, 1, 0, 3, 1, 4, 0, 3, 1][seed % 9];
+    if (!cnt) return "";
+    let html = "";
+    for (let i = 0; i < cnt; i++) { const pi = MO_PIC[(seed + i * 7) % MO_PIC.length]; html += `<div class="mo-pic" style="background:${pi[1]}">${pi[0]}</div>`; }
+    return `<div class="mo-pics n${cnt}">${html}</div>`;
+  }
+  function wxCoverCss() { const w = (typeof WALLPAPERS !== "undefined" ? WALLPAPERS : []).find(x => x.id === (s._wxCover || "dusk")); return w ? w.css : "linear-gradient(160deg,#2a1840,#7a2e5d 55%,#c25e3a)"; }
+  // —— 朋友圈整页（封面 + 动态流 + 配图，微信风）——
   function wxMomentsPage() {
-    const cs = wxContacts().slice(0, 8);
+    const cs = wxContacts().filter(c => !c.fam).slice(0, 9);
     const posted = s._wxPosted === s.week;
-    const cover = `<div class="mo-cover"><div class="mo-cover-bg" style="${C.images.styleBg("travel", 1000)}"></div>
+    const cover = `<div class="mo-cover" style="background:${wxCoverCss()}">
+      <button class="mo-cover-btn" id="wxCover">📷 换封面</button>
       <div class="mo-cover-me"><span class="mo-cover-name">${s.playerName || "我"}</span><span class="mo-cover-av">🙂</span></div></div>`;
     const pub = `<div class="mo-pub"><span class="mo-pub-h">发条朋友圈</span><div class="mo-pub-btns">
       <button class="mo-pubbtn" data-wxpost="flex" ${posted ? "disabled" : ""}>✨ 晒一晒</button>
       <button class="mo-pubbtn" data-wxpost="soul" ${posted ? "disabled" : ""}>🌱 发鸡汤</button>
       <button class="mo-pubbtn" data-wxpost="emo" ${posted ? "disabled" : ""}>🌧️ 吐个槽</button></div>${posted ? '<small class="mo-pub-tip">今天已经发过了。</small>' : ""}</div>`;
     const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
-    const mine = s._wxMyMoment ? `<div class="mo-post mine"><span class="mo-av">🙂</span><div class="mo-body"><b class="mo-name">${s.playerName || "我"}</b><div class="mo-txt">${s._wxMyMoment}</div><div class="mo-time">刚刚</div></div></div>` : "";
+    const mine = s._wxMyMoment ? `<div class="mo-post mine"><span class="mo-av">🙂</span><div class="mo-body"><b class="mo-name">${s.playerName || "我"}</b><div class="mo-txt">${s._wxMyMoment}</div>${wxMoPics(wxSeed("me" + s.week))}<div class="mo-foot"><span class="mo-time">刚刚</span></div></div></div>` : "";
     const posts = cs.length ? cs.map(c => {
+      const sd = wxSeed(c.name + c.role);
       const liked = s._wxLiked && s._wxLiked[c.pid + ":" + s.week];
-      const likes = (wxSeed(c.name) % 28) + 2 + (liked ? 1 : 0);
-      return `<div class="mo-post"><span class="mo-av">${wxFace(c.fav, c.star)}</span><div class="mo-body"><b class="mo-name">${c.name}</b><div class="mo-txt">${wxMomentText(c)}</div>
+      const likes = (sd % 28) + 2 + (liked ? 1 : 0);
+      return `<div class="mo-post"><span class="mo-av">${wxFace(c.fav, c.star)}</span><div class="mo-body"><b class="mo-name">${c.name}</b><div class="mo-txt">${wxMomentText(c)}</div>${wxMoPics(sd)}
         <div class="mo-foot"><span class="mo-time">${wxTime(c)}</span><button class="mo-like ${liked ? "on" : ""}" data-wxlike="${c.pid}">${liked ? "❤️" : "🤍"} ${likes}</button></div></div></div>`;
     }).join("") : `<div class="ph-empty">朋友圈静悄悄的。</div>`;
     return `<div class="wxw-subtop"><button class="wxw-back" id="wxSubBack">‹ 发现</button><span class="wxw-title">朋友圈</span><span style="width:40px"></span></div>
-      <div class="wx-moments">${cover}${pub}${msg}${posts}${mine ? `<div class="wxw-sec">我的</div>${mine}` : ""}</div>`;
+      <div class="wx-moments">${cover}${pub}${msg}${mine ? `<div class="wxw-sec">我的</div>${mine}<div class="wxw-sec">好友动态</div>` : ""}${posts}</div>`;
   }
   function wxMe() {
     const nw = Math.round(netWorth(s));
@@ -2281,17 +2411,32 @@
       <div class="wxw-me-list">${rows.map(([ic, nm, val, kind, to]) => `<div class="wxw-ce" ${kind === "wxsub" ? `data-wxsub="${to}"` : kind ? `data-${kind === "screen" ? "screen" : "app"}="${to}"` : ""}><span class="wxw-ce-ic">${ic}</span><span>${nm}</span>${val ? `<span class="wxw-me-val">${val}</span>` : ""}<span class="wxw-ce-go">›</span></div>`).join("")}</div>`;
   }
   // —— 聊天详情：顶栏 + 气泡（头像+尾巴）+ 备注(可展开) + 输入栏 + ＋面板 ——
+  // 一条「对方」气泡（群里带发言人名字与头像）
+  function wxThemBubble(text, av, who) {
+    return `<div class="wxb them">${who ? `<span class="wxb-av">${av}</span><div class="wxb-col"><span class="wxb-who">${who}</span><div class="wxb-txt">${text}</div></div>` : `<span class="wxb-av">${av}</span><div class="wxb-txt">${text}</div>`}</div>`;
+  }
   function wxChatView() {
     const p = wxPeer(phoneWx.peer);
     if (!p) { phoneWx.peer = null; return wxChatsPage(); }
     const meta = wxContacts().find(c => c.pid === p.id) || {};
     const fav = wxFavVal(p);
-    const log = (s._wxlog && s._wxlog[p.id]) || [];
-    let bubbles = `<div class="wxb them"><span class="wxb-av">${wxFace(fav, p.isCast)}</span><div class="wxb-txt">${wxOpenLine(p.name, fav, meta.crisis)}</div></div>`;
-    bubbles += log.map(m => m.me
-      ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
-      : `<div class="wxb them"><span class="wxb-av">${wxFace(fav, p.isCast)}</span><div class="wxb-txt">${m.text}</div></div>`).join("");
-    const plusGrid = phoneWx.plus ? `<div class="wxc-panel">${WX_REPLIES.map(r => {
+    const av = p.fam ? p.av : wxFace(fav, p.isCast);
+    let bubbles = "";
+    if (p.fam && p.group) {
+      // 群聊：模板成员发言 + 玩家发过的话，带发言人名字
+      famGroupLines(p.famKey).forEach(m => {
+        bubbles += m.me ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
+          : wxThemBubble(m.text, "🧑", m.who || "家人");
+      });
+    } else {
+      const log = (s._wxlog && s._wxlog[p.id]) || [];
+      bubbles = wxThemBubble(p.fam ? famOpener(p) : wxOpenLine(p.name, fav, meta.crisis), av);
+      bubbles += log.map(m => m.me
+        ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
+        : wxThemBubble(m.text, av)).join("");
+    }
+    // 群聊不出现金钱面板，只能发言；爸妈/好友有快捷回复
+    const plusGrid = (phoneWx.plus && !p.group) ? `<div class="wxc-panel">${WX_REPLIES.map(r => {
       const dis = r.cost && s.cash < r.cost;
       const parts = r.label.split(" "); const ic = parts[0]; const nm = parts.slice(1).join(" ") || r.label;
       return `<button class="wxc-pa" data-wxrep="${r.id}" ${dis ? "disabled" : ""}><span class="wxc-pa-ic">${ic}</span><small>${nm}</small></button>`;
@@ -2303,9 +2448,9 @@
       <div class="wxc-thread">${bubbles}</div>
       <div class="wxc-input">
         <button class="wxc-ibtn">🎙️</button>
-        <input id="wxInput" class="wxc-field" placeholder="说点什么…" autocomplete="off">
+        <input id="wxInput" class="wxc-field" placeholder="${p.group ? "在群里说点什么…" : "说点什么…"}" autocomplete="off">
         <button class="wxc-ibtn">😊</button>
-        <button class="wxc-ibtn" id="wxPlus">＋</button>
+        ${p.group ? "" : `<button class="wxc-ibtn" id="wxPlus">＋</button>`}
         <button class="wxc-send" id="wxSend">发送</button>
       </div>
       ${plusGrid}</div>`;
@@ -2326,11 +2471,20 @@
     const fav = wxFavVal(p);
     s._wxlog = s._wxlog || {}; const log = s._wxlog[p.id] = s._wxlog[p.id] || [];
     log.push({ me: true, text: txt.slice(0, 60) });
-    const reply = fav >= 70 ? pick(["哈哈哈是的！", "我也这么觉得～", "懂你懂你😄", "下次一起啊！"])
-      : fav >= 45 ? pick(["嗯嗯。", "哦哦，知道了。", "好的～", "在忙，回头聊。"])
-        : pick(["……", "嗯。", "哦。", "有事说事。"]);
-    log.push({ me: false, text: reply });
-    if (log.length > 30) s._wxlog[p.id] = log.slice(-30);
+    let reply, who = null;
+    if (p.fam && p.group) {                        // 群里：随机一位家人接话
+      const arr = FAM_DATA[famArch()][p.famKey] || [];
+      const pickMember = arr[wxSeed(txt) % arr.length] || { w: "家人", t: "嗯嗯。" };
+      who = pickMember.w; reply = pick(["收到～", "好嘞👌", "知道啦。", "哈哈哈", "@" + (s.playerName || "你") + " 说得对！", "回来吃饭啊。"]);
+    } else if (p.fam) {                             // 爸妈：暖心回一句 + 关系微涨
+      reply = pick(FAM_DATA[famArch()][p.famKey].reply); famAdjust(p.famKey, 1); add(s, "mood", 1);
+    } else {
+      reply = fav >= 70 ? pick(["哈哈哈是的！", "我也这么觉得～", "懂你懂你😄", "下次一起啊！"])
+        : fav >= 45 ? pick(["嗯嗯。", "哦哦，知道了。", "好的～", "在忙，回头聊。"])
+          : pick(["……", "嗯。", "哦。", "有事说事。"]);
+    }
+    log.push({ me: false, text: reply, who: who });
+    if (log.length > 40) s._wxlog[p.id] = log.slice(-40);
     render();
   }
   // 微信交互：回复 / 借钱 / 点赞 / 发朋友圈（都真改状态）
@@ -2343,6 +2497,15 @@
   function wxBorrow(p) {
     const f = wxFavVal(p); s._wxlog = s._wxlog || {}; const log = s._wxlog[p.id] = s._wxlog[p.id] || [];
     log.push({ me: true, text: "在吗？最近手头有点紧，能不能周转一下…" });
+    if (p.fam) {                                   // 跟爸妈开口：基本都给，但心里有数
+      const amt = Math.max(1000, Math.min(5000, Math.round((1500 + f * 30) / 100) * 100));
+      add(s, "cash", amt); famAdjust(p.famKey, -1);
+      log.push({ me: false, text: pick([`[红包] 先给你打 ¥${amt.toLocaleString()}，别省着。`, `钱给你转了 ¥${amt.toLocaleString()}，不够再说。`, `[红包] 拿去用，缺钱跟家里讲，别在外头硬扛。`]) });
+      s._phoneMsg = `🧧 ${FAM_NAME[p.famKey] || "家里"}给你转了 ¥${amt.toLocaleString()}——可这是爸妈的钱，省着点。`;
+      s.timeline.push({ age: s.age, text: `跟${FAM_NAME[p.famKey] || "家里"}要了 ¥${amt.toLocaleString()}。` });
+      if (log.length > 40) s._wxlog[p.id] = log.slice(-40);
+      return;
+    }
     if (f >= 58) {
       const amt = 2000 + Math.round(f * 80); add(s, "cash", amt); wxFav(p, -3); add(s, "network", 1);
       log.push({ me: false, text: `没问题，给你转 ¥${amt.toLocaleString()} 了，先应急。` });
@@ -2366,15 +2529,19 @@
     if (id === "hb" && p.isCast) p.obj.pressure = Math.max(0, (p.obj.pressure || 30) - 6);
     s._wxlog = s._wxlog || {}; const log = s._wxlog[p.id] = s._wxlog[p.id] || [];
     log.push({ me: true, text: r.my });
-    log.push({ me: false, text: typeof r.reply === "function" ? r.reply(p) : r.reply });
-    if (log.length > 12) s._wxlog[p.id] = log.slice(-12);
+    const replyText = p.fam ? pick(FAM_DATA[famArch()][p.famKey].reply) : (typeof r.reply === "function" ? r.reply(p) : r.reply);
+    log.push({ me: false, text: replyText });
+    if (log.length > 40) s._wxlog[p.id] = log.slice(-40);
     if (r.cost) s.timeline.push({ age: s.age, text: `用绿泡泡${id === "hb" ? "给 " + p.name + " 发了红包" : "请 " + p.name + " 吃饭"}（¥${r.cost}）。` });
     render();
   }
   function wxLike(pid) {
     s._wxLiked = s._wxLiked || {}; const key = pid + ":" + s.week; if (s._wxLiked[key]) return;
     s._wxLiked[key] = true; const p = wxPeer(pid); if (p) wxFav(p, 1);
-    render();
+    // 局部更新点赞按钮，不整页重渲染 → 朋友圈不再跳回顶部
+    const btn = document.querySelector(`[data-wxlike="${pid}"]`);
+    if (btn) { const n = parseInt((btn.textContent.match(/\d+/) || [0])[0], 10) + 1; btn.classList.add("on"); btn.innerHTML = "❤️ " + n; }
+    else render();
   }
   function wxPost(kind) {
     if (s._wxPosted === s.week) return;
@@ -2625,6 +2792,7 @@
     document.querySelectorAll("[data-wxrep]").forEach(b => b.onclick = () => { phoneWx.plus = false; wxReply(b.dataset.wxrep); });
     document.querySelectorAll("[data-wxlike]").forEach(b => b.onclick = () => { wxLike(b.dataset.wxlike); });
     document.querySelectorAll("[data-wxpost]").forEach(b => b.onclick = () => { wxPost(b.dataset.wxpost); });
+    const wxCover = document.getElementById("wxCover"); if (wxCover) wxCover.onclick = () => { const ids = (typeof WALLPAPERS !== "undefined" ? WALLPAPERS : []).map(w => w.id); if (!ids.length) return; const i = ids.indexOf(s._wxCover || "dusk"); s._wxCover = ids[(i + 1) % ids.length]; render(); };
     // 理财买卖/区间/图表
     bindMarket();
     // 电脑：搞钱工作台 / 学习充电站 / 网购 / 游戏厅
