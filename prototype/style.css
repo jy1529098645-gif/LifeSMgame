@@ -452,6 +452,17 @@ h2{font-size:26px;margin-bottom:6px}
 .pc-gig-mid{flex:1;min-width:0}.pc-gig-mid b{font-size:14px}.pc-gig-mid small{display:block;font-size:11px;color:var(--dim);margin-top:2px}
 .pc-gig-go{font-size:12px;color:var(--amber);flex:none}
 .pc-data-line{font-size:12px;color:var(--dim);line-height:1.6;margin-top:10px;background:rgba(255,255,255,.03);border-radius:8px;padding:9px 11px}
+/* 游戏厅：内置小游戏/棋牌 */
+.pc-glist{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pc-gcard{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel2);cursor:pointer;transition:.15s}
+.pc-gcard:hover{border-color:var(--amber);transform:translateY(-2px)}
+.pc-gc-emoji{font-size:26px;flex:none}
+.pc-gc-mid{flex:1;min-width:0}.pc-gc-mid b{font-size:14px}.pc-gc-mid small{display:block;font-size:11px;color:var(--dim);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-gc-go{font-size:12px;color:var(--amber);flex:none}
+.real-tag{font-size:10px;color:#3ee07f;border:1px solid #07c160;border-radius:5px;padding:0 5px;margin-left:4px;vertical-align:middle}
+.pc-gamewrap{display:flex;justify-content:center}
+.pc-gamewrap .ev-card{margin:0 auto;width:100%}
+@media(max-width:720px){.pc-glist{grid-template-columns:1fr}}
 .pc-body .mkt-list-big .mkt-card{margin-bottom:0}
 .pc-body .mkt-list-big{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 /* 邮箱 */
