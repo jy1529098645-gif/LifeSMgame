@@ -114,6 +114,23 @@
     { id: "vself", name: "喘口气 · 顾自己", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力-", desc: "创始人也是人。给自己放半天假，别把命搭进去。",
       run: (su, s) => { add(s, "health", 4); add(s, "stress", -10); add(s, "mood", 3); return "你难得关掉电脑睡了个好觉。公司垮了还能再来，人垮了就什么都没了。"; } }
   ];
+  // 大三「校园周」行动表：宿舍/课堂/实习/社团之间分配一周精力。决定你毕业季站在什么样的起跑线上。
+  const CAMPUS_ACTIONS = [
+    { id: "lecture", name: "上课 · 刷绩点", emoji: "📚", hours: 16, hint: "📈绩点+ 🎓学识+", desc: "早八照常去、坐前排、记笔记、跟着老师的进度走。绩点是保研、求职、出国都绕不开的硬通货。",
+      run: (cp, s) => { cp.gpa = _cl(cp.gpa + 3); add(s, "knowledge", 1); cp.attendW = (cp.attendW || 0) + 1; return "你按掉第三遍闹钟，趿拉着拖鞋冲进教室。课听进去了，绩点稳稳往前挪了一格。"; } },
+    { id: "cram", name: "泡图书馆 · 赶due备考", emoji: "☕", hours: 16, hint: "📈绩点++ 😣压力+ ❤️健康-", desc: "占座、刷题、通宵改report。爆肝，但绩点和实打实的本事一起涨。", repeatWeek: false,
+      run: (cp, s) => { cp.gpa = _cl(cp.gpa + 5); add(s, "knowledge", 1); add(s, "stress", 6); add(s, "health", -2); cp.attendW = (cp.attendW || 0) + 1; return "图书馆闭馆音乐响起你才合上电脑。东西啃进脑子里了，黑眼圈也挂上了。"; } },
+    { id: "intern", name: "投实习 · 跑大厂", emoji: "💼", hours: 16, hint: "🧰实习经验++ 💰补贴 📈绩点略-", desc: "改简历、海投、挤地铁去面试、在工位上当「免费劳动力」。大三的实习，是你毕业时唯一拿得出手的筹码。",
+      run: (cp, s) => { cp.intern = _cl(cp.intern + 7); const m = Math.round(800 + Math.random() * 1200); add(s, "cash", m); add(s, "network", 1); cp.gpa = _cl(cp.gpa - 1); add(s, "strategy", 1); cp.internW = (cp.internW || 0) + 1; if (cp.internW >= 4) flag(s, "had_internship"); return `你挤了一周地铁去实习，打杂、跑腿、也偷师，攒下经验和 ¥${m.toLocaleString()} 补贴。简历上，终于有了一行不空的「经历」。`; } },
+    { id: "club", name: "社团 · 室友局", emoji: "🍻", hours: 10, hint: "🤝人脉++ 🙂心情+ 😎魅力+", desc: "社团活动、楼下烧烤、打一整晚的团、帮室友带早饭。大学的人脉和回忆，都是这么处出来的。",
+      run: (cp, s) => { cp.social = _cl(cp.social + 6); add(s, "mood", 6); add(s, "charm", 1); add(s, "network", 1); return "宿舍的灯亮到后半夜，外卖盒堆了一桌。这帮人以后散落天南海北，但此刻你们还挤在六平米里笑。"; } },
+    { id: "love", name: "校园恋爱 · 心动", emoji: "❤️", hours: 8, hint: "🙂心情++ 🤝人脉+", desc: "图书馆偶遇、食堂蹭饭、操场散步到熄灯。青春里那点不计成本的心动。",
+      run: (cp, s) => { cp.social = _cl(cp.social + 3); add(s, "mood", 7); if (!cp.love && rnd(0.55)) { cp.love = true; flag(s, "campus_romance"); s.timeline.push({ age: s.age, text: "大三这年，你在校园里遇见了一个让你心跳漏拍的人。" }); return "操场的路灯下，话题莫名其妙就聊不完了。心动来得猝不及防——你好像，谈恋爱了。"; } return cp.love ? "和TA又压了一次马路、吃了食堂二楼的糖醋里脊。平淡，却踏实地甜。" : "鼓了半天勇气还是没递出那杯奶茶。没关系，青春的喜欢，本就笨拙。"; } },
+    { id: "parttime", name: "兼职 · 接单赚生活费", emoji: "🛵", hours: 12, hint: "💰进账 😣压力+", desc: "家教、跑腿、剪视频接私活。爸妈给的生活费之外，自己也能挣出点底气。",
+      run: (cp, s) => { const m = Math.round(700 + cp.social * 6 + Math.random() * 600); add(s, "cash", m); add(s, "stress", 3); s._monthPay = (s._monthPay || 0) + m; return `你接了几单家教/跑腿/剪辑，攒下 ¥${m.toLocaleString()}。第一次花自己挣的钱，心里有种说不出的踏实。`; } },
+    { id: "rest", name: "躺平 · 打游戏睡懒觉", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力- 🙂心情+", desc: "翘掉没人点名的课、睡到中午、开黑到天亮。大学的容错，正在于此。",
+      run: (cp, s) => { add(s, "health", 4); add(s, "stress", -8); add(s, "mood", 3); return "你把闹钟全关了，睡到日上三竿，再躺床上刷一下午手机。难得的、不用对谁负责的一天。"; } }
+  ];
   let weekLog = [];       // 本周行动产生的日志
 
   /* ---------- 阶段 ---------- */
@@ -2003,6 +2020,145 @@
     document.getElementById("sskip").onclick = () => { weekLog = []; let n = 0; while (n++ < 52) { if (!studyTick()) break; } render(); };
   }
 
+  /* ============================ 大三校园：开局「在校周」子循环 ============================ */
+  // 游戏从大三宿舍开始：先在校园里过一段（绩点/实习/人脉/恋爱自己分配），
+  // 到学期末的毕业季分流，再带着这段积累走进「立志选主线 → 求职」的主流程。
+  const CAMPUS_TOTAL_WEEKS = 14;
+  function startCampus() {
+    s._intro = false;
+    s.campus = {
+      active: true, school: (s.education && s.education.school) || "本校",
+      totalWeeks: CAMPUS_TOTAL_WEEKS, weeksDone: 0,
+      gpa: 70, intern: 0, social: 25, love: false,
+      hours: 40, _weekActs: {}, absences: 0, examFails: 0, warned: false,
+      attendW: 0, internW: 0
+    };
+    s.timeline.push({ age: 21, text: "大三下学期。清晨六平米的宿舍里，上铺的室友还在打呼，你被早八的闹钟叫醒——毕业季的影子，已经悄悄压上来。故事，从这间宿舍开始。" });
+    weekLog = ["🛏️ 又是一个普通的大三早晨：泡面味、键盘声、外卖盒，和一张写着「还没想好以后干嘛」的脸。这一学期，怎么过，你说了算。"];
+    screen = "play"; render();
+  }
+  // 校园「本周必做」：出勤是底线，期末考是大考。没做完会折损绩点（但大三不会被劝退，只伤起跑线）。
+  function campusDuties(cp, s) {
+    const did = cp._weekActs || {};
+    const wk = cp.weeksDone;
+    const D = [];
+    D.push({ id: "attend", emoji: "📝", label: "出勤 · 别挂科", done: !!(did.lecture || did.cram),
+      miss: "翘了一周课：绩点下滑、记一次缺勤，攒多了期末容易挂科" });
+    if (wk >= cp.totalWeeks - 3) D.push({ id: "exam", emoji: "✍️", label: "期末考周 · 冲刺复习", done: !!did.cram,
+      miss: "裸考：这门多半要挂，绩点重创、毕业起跑线塌一截" });
+    return D;
+  }
+  function checkCampusDuties(cp, s) {
+    for (const d of campusDuties(cp, s)) {
+      if (d.done) continue;
+      if (d.id === "attend") {
+        cp.absences = (cp.absences || 0) + 1; cp.gpa = _cl(cp.gpa - 4);
+        weekLog.push(`🚷 这周课基本没去——绩点下滑，记一次缺勤（累计 ${cp.absences} 次）。`);
+        if (cp.absences === 3 && !cp.warned) { cp.warned = true; weekLog.push("⚠️ 辅导员找你谈话：「再这么旷下去，挂科、清考、影响毕业，可别怪没提醒你。」"); s.timeline.push({ age: s.age, text: "屡屡翘课，吃了辅导员的口头警告。" }); }
+      } else if (d.id === "exam") {
+        cp.examFails = (cp.examFails || 0) + 1; cp.gpa = _cl(cp.gpa - 9); add(s, "mood", -5); add(s, "stress", 4);
+        weekLog.push(`📕 你没复习就上了考场——这门挂了（累计 ${cp.examFails} 门），绩点狠狠掉了一截。`);
+      }
+    }
+  }
+  function campusTick() {   // 返回 true=继续在校；false=学期结束（毕业季分流）
+    const cp = s.campus; if (!cp) return false;
+    checkCampusDuties(cp, s);
+    cp.weeksDone++; s.week++;
+    const na = s.startAge + Math.floor(s.week / 52); s.age = na; s.year = s.birthYear + s.age;
+    s.eraWind = C.windAt(s.year);
+    // 心情/健康的温和回弹（同主循环，避免一跌到底）
+    if (s.mood < 46) add(s, "mood", 1);
+    if (s.stress < 42 && s.health < 92) add(s, "health", 1);
+    add(s, "stress", -2);
+    // 每月一次：学生生活费（房租水电由学校/家里兜底，开销很轻）；扣完只是紧一紧，不会破产
+    if (s.week % 4 === 0) {
+      const cost = Math.round((900 + Math.random() * 500) * (s.world ? s.world.priceIndex : 1));
+      add(s, "cash", -cost);
+      weekLog.push(`🍚 这个月的食堂饭卡、话费、零碎开销，去了 ¥${cost.toLocaleString()}。`);
+      if (s.cash < 0) { add(s, "stress", 3); add(s, "mood", -2); weekLog.push("💸 生活费见底了，得想办法接点单子贴补——或者厚着脸皮跟家里要。"); }
+    }
+    cp._weekActs = {}; cp.hours = 40;
+    if (cp.weeksDone >= cp.totalWeeks) { campusGraduate(); return false; }
+    // 学期中段的一个固定节点：毕业季的分流问题第一次砸到脸上（只播一次，纯叙事提醒）
+    if (cp.weeksDone === Math.floor(cp.totalWeeks / 2) && !has(s, "campus_midbeat")) {
+      flag(s, "campus_midbeat");
+      weekLog.push("📣 期中过了。室友群里有人晒大厂实习offer，有人开始背考研政治，也有人投了选调——「以后到底干嘛」这道题，绕不过去了。");
+      s.timeline.push({ age: s.age, text: "大三过半，同龄人各奔东西的岔路口，第一次清晰地摆在面前：秋招、考研、出国、还是搏一把？" });
+    }
+    return true;
+  }
+  // 学期结束：把这段校园积累折算成真实的属性/旗标（绩点→学识声誉、实习→求职筹码、人脉→人脉），
+  // 然后推进到「立志选主线」——毕业季的分流，由玩家在 goalpick 里正式拍板。
+  function campusGraduate() {
+    const cp = s.campus; s.campus = null;
+    flag(s, "campus_done");
+    const clean = (cp.absences || 0) <= 1 && (cp.examFails || 0) === 0;
+    let txt;
+    if (cp.gpa >= 82 && clean) { add(s, "knowledge", 6); add(s, "insight", 4); add(s, "charm", 2); add(s, "reputation", 5); flag(s, "campus_honor"); txt = `绩点稳居前列、一门没挂——大三这一年，你把「学生」这个身份做到了体面。保研、求职、出国的门，都为你多开了一道缝。`; }
+    else if (cp.gpa >= 65) { add(s, "knowledge", 3); add(s, "insight", 2); txt = `绩点不算耀眼，但稳稳及格、学分修齐。大三这一年，平平淡淡地交了卷。`; }
+    else { add(s, "knowledge", 1); add(s, "mood", -6); add(s, "stress", 4); flag(s, "campus_lowgpa"); txt = `绩点滑到了尴尬的位置，挂了科、补考清考折腾了一通。大三这年过得有点狼狈，起跑线塌了半截。`; }
+    if (cp.intern >= 55) { flag(s, "had_internship"); add(s, "network", 5); add(s, "strategy", 2); add(s, "reputation", 2); txt += " 更要紧的是——几段扎实的大厂实习让你的简历不再空白，毕业季的筹码，比同龄人厚了一截。"; }
+    else if (cp.intern >= 25) { flag(s, "had_internship"); add(s, "network", 2); txt += " 你也攒下了一两段实习经历，简历上不至于一片空白。"; }
+    else { txt += " 只是这几年光顾着上课/躺平，简历上「实习经历」那一栏，还空着。"; }
+    if (cp.social >= 55) { add(s, "network", 5); add(s, "charm", 2); }
+    else if (cp.social >= 35) { add(s, "network", 2); }
+    s.timeline.push({ age: s.age, text: `大三结束（绩点 ${Math.round(cp.gpa)}${cp.intern >= 25 ? "、有实习经历" : ""}${cp.love ? "、还谈了场恋爱" : ""}）。${txt}` });
+    s._campusRecap = txt;
+    screen = "campusend"; render();
+  }
+  function campusDash() {
+    const cp = s.campus;
+    const wk = cp.weeksDone + 1, total = cp.totalWeeks, weeksLeft = cp.totalWeeks - cp.weeksDone;
+    const bar = (label, v, cls, warn) => `<div class="sd-bar"><span class="sd-l">${label}</span><span class="sd-track"><i class="${cls}" style="width:${Math.round(v)}%"></i></span><span class="sd-v ${warn ? "sd-warn" : ""}">${Math.round(v)}</span></div>`;
+    const stats = bar("绩点", cp.gpa, "b-happy", cp.gpa < 50) + bar("实习", cp.intern, "b-knowledge") + bar("人脉", cp.social, "b-net");
+    return `<div class="dash">
+      <div class="dash-top">
+        <div><div class="age">大三<small> · 第${wk}/${total}周</small></div><div class="cls">🎓 ${cp.school} · 距毕业季 ${weeksLeft} 周${cp.love ? " · 💕恋爱中" : ""}</div></div>
+        <div class="worth"><small>${s.year} 年 · 现金</small><b>¥${Math.round(s.cash).toLocaleString()}</b><div class="res">❤️${Math.round(s.health)}　🙂${Math.round(s.mood)}　😣${Math.round(s.stress)}</div></div>
+      </div>
+      <div class="sd-bars">${stats}</div></div>`;
+  }
+  function renderCampus() {
+    const cp = s.campus; const done = cp._weekActs || {};
+    const rows = CAMPUS_ACTIONS.map(a => { const dis = a.hours > cp.hours || done[a.id];
+      return `<div class="track ${dis ? "dis" : ""}" data-cid="${a.id}"><div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span><span class="ap-cost">${done[a.id] ? "✓ 本周已做" : a.hours + "h"}</span></div><div class="tk-desc">${a.desc}</div>${a.hint ? `<div class="tk-hint">${a.hint}</div>` : ""}</div>`; }).join("");
+    const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
+    const duties = campusDuties(cp, s);
+    const undone = duties.filter(d => !d.done);
+    const dutyHtml = `<div style="background:rgba(240,167,60,.05);border:1px solid var(--line);border-left:3px solid ${undone.length ? "var(--amber)" : "var(--green)"};border-radius:10px;padding:10px 12px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:${undone.length ? "var(--amber2)" : "var(--green)"};margin-bottom:6px">📋 本周必做 ${duties.length - undone.length}/${duties.length}${undone.length ? " —— 没做完会拖累毕业起跑线" : " —— 稳住了"}</div>
+      ${duties.map(d => `<div style="font-size:12px;line-height:1.7;color:${d.done ? "var(--dim)" : "var(--txt)"}">${d.done ? "✅" : "⬜"} ${d.emoji} ${d.label}${d.done ? "" : ` <span style="color:var(--amber)">— ${d.miss}</span>`}</div>`).join("")}
+    </div>`;
+    const stageTxt = `🎓 大三在校 · 「${cp.school}」第 ${cp.weeksDone + 1} 周。绩点、实习、人脉——你在这几周里怎么分配，决定毕业季你站在什么样的起跑线上。`;
+    app().innerHTML = `<div class="screen play">${campusDash()}
+      <div class="stagebar">${stageTxt}</div>${logHtml}
+      ${dutyHtml}
+      <div class="alloc-h">本周可支配时间：剩余 <b>${cp.hours}</b> / 40 小时</div>
+      <div class="tracks">${rows}</div>
+      <div class="weekbtns"><button class="btn" id="cpskip">⏭ 快进到毕业季</button><button class="btn primary" id="cpweek">${undone.length ? `⚠️ 仍有 ${undone.length} 项必做没做，硬过这周 →` : "过完这周 →"}</button></div></div>`;
+    document.querySelectorAll(".track[data-cid]").forEach(el => el.onclick = () => {
+      const a = CAMPUS_ACTIONS.find(x => x.id === el.dataset.cid);
+      if (a.hours > cp.hours || (cp._weekActs && cp._weekActs[a.id])) return;
+      cp.hours -= a.hours; cp._weekActs = cp._weekActs || {}; cp._weekActs[a.id] = true;
+      const log = a.run(cp, s); if (log) weekLog.push(`${a.emoji} ${log}`);
+      render();
+    });
+    document.getElementById("cpweek").onclick = () => { weekLog = []; campusTick(); render(); };
+    document.getElementById("cpskip").onclick = () => { weekLog = []; let n = 0; while (n++ < 60) { if (!campusTick()) break; } render(); };
+  }
+  // 毕业季分流卡：校园期结束 → 一屏过场 → 进入「立志选主线」
+  function renderCampusEnd() {
+    app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:640px;margin:6vh auto 0">
+      <div class="ev-tag">${s.year} 年 · ${s.age} 岁 · 毕业季</div>
+      <div class="ev-title">🎓 大三结束 · 站在岔路口</div>
+      <div class="ev-text">${s._campusRecap || "大三这一年，就这么过去了。"}<br><br>
+      宿舍楼下的栏杆上晒着学位服的预订单，群里有人开始倒计时秋招，有人把考研倒计时贴在书桌前，也有人攥着出国的语言成绩单。没有谁能替你选——<b style="color:var(--amber2)">毕业后这条路，得你自己拍板</b>。</div>
+      <div class="ev-choices"><button class="btn primary choice" id="cpend2">想清楚我要的是什么 →</button></div>
+    </div></div>`;
+    document.getElementById("cpend2").onclick = () => { s._campusRecap = null; screen = "goalpick"; render(); };
+  }
+
   /* ============================ 创业：全职「经营模式」周推进子系统 ============================ */
   function recalcValuation() {
     const su = s.startup; if (!su) return;
@@ -2293,71 +2449,145 @@
     { id: "hb", label: "🧧 发红包(¥888)", cost: 888, my: "[红包] 一点心意，收下～", fav: 6, mood: 1, reply: "哎哟太客气了，谢谢谢谢！" },
     { id: "borrow", label: "💰 开口借钱", special: true }
   ];
-  function wxChatList() {
+  // 仿真：伪时间戳 + 未读数
+  function wxTime(c) { if (c.crisis) return "刚刚"; const log = s._wxlog && s._wxlog[c.pid]; if (log && log.length) return "刚刚"; return ["昨天", "星期一", "10:24", "周三", "上午 9:07", "13:52", "前天"][wxSeed(c.name) % 7]; }
+  function wxUnread(c) { return c.crisis ? 1 : 0; }
+  // —— 顶部栏（微信风：返回主屏 + 居中标题 + ＋）——
+  function wxTopBar(tab, unread) {
+    const titles = { chats: "绿泡泡" + (unread ? `(${unread})` : ""), contacts: "通讯录", discover: "发现", me: "我" };
+    return `<div class="wxw-top"><button class="wxw-back" id="phBack">‹</button><span class="wxw-title">${titles[tab] || "绿泡泡"}</span><button class="wxw-add" id="wxAdd">＋</button></div>`;
+  }
+  // —— 底部导航（微信四大 tab）——
+  function wxBottomNav(tab, unread) {
+    const items = [["chats", "💬", "微信", unread], ["contacts", "👥", "通讯录", 0], ["discover", "🧭", "发现", wxDiscoverDot()], ["me", "🙂", "我", 0]];
+    return `<div class="wxw-nav">${items.map(([k, ic, nm, bd]) => `<button class="wxw-navbtn ${tab === k ? "on" : ""}" data-wxtab="${k}"><span class="wxw-ic">${ic}${bd ? `<i class="wxw-dot">${bd > 99 ? "99+" : bd}</i>` : ""}</span><span class="wxw-nm">${nm}</span></button>`).join("")}</div>`;
+  }
+  function wxDiscoverDot() { return (s._wxLiked && Object.keys(s._wxLiked).some(k => k.endsWith(":" + s.week))) ? 0 : (wxContacts().length ? 1 : 0); }
+  // —— 微信首页：搜索条 + 会话列表（头像/名字/末条/时间/未读）——
+  function wxChatsPage() {
     const cs = wxContacts();
-    if (!cs.length) return `<div class="ph-empty">还没有绿泡泡好友。多出去走动、认识些人吧。</div>`;
-    return `<div class="wx-list">${cs.map(c => `<div class="wx-row" data-wxopen="${c.pid}">
-      <span class="wx-av">${wxFace(c.fav, c.star)}${c.crisis ? '<i class="wx-dot"></i>' : ""}</span>
-      <span class="wx-mid"><span class="wx-top"><b>${c.name}</b><small>${c.role}</small></span><span class="wx-prev">${wxLastLine(c)}</span></span>
-    </div>`).join("")}</div>`;
+    const search = `<div class="wxw-search">🔍 搜索</div>`;
+    if (!cs.length) return search + `<div class="ph-empty">还没有绿泡泡好友。多出去走动、认识些人吧。</div>`;
+    const rows = cs.map(c => {
+      const ur = wxUnread(c);
+      return `<div class="wxw-chat" data-wxopen="${c.pid}">
+        <span class="wxw-av">${wxFace(c.fav, c.star)}${ur ? `<i class="wxw-badge">${ur}</i>` : ""}</span>
+        <span class="wxw-cmid"><span class="wxw-crow"><b>${c.name}</b><small>${wxTime(c)}</small></span><span class="wxw-cprev">${wxLastLine(c)}</span></span>
+      </div>`;
+    }).join("");
+    return search + `<div class="wxw-list">${rows}</div>`;
   }
-  function wxChatView() {
-    const p = wxPeer(phoneWx.peer);
-    if (!p) { phoneWx.peer = null; return wxChatList(); }
-    const meta = wxContacts().find(c => c.pid === p.id) || {};
-    const fav = wxFavVal(p);
-    const log = (s._wxlog && s._wxlog[p.id]) || [];
-    let bubbles = `<div class="wx-bubble them"><span class="wx-b-av">${wxFace(fav, p.isCast)}</span><div class="wx-b-txt">${wxOpenLine(p.name, fav, meta.crisis)}</div></div>`;
-    bubbles += log.map(m => m.me
-      ? `<div class="wx-bubble me"><div class="wx-b-txt">${m.text}</div><span class="wx-b-av">🙂</span></div>`
-      : `<div class="wx-bubble them"><span class="wx-b-av">${wxFace(fav, p.isCast)}</span><div class="wx-b-txt">${m.text}</div></div>`).join("");
-    const reps = WX_REPLIES.map(r => `<button class="wx-rep" data-wxrep="${r.id}" ${r.cost && s.cash < r.cost ? "disabled" : ""}>${r.label}</button>`).join("");
-    return `<div class="wx-chat">
-      <div class="wx-chat-head"><button class="wx-back" id="wxBack">‹</button><b>${p.name}</b><small>${wxFamLabel(fav)} ${fav}</small></div>
-      ${wxNoteCard(p)}
-      ${meta.crisis ? `<div class="wx-crisis">⚠️ ${p.name} 正遇上难处，点「❤️ 关心近况」当面回应 →</div>` : ""}
-      <div class="wx-thread">${bubbles}</div>
-      <div class="wx-reps">${reps}</div>
-    </div>`;
+  // —— 通讯录：功能入口 + 联系人列表 ——
+  function wxContactsPage() {
+    const cs = wxContacts();
+    const ents = [["🆕", "新的朋友", "screen", "social"], ["👨‍👩‍👧", "群聊", "", ""], ["🏷️", "标签", "", ""], ["📣", "公众号", "app", "news"]];
+    const head = `<div class="wxw-search">🔍 搜索</div>` + ents.map(([ic, nm, kind, to]) => `<div class="wxw-ce" ${kind ? `data-${kind === "screen" ? "screen" : "app"}="${to}"` : ""}><span class="wxw-ce-ic">${ic}</span><span>${nm}</span><span class="wxw-ce-go">›</span></div>`).join("");
+    const star = cs.filter(c => c.star), norm = cs.filter(c => !c.star);
+    const sec = (title, arr) => arr.length ? `<div class="wxw-sec">${title}</div>` + arr.map(c => `<div class="wxw-ce contact" data-wxopen="${c.pid}"><span class="wxw-ce-av">${wxFace(c.fav, c.star)}</span><span class="wxw-ce-nm">${c.name}<small>${c.role}</small></span></div>`).join("") : "";
+    return head + sec("★ 关键角色", star) + sec("联系人", norm) + `<div class="wxw-count">${cs.length} 位联系人</div>`;
   }
+  // —— 发现：朋友圈 + 各功能入口（部分可跳转，部分仅展示）——
+  function wxDiscover() {
+    const moHint = s._wxMyMoment ? `<small class="wxw-de-sub">你刚发了条朋友圈</small>` : "";
+    const groups = [
+      [["📸", "朋友圈", "wxsub", "moments", moHint]],
+      [["📷", "扫一扫", "", ""], ["👀", "看一看", "app", "news"]],
+      [["🎬", "视频号", "app", "reels"], ["🛒", "购物", "screen", "shop"], ["🎮", "游戏", "screen", "mgmenu"]],
+      [["📲", "小程序", "", ""]]
+    ];
+    return groups.map(g => `<div class="wxw-dgroup">${g.map(([ic, nm, kind, to, sub]) => `<div class="wxw-de" ${kind === "wxsub" ? `data-wxsub="${to}"` : kind ? `data-${kind === "screen" ? "screen" : "app"}="${to}"` : ""}><span class="wxw-de-ic">${ic}</span><span class="wxw-de-nm">${nm}</span>${sub || ""}<span class="wxw-ce-go">›</span></div>`).join("")}</div>`).join("");
+  }
+  // 朋友圈动态文案
   function wxMomentText(c) {
     const pool = c.fav >= 70 ? ["今天和老友吃饭，聊到深夜，真好。", "生活再难，身边有这些人就值了。", "又是元气满满的一天💪"]
       : c.fav < 40 ? ["呵呵。", "有些人，认清了就好。", "不想说话。"]
         : ["周末愉快～", "打工人打工魂😪", "今天天气不错。", "新的一周，加油。", "求推荐好吃的店！"];
     return pool[wxSeed(c.name + c.role) % pool.length];
   }
-  function wxMoments() {
+  // —— 朋友圈整页（封面 + 动态流，微信风）——
+  function wxMomentsPage() {
     const cs = wxContacts().slice(0, 8);
     const posted = s._wxPosted === s.week;
+    const cover = `<div class="mo-cover"><div class="mo-cover-bg" style="${C.images.styleBg("travel", 1000)}"></div>
+      <div class="mo-cover-me"><span class="mo-cover-name">${s.playerName || "我"}</span><span class="mo-cover-av">🙂</span></div></div>`;
     const pub = `<div class="mo-pub"><span class="mo-pub-h">发条朋友圈</span><div class="mo-pub-btns">
       <button class="mo-pubbtn" data-wxpost="flex" ${posted ? "disabled" : ""}>✨ 晒一晒</button>
       <button class="mo-pubbtn" data-wxpost="soul" ${posted ? "disabled" : ""}>🌱 发鸡汤</button>
       <button class="mo-pubbtn" data-wxpost="emo" ${posted ? "disabled" : ""}>🌧️ 吐个槽</button></div>${posted ? '<small class="mo-pub-tip">今天已经发过了。</small>' : ""}</div>`;
-    const mine = s._wxMyMoment ? `<div class="mo-post mine"><div class="mo-top"><span class="mo-av">🙂</span><b>${s.playerName || "我"}</b></div><div class="mo-txt">${s._wxMyMoment}</div></div>` : "";
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    const mine = s._wxMyMoment ? `<div class="mo-post mine"><span class="mo-av">🙂</span><div class="mo-body"><b class="mo-name">${s.playerName || "我"}</b><div class="mo-txt">${s._wxMyMoment}</div><div class="mo-time">刚刚</div></div></div>` : "";
     const posts = cs.length ? cs.map(c => {
       const liked = s._wxLiked && s._wxLiked[c.pid + ":" + s.week];
       const likes = (wxSeed(c.name) % 28) + 2 + (liked ? 1 : 0);
-      return `<div class="mo-post"><div class="mo-top"><span class="mo-av">${wxFace(c.fav, c.star)}</span><b>${c.name}</b><small>${c.role}</small></div>
-        <div class="mo-txt">${wxMomentText(c)}</div>
-        <div class="mo-foot"><button class="mo-like ${liked ? "on" : ""}" data-wxlike="${c.pid}">${liked ? "❤️" : "🤍"} ${likes}</button></div></div>`;
+      return `<div class="mo-post"><span class="mo-av">${wxFace(c.fav, c.star)}</span><div class="mo-body"><b class="mo-name">${c.name}</b><div class="mo-txt">${wxMomentText(c)}</div>
+        <div class="mo-foot"><span class="mo-time">${wxTime(c)}</span><button class="mo-like ${liked ? "on" : ""}" data-wxlike="${c.pid}">${liked ? "❤️" : "🤍"} ${likes}</button></div></div></div>`;
     }).join("") : `<div class="ph-empty">朋友圈静悄悄的。</div>`;
-    return `<div class="wx-moments">${pub}${mine}${posts}</div>`;
+    return `<div class="wxw-subtop"><button class="wxw-back" id="wxSubBack">‹ 发现</button><span class="wxw-title">朋友圈</span><span style="width:40px"></span></div>
+      <div class="wx-moments">${cover}${pub}${msg}${posts}${mine ? `<div class="wxw-sec">我的</div>${mine}` : ""}</div>`;
   }
   function wxMe() {
-    return `<div class="wx-me">
-      <div class="wx-me-top"><span class="wx-me-av">🙂</span><div class="wx-me-id"><b>${s.playerName || "无名之人"}</b><small>泡泡号：bubble_${s.age}${(s.playerName || "me").length}</small><small>📍 ${s.city ? C._util.cityFull(s.city) : "地球某处"}</small></div></div>
-      <div class="wx-me-wallet"><span>💰 泡泡钱包 · 零钱</span><b>¥${Math.round(s.cash || 0).toLocaleString()}</b></div>
-      <div class="ap-foot"><button class="btn" data-app="wallet">打开钱包 →</button></div>
-    </div>`;
+    const nw = Math.round(netWorth(s));
+    const rows = [["💰", "服务 · 泡泡钱包", "¥" + Math.round(s.cash || 0).toLocaleString(), "app", "wallet"], ["⭐", "收藏", "", "", ""], ["📸", "朋友圈", "", "wxsub", "moments"], ["🎴", "卡包", "", "", ""], ["😀", "表情", "", "", ""], ["⚙️", "设置", "", "app", "settings"]];
+    return `<div class="wxw-me-card">
+        <span class="wxw-me-av">🙂</span>
+        <div class="wxw-me-id"><b>${s.playerName || "无名之人"}</b><small>泡泡号：bubble_${s.age}${(s.playerName || "me").length}</small><small>📍 ${s.city ? C._util.cityFull(s.city) : "地球某处"}</small></div>
+        <span class="wxw-me-qr">▦</span>
+      </div>
+      <div class="wxw-me-net">身价 ¥${nw.toLocaleString()} · ${s.age}岁 · ${C.CLASS_NAMES[classTier(s)]}</div>
+      <div class="wxw-me-list">${rows.map(([ic, nm, val, kind, to]) => `<div class="wxw-ce" ${kind === "wxsub" ? `data-wxsub="${to}"` : kind ? `data-${kind === "screen" ? "screen" : "app"}="${to}"` : ""}><span class="wxw-ce-ic">${ic}</span><span>${nm}</span>${val ? `<span class="wxw-me-val">${val}</span>` : ""}<span class="wxw-ce-go">›</span></div>`).join("")}</div>`;
+  }
+  // —— 聊天详情：顶栏 + 气泡（头像+尾巴）+ 备注(可展开) + 输入栏 + ＋面板 ——
+  function wxChatView() {
+    const p = wxPeer(phoneWx.peer);
+    if (!p) { phoneWx.peer = null; return wxChatsPage(); }
+    const meta = wxContacts().find(c => c.pid === p.id) || {};
+    const fav = wxFavVal(p);
+    const log = (s._wxlog && s._wxlog[p.id]) || [];
+    let bubbles = `<div class="wxb them"><span class="wxb-av">${wxFace(fav, p.isCast)}</span><div class="wxb-txt">${wxOpenLine(p.name, fav, meta.crisis)}</div></div>`;
+    bubbles += log.map(m => m.me
+      ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
+      : `<div class="wxb them"><span class="wxb-av">${wxFace(fav, p.isCast)}</span><div class="wxb-txt">${m.text}</div></div>`).join("");
+    const plusGrid = phoneWx.plus ? `<div class="wxc-panel">${WX_REPLIES.map(r => {
+      const dis = r.cost && s.cash < r.cost;
+      const parts = r.label.split(" "); const ic = parts[0]; const nm = parts.slice(1).join(" ") || r.label;
+      return `<button class="wxc-pa" data-wxrep="${r.id}" ${dis ? "disabled" : ""}><span class="wxc-pa-ic">${ic}</span><small>${nm}</small></button>`;
+    }).join("")}</div>` : "";
+    return `<div class="wxc">
+      <div class="wxc-top"><button class="wxw-back" id="wxBack">‹</button><b class="wxc-name" id="wxInfo">${p.name}</b><button class="wxc-more" id="wxInfo2">⋯</button></div>
+      ${phoneWx.info ? wxNoteCard(p) : ""}
+      ${meta.crisis ? `<div class="wx-crisis">⚠️ ${p.name} 正遇上难处，点开 ＋ 里的「关心近况」当面回应。</div>` : ""}
+      <div class="wxc-thread">${bubbles}</div>
+      <div class="wxc-input">
+        <button class="wxc-ibtn">🎙️</button>
+        <input id="wxInput" class="wxc-field" placeholder="说点什么…" autocomplete="off">
+        <button class="wxc-ibtn">😊</button>
+        <button class="wxc-ibtn" id="wxPlus">＋</button>
+        <button class="wxc-send" id="wxSend">发送</button>
+      </div>
+      ${plusGrid}</div>`;
   }
   function appWechat() {
     if (phoneWx.peer) return wxChatView();
+    if (phoneWx.sub === "moments") return wxMomentsPage();
     const tab = phoneWx.tab || "chats";
-    const tabs = [["chats", "💬 聊天"], ["moments", "📸 朋友圈"], ["me", "👤 我"]].map(([k, t]) => `<button class="wx-tab ${tab === k ? "on" : ""}" data-wxtab="${k}">${t}</button>`).join("");
-    const body = tab === "moments" ? wxMoments() : tab === "me" ? wxMe() : wxChatList();
-    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
-    return phoneHeader("🟢 绿泡泡", tab === "moments" ? "朋友圈" : tab === "me" ? "个人" : "聊天")
-      + `<div class="wx-tabs">${tabs}</div>${msg}${body}`;
+    const unread = wxContacts().reduce((a, c) => a + wxUnread(c), 0);
+    const body = tab === "contacts" ? wxContactsPage() : tab === "discover" ? wxDiscover() : tab === "me" ? wxMe() : wxChatsPage();
+    const msg = (s._phoneMsg && tab !== "discover") ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    return `<div class="wxw">${wxTopBar(tab, unread)}<div class="wxw-body">${msg}${body}</div>${wxBottomNav(tab, unread)}</div>`;
+  }
+  // 自由打字闲聊（纯沉浸，不改数值）：发一句 → 对方按关系热度随口回一句
+  function wxSendText(txt) {
+    txt = (txt || "").trim(); if (!txt) return;
+    const p = wxPeer(phoneWx.peer); if (!p) return;
+    const fav = wxFavVal(p);
+    s._wxlog = s._wxlog || {}; const log = s._wxlog[p.id] = s._wxlog[p.id] || [];
+    log.push({ me: true, text: txt.slice(0, 60) });
+    const reply = fav >= 70 ? pick(["哈哈哈是的！", "我也这么觉得～", "懂你懂你😄", "下次一起啊！"])
+      : fav >= 45 ? pick(["嗯嗯。", "哦哦，知道了。", "好的～", "在忙，回头聊。"])
+        : pick(["……", "嗯。", "哦。", "有事说事。"]);
+    log.push({ me: false, text: reply });
+    if (log.length > 30) s._wxlog[p.id] = log.slice(-30);
+    render();
   }
   // 微信交互：回复 / 借钱 / 点赞 / 发朋友圈（都真改状态）
   function wxTriggerCrisis(crisis) {
@@ -2623,11 +2853,18 @@
     };
     // 计算器
     document.querySelectorAll(".cl-k[data-k]").forEach(b => b.onclick = () => { calcInput(b.dataset.k); render(); });
-    // 微信
-    document.querySelectorAll("[data-wxtab]").forEach(b => b.onclick = () => { phoneWx.tab = b.dataset.wxtab; phoneWx.peer = null; s._phoneMsg = null; render(); });
-    document.querySelectorAll("[data-wxopen]").forEach(b => b.onclick = () => { phoneWx.peer = b.dataset.wxopen; s._phoneMsg = null; render(); });
-    const wxb = document.getElementById("wxBack"); if (wxb) wxb.onclick = () => { phoneWx.peer = null; s._phoneMsg = null; render(); };
-    document.querySelectorAll("[data-wxrep]").forEach(b => b.onclick = () => { wxReply(b.dataset.wxrep); });
+    // 绿泡泡（仿微信）
+    document.querySelectorAll("[data-wxtab]").forEach(b => b.onclick = () => { phoneWx.tab = b.dataset.wxtab; phoneWx.peer = null; phoneWx.sub = null; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); });
+    document.querySelectorAll("[data-wxopen]").forEach(b => b.onclick = () => { phoneWx.peer = b.dataset.wxopen; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); });
+    document.querySelectorAll("[data-wxsub]").forEach(b => b.onclick = () => { phoneWx.sub = b.dataset.wxsub; s._phoneMsg = null; render(); });
+    const wxb = document.getElementById("wxBack"); if (wxb) wxb.onclick = () => { phoneWx.peer = null; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); };
+    const wxsb = document.getElementById("wxSubBack"); if (wxsb) wxsb.onclick = () => { phoneWx.sub = null; phoneWx.tab = "discover"; s._phoneMsg = null; render(); };
+    const wxAdd = document.getElementById("wxAdd"); if (wxAdd) wxAdd.onclick = () => { phoneWx.tab = "contacts"; s._phoneMsg = null; render(); };
+    const wxPlus = document.getElementById("wxPlus"); if (wxPlus) wxPlus.onclick = () => { phoneWx.plus = !phoneWx.plus; render(); };
+    ["wxInfo", "wxInfo2"].forEach(id => { const el = document.getElementById(id); if (el) el.onclick = () => { phoneWx.info = !phoneWx.info; render(); }; });
+    const wxSend = document.getElementById("wxSend"); if (wxSend) wxSend.onclick = () => { const inp = document.getElementById("wxInput"); wxSendText(inp ? inp.value : ""); };
+    const wxInput = document.getElementById("wxInput"); if (wxInput) wxInput.onkeydown = (e) => { if (e.key === "Enter") { wxSendText(wxInput.value); } };
+    document.querySelectorAll("[data-wxrep]").forEach(b => b.onclick = () => { phoneWx.plus = false; wxReply(b.dataset.wxrep); });
     document.querySelectorAll("[data-wxlike]").forEach(b => b.onclick = () => { wxLike(b.dataset.wxlike); });
     document.querySelectorAll("[data-wxpost]").forEach(b => b.onclick = () => { wxPost(b.dataset.wxpost); });
     // 理财买卖/区间/图表
@@ -3781,7 +4018,7 @@
   let _lastScreen = null;
   function render() {
     const changed = screen !== _lastScreen; _lastScreen = screen;
-    ({ title: renderTitle, cohort: renderCohort, birthplace: renderBirthplace, namepick: renderNamePick, legacykids: renderLegacyKids, create: renderCreate, gear: renderGear, goalpick: renderGoalPick, play: renderPlay, event: renderEvent, phone: renderPhone, pc: renderPc, shop: renderShop, market: renderMarket, social: renderSocial, map: renderMap, travel: renderTravel, dead: renderDead, gallery: renderGallery, mgmenu: renderMgMenu, minigame: renderMinigame, boardgame: renderBoardGame }[screen] || renderTitle)();
+    ({ title: renderTitle, cohort: renderCohort, birthplace: renderBirthplace, namepick: renderNamePick, legacykids: renderLegacyKids, create: renderCreate, gear: renderGear, goalpick: renderGoalPick, campusend: renderCampusEnd, play: renderPlay, event: renderEvent, phone: renderPhone, pc: renderPc, shop: renderShop, market: renderMarket, social: renderSocial, map: renderMap, travel: renderTravel, dead: renderDead, gallery: renderGallery, mgmenu: renderMgMenu, minigame: renderMinigame, boardgame: renderBoardGame }[screen] || renderTitle)();
     // 只有真正切换页面时才放入场动画；同一页内（点行动/导航刷新）不再整页闪一下
     if (changed) { const sc = app().querySelector(".screen"); if (sc) sc.classList.add("screen-enter"); }
   }
