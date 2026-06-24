@@ -1492,6 +1492,11 @@ h2{font-size:26px;margin-bottom:6px}
   transform:scale(2.25);
   filter:saturate(1.08) contrast(1.05) brightness(1.05);
 }
+.screen.play .cm-photo-region img{
+  object-position:center;
+  transform:none;
+  filter:saturate(1.06) contrast(1.04) brightness(1.04);
+}
 .screen.play .cm-vignette-detail{
   background:
     linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.14)),

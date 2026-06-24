@@ -78,23 +78,13 @@ const CITY_DISTRICTS = [
 ];
 function districtById(id) { return CITY_DISTRICTS.find(d => d.id === id) || null; }
 function facilityById(d, fid) { return d && d.facilities ? d.facilities.find((f, i) => (f.id || ("f" + i)) === fid) : null; }
+function facilityIndex(d, f) { return d && d.facilities ? Math.max(0, d.facilities.indexOf(f)) : 0; }
 
 function _legalAct(s, a) { if (!a) return false; if (a.require) { try { return !!a.require(s); } catch (e) { return false; } } return true; }
 function _actById(id) { return (typeof actions !== "undefined") ? actions.find(a => a.id === id) : null; }
-function _img(id) { return "assets/img/" + id + ".jpg"; }
-function facilityArtKey(d, f) {
-  const n = (f && f.name) || "";
-  if (n.indexOf("医院") >= 0 || n.indexOf("门诊") >= 0 || n.indexOf("体检") >= 0 || n.indexOf("急诊") >= 0 || n.indexOf("药房") >= 0) return "1470770841072-f978cf4d019e";
-  if (n.indexOf("公司") >= 0 || n.indexOf("工位") >= 0 || n.indexOf("会议") >= 0 || d.id === "office_cbd") return "1497366216548-37526070297c";
-  if (n.indexOf("招聘") >= 0 || n.indexOf("面试") >= 0 || n.indexOf("打印") >= 0 || d.id === "talent_market") return "1486406146926-c627a92ad1ab";
-  if (n.indexOf("出租") >= 0 || n.indexOf("中介") >= 0 || n.indexOf("菜市场") >= 0 || d.id === "rental") return "1502920917128-1aa500764cbd";
-  if (n.indexOf("商场") >= 0 || n.indexOf("餐饮") >= 0 || n.indexOf("便利") >= 0 || n.indexOf("酒吧") >= 0 || d.id === "mall") return "1556745757-8d76bdb6984b";
-  if (n.indexOf("公园") >= 0 || n.indexOf("茶馆") >= 0 || n.indexOf("棋牌") >= 0 || n.indexOf("湖边") >= 0 || d.id === "park") return "1470770841072-f978cf4d019e";
-  if (n.indexOf("校") >= 0 || n.indexOf("自习") >= 0 || n.indexOf("食堂") >= 0 || d.id === "campus") return "1493809842364-78817add7ffb";
-  if (n.indexOf("仲裁") >= 0 || n.indexOf("法律") >= 0 || n.indexOf("调解") >= 0 || d.id === "arbitration") return "1486406146926-c627a92ad1ab";
-  if (n.indexOf("地铁") >= 0) return "1542051841857-5f90071e7989";
-  return "1516541196182-6bdb0516ed27";
-}
+function cityAsset(name) { return "assets/img/city/" + name + ".svg"; }
+function regionAsset(d) { return cityAsset("region-" + d.id); }
+function facilityAsset(d, f) { return cityAsset("facility-" + d.id + "-f" + facilityIndex(d, f)); }
 function facilityDefaultText(s, d, f, a, ok) {
   const n = f.name || "这里";
   if (f.action === "city_back") return `你走到${n}口，扶梯下方的人流一阵一阵涌出来。站牌、闸机、外卖骑手和赶时间的上班族挤在一起。你看了眼路线，决定先回到城市总览。`;
@@ -204,7 +194,7 @@ function cityMapSVG(s) {
       const healthyHospital = selected.id === "clinic" && (s.health || 100) >= 78 && (s.stress || 0) < 50 && !(s.healthChain && s.healthChain.stage > 0);
       const canAct = legal && !healthyHospital;
       const text = facilityDefaultText(s, selected, active, a, canAct);
-      const bg = _img(facilityArtKey(selected, active));
+      const bg = facilityAsset(selected, active);
       return `<div class="cm-facility-scene" style="background-image:linear-gradient(180deg,rgba(9,12,18,.22),rgba(9,12,18,.86)),url('${bg}')">
         <button class="btn tiny cm-back-region" id="cityRegionBack">← 返回${selected.name}</button>
         <div class="cfs-card"><div class="cfs-kicker">${selected.icon} ${selected.name}</div><h3>${active.icon || ""} ${active.name}</h3><p>${text}</p>
@@ -219,7 +209,7 @@ function cityMapSVG(s) {
         <span class="cf-ic">${f.icon}</span><span class="cf-name">${f.name}</span>${a ? `<small>${a.name}</small>` : `<small>返回城市图</small>`}
       </button>`;
     }).join("");
-    return `<div class="cm-photo cm-photo-zoom" aria-hidden="true" style="--zx:${selected.zoomX || selected.x}%;--zy:${selected.zoomY || selected.y}%"><img src="assets/img/city-overview-chengdu-mvp.png" alt=""></div>
+    return `<div class="cm-photo cm-photo-region" aria-hidden="true"><img src="${regionAsset(selected)}" alt=""></div>
       <div class="cm-vignette cm-vignette-detail" aria-hidden="true"></div>
       <div class="cm-detail-title"><b>${selected.icon} ${selected.name}</b><span>${selected.desc}</span></div>
       <div class="cm-facilities">${facs}</div>`;
