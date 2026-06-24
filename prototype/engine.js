@@ -1517,18 +1517,17 @@
       const dActs = curDist ? C._util.districtActions(s, curDist) : [];
       avail = curDist ? (dActs.length ? dActs : _weekActs) : [];
       const curD = curDist ? C._util.districtById(curDist) : null; curDistName = curD ? `${curD.icon} ${curD.name}` : ""; curDistDesc = curD ? curD.desc : "";
-      const dots = C._util.CITY_DISTRICTS.map(d => {
+      const dots = curD ? "" : C._util.CITY_DISTRICTS.map(d => {
         const sel = d.id === curDist, rec = d.id === recDist;
         const n = C._util.districtActions(s, d.id).length;
         const sig = C._util.districtSignal ? C._util.districtSignal(s, d.id) : {};
         const badges = `${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${sig.hot ? '<span class="cm-hot"></span>' : ""}`;
-        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%;width:${d.w || 18}%;height:${d.h || 14}%" title="${d.desc}"><span class="cm-name">${d.name}</span>${badges}</button>`;
+        const shape = d.shape ? `clip-path:polygon(${d.shape});-webkit-clip-path:polygon(${d.shape});` : `left:${d.x}%;top:${d.y}%;width:${d.w || 18}%;height:${d.h || 14}%`;
+        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="${shape}" title="${d.desc}"><span class="cm-name" style="left:${d.x}%;top:${d.y}%">${d.name}</span>${badges}</button>`;
       }).join("");
       const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
-      districtPanelHtml = curD
-        ? `<div class="district-detail"><div class="dd-top"><div><span class="dd-kicker">当前区域</span><h3>${curD.icon} ${curD.name}</h3></div><button class="btn tiny" id="cityOverview">返回城市图</button></div><div class="dd-layout"><div class="dd-zoom" style="--zx:${curD.zoomX || curD.x}%;--zy:${curD.zoomY || curD.y}%"><img src="assets/img/city-overview-chengdu-mvp.png" alt=""><span class="dd-zoom-label">${curD.name}</span></div><div class="dd-copy"><p>${curD.desc}</p><div class="dd-facilities">${(curD.facilities || []).map(f => `<span>${f}</span>`).join("")}</div><div class="dd-facts"><span>可做行动 ${dActs.length || _weekActs.length}</span><span>${curDist === recDist ? "主线建议区域" : "自由探索区域"}</span></div></div></div></div>`
-        : "";
-      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 城市片区图${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid">${svg}${dots}</div></div>`;
+      districtPanelHtml = "";
+      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— ${curD ? curD.name : "城市片区图"}${recDist && !curD ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid${curD ? " detail" : ""}">${svg}${dots}</div></div>`;
     }
     const done = s._weekActs || {};
     // ★行动格（slots）真正接管周回合（doc §2）：用完格子即可结束本周；hours 退为体力/过劳的次级成本。
@@ -1588,8 +1587,8 @@
           ${mainStageHtml}
           ${tipHtml}
           ${districtPanelHtml}
-          ${cityMapHtml && curDistName ? `<div class="tracks-h district-actions-h">📍 ${curDistName} · 可做的事${curDistDesc ? `<span class="td-desc">${curDistDesc}</span>` : ""}</div>` : ""}
-          ${rows ? `<div class="tracks district-actions">${rows}</div>` : ""}
+          ${cityMapHtml && curDistName ? `<div class="tracks-h district-actions-h compact">📍 ${curDistName}<span class="td-desc">${curDistDesc || "点击地图里的设施安排这一周。"}</span></div>` : ""}
+          ${rows && !curDist ? `<div class="tracks district-actions">${rows}</div>` : ""}
           ${lockedHtml}
           <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary" id="endweek">结束本周 →</button></div>
         </section>
@@ -1603,7 +1602,7 @@
     // ★城市俯瞰图：点区域 → 切换到该区域（行动随之变化）
     document.querySelectorAll(".cm-dist").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; render(); });
     const cityOverviewBtn = document.getElementById("cityOverview"); if (cityOverviewBtn) cityOverviewBtn.onclick = () => { s._cityDistrict = null; render(); };
-    document.querySelectorAll(".track").forEach(el => el.onclick = () => {
+    document.querySelectorAll(".track,.cm-facility[data-id]").forEach(el => el.onclick = () => {
       const a = C.actions.find(x => x.id === el.dataset.id);
       // ★行动格门槛：格子不够就不能点（决策类 slotCost=0 不受限）
       const _sc = C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;

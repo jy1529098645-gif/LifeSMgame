@@ -9,18 +9,72 @@
  *       recommendedDistrict(s), districtForScene(s)
  * ===================================================================== */
 
-// 成都·区域表（x/y 为俯瞰图百分比坐标）。actions = 该区域可做的行动 id（复用 C.actions）。
+// 成都·区域表：总览用不规则 shape 勾区域，放大后只显示真实设施点。
+// x/y 是名称位置；shape 是 CSS polygon 百分比；facilities 是区域放大图上的可点击设施。
 const CITY_DISTRICTS = [
-  { id: "campus",       name: "学校片区", icon: "🎓", x: 17, y: 25, w: 24, h: 20, zoomX: 18, zoomY: 24, desc: "宿舍、自习室、社团海报，和快毕业的焦虑。", facilities: ["宿舍楼", "自习室", "校招宣讲厅", "食堂", "地铁口"], actions: ["study", "prep_interview", "ask_senior", "parttime", "rest", "browse"] },
-  { id: "talent_market",name: "人才市场区", icon: "📨", x: 51, y: 82, w: 23, h: 14, zoomX: 50, zoomY: 86, desc: "展板、二维码、排队投简历的人，和看不见尽头的竞争。", facilities: ["招聘大厅", "简历打印店", "面试等候区", "地铁口"], actions: ["jobhunt", "prep_interview", "ask_senior", "browse"] },
-  { id: "office_cbd",   name: "写字楼区", icon: "🏢", x: 49, y: 43, w: 29, h: 26, zoomX: 49, zoomY: 44, desc: "玻璃幕墙很亮，工牌挂在胸前的人走得很快。", facilities: ["公司前台", "开放工位", "会议室", "楼下咖啡", "地铁口"], actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "learn_industry", "move_near_office"] },
-  { id: "tech_park",    name: "产业园区", icon: "💻", x: 82, y: 18, w: 25, h: 20, zoomX: 83, zoomY: 18, desc: "工位、外包项目、甲方需求和凌晨上线。", facilities: ["外包楼", "共享会议室", "项目驻场区", "园区食堂", "地铁口"], actions: ["work", "learn_industry", "side_project", "validate_need", "move_near_office"] },
-  { id: "rental",       name: "城中村租住区", icon: "🏚️", x: 73, y: 55, w: 24, h: 20, zoomX: 73, zoomY: 56, desc: "押一付三、隔音很差、楼下永远在装修。", facilities: ["握手楼", "中介门店", "小卖部", "夜宵摊", "地铁口"], actions: ["rest", "move_near_office", "side_project", "cook_home", "browse"] },
-  { id: "mall",         name: "商圈生活区", icon: "🛒", x: 20, y: 76, w: 24, h: 19, zoomX: 20, zoomY: 76, desc: "吃饭、买衣服、便利店饭团，和工资到账后的短暂错觉。", facilities: ["便利店", "商场", "快餐店", "服装店", "地铁口"], actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize", "browse"] },
-  { id: "park",         name: "公园休闲区", icon: "♟️", x: 18, y: 48, w: 25, h: 23, zoomX: 17, zoomY: 48, desc: "石桌上的残局，嘴毒的大爷，和看不出底细的人。", facilities: ["湖边步道", "棋牌角", "健身器材", "茶摊", "地铁口"], actions: ["leisure", "exercise", "talk_to_mentor", "browse"] },
-  { id: "clinic",       name: "医院片区", icon: "🏥", x: 79, y: 79, w: 25, h: 18, zoomX: 79, zoomY: 79, desc: "排队、挂号、体检报告，和舍不得花的钱。", facilities: ["门诊楼", "体检中心", "药房", "急诊入口", "地铁口"], actions: ["health_check", "rest", "browse"] },
-  { id: "home",         name: "老家联系区", icon: "🏠", x: 35, y: 19, w: 23, h: 16, zoomX: 35, zoomY: 20, desc: "饭桌上的唠叨、催促与底气，电话那头渐白的头发。", facilities: ["家族群", "父母来电", "亲戚饭局", "快递站", "地铁口"], actions: ["reply_family", "rest", "browse"] },
-  { id: "arbitration",  name: "劳动仲裁区", icon: "⚖️", x: 60, y: 29, w: 20, h: 15, zoomX: 60, zoomY: 29, desc: "攥着证据的人、冷脸 HR 和写满条款的桌子。", facilities: ["仲裁窗口", "证据打印店", "调解室", "法律咨询台", "地铁口"], actions: ["collect_evidence", "browse"] }
+  { id: "campus", name: "川大望江校园", icon: "🎓", x: 18, y: 24, w: 27, h: 22, shape: "8% 24%, 18% 10%, 36% 14%, 43% 31%, 33% 46%, 14% 43%", zoomX: 18, zoomY: 24, desc: "校园、宿舍、自习室和毕业前的焦虑。", actions: ["study", "prep_interview", "parttime", "rest", "browse"], facilities: [
+    { name: "校门", icon: "🏫", x: 24, y: 23, action: "browse" },
+    { name: "自习室", icon: "📖", x: 38, y: 34, action: "study" },
+    { name: "校招宣讲厅", icon: "📣", x: 58, y: 42, action: "prep_interview" },
+    { name: "食堂", icon: "🍚", x: 34, y: 64, action: "cheap_meal" },
+    { name: "地铁站", icon: "🚇", x: 70, y: 72, action: "city_back" }
+  ] },
+  { id: "talent_market", name: "人才服务中心", icon: "📨", x: 50, y: 82, w: 25, h: 17, shape: "39% 76%, 54% 72%, 68% 80%, 64% 94%, 45% 95%, 36% 87%", zoomX: 50, zoomY: 84, desc: "招聘大厅、打印店、面试等候区，求职者在这里排队碰运气。", actions: ["jobhunt", "prep_interview", "print_resume", "browse"], facilities: [
+    { name: "招聘大厅", icon: "📨", x: 34, y: 33, action: "jobhunt" },
+    { name: "简历打印店", icon: "🖨️", x: 62, y: 30, action: "print_resume" },
+    { name: "面试等候区", icon: "🪑", x: 48, y: 54, action: "prep_interview" },
+    { name: "楼下咖啡", icon: "☕", x: 31, y: 72, action: "cheap_meal" },
+    { name: "地铁站", icon: "🚇", x: 72, y: 76, action: "city_back" }
+  ] },
+  { id: "office_cbd", name: "高新区写字楼", icon: "🏢", x: 50, y: 43, w: 31, h: 28, shape: "38% 30%, 57% 26%, 70% 39%, 66% 60%, 49% 67%, 34% 55%, 31% 40%", zoomX: 51, zoomY: 44, desc: "玻璃幕墙、工牌、电梯和开不完的会。", actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "move_near_office"], facilities: [
+    { name: "公司大堂", icon: "🏢", x: 31, y: 30, action: "work" },
+    { name: "开放工位", icon: "💻", x: 55, y: 34, action: "work" },
+    { name: "会议室", icon: "📊", x: 67, y: 54, action: "overtime_perf" },
+    { name: "楼下咖啡", icon: "☕", x: 40, y: 70, action: "coworker_lunch" },
+    { name: "地铁站", icon: "🚇", x: 74, y: 77, action: "city_back" }
+  ] },
+  { id: "tech_park", name: "天府软件园", icon: "💻", x: 82, y: 20, w: 25, h: 24, shape: "70% 10%, 87% 8%, 96% 22%, 91% 39%, 74% 42%, 66% 28%", zoomX: 83, zoomY: 20, desc: "外包楼、项目会议室、园区食堂和创业咖啡。", actions: ["work", "side_project", "validate_need", "learn_industry", "cheap_meal"], facilities: [
+    { name: "外包楼", icon: "🏭", x: 34, y: 30, action: "work" },
+    { name: "项目会议室", icon: "📋", x: 61, y: 36, action: "learn_industry" },
+    { name: "创业咖啡", icon: "☕", x: 47, y: 59, action: "validate_need" },
+    { name: "园区食堂", icon: "🍱", x: 25, y: 70, action: "cheap_meal" },
+    { name: "地铁站", icon: "🚇", x: 75, y: 76, action: "city_back" }
+  ] },
+  { id: "rental", name: "城南租住区", icon: "🏚️", x: 74, y: 57, w: 25, h: 22, shape: "65% 49%, 82% 46%, 94% 58%, 88% 74%, 70% 76%, 61% 63%", zoomX: 73, zoomY: 58, desc: "出租屋、中介门店、小卖部、菜市场和楼上永远不停的装修。", actions: ["rest", "move_near_office", "cook_home", "side_project", "browse"], facilities: [
+    { name: "出租屋", icon: "🛏️", x: 33, y: 32, action: "rest" },
+    { name: "中介门店", icon: "🔑", x: 58, y: 33, action: "move_near_office" },
+    { name: "菜市场", icon: "🥬", x: 33, y: 61, action: "cook_home" },
+    { name: "小卖部", icon: "🏪", x: 60, y: 62, action: "cheap_meal" },
+    { name: "地铁站", icon: "🚇", x: 77, y: 77, action: "city_back" }
+  ] },
+  { id: "mall", name: "春熙路商圈", icon: "🛒", x: 20, y: 77, w: 25, h: 21, shape: "8% 68%, 25% 64%, 38% 75%, 34% 91%, 15% 94%, 5% 82%", zoomX: 20, zoomY: 77, desc: "商场、餐饮街、影院和地铁口，体面生活在这里明码标价。", actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize", "browse"], facilities: [
+    { name: "商场", icon: "🛍️", x: 35, y: 31, action: "buy_outfit" },
+    { name: "餐饮街", icon: "🍲", x: 58, y: 38, action: "treat_self" },
+    { name: "便利店", icon: "🏪", x: 29, y: 62, action: "cheap_meal" },
+    { name: "酒吧/影院", icon: "🎬", x: 61, y: 64, action: "socialize" },
+    { name: "地铁站", icon: "🚇", x: 76, y: 78, action: "city_back" }
+  ] },
+  { id: "park", name: "人民公园", icon: "♟️", x: 18, y: 49, w: 25, h: 24, shape: "8% 39%, 24% 34%, 38% 44%, 35% 61%, 18% 66%, 5% 54%", zoomX: 18, zoomY: 49, desc: "茶馆、棋牌角、湖边步道。这里能回血，也能遇见奇怪的人。", actions: ["leisure", "exercise", "talk_to_mentor", "browse"], facilities: [
+    { name: "茶馆", icon: "🍵", x: 32, y: 30, action: "leisure" },
+    { name: "棋牌角", icon: "♟️", x: 58, y: 38, action: "leisure" },
+    { name: "湖边步道", icon: "🌿", x: 36, y: 62, action: "exercise" },
+    { name: "健身器材", icon: "🏃", x: 63, y: 65, action: "exercise" },
+    { name: "地铁站", icon: "🚇", x: 78, y: 78, action: "city_back" }
+  ] },
+  { id: "clinic", name: "华西医院片区", icon: "🏥", x: 79, y: 80, w: 25, h: 18, shape: "68% 72%, 84% 70%, 96% 80%, 91% 94%, 72% 96%, 63% 85%", zoomX: 79, zoomY: 80, desc: "门诊、体检中心、药房和急诊。身体的问题会在这里变成账单。", actions: ["health_check", "rest", "browse"], facilities: [
+    { name: "门诊楼", icon: "🏥", x: 34, y: 32, action: "health_check" },
+    { name: "体检中心", icon: "🩺", x: 61, y: 35, action: "health_check" },
+    { name: "药房", icon: "💊", x: 34, y: 64, action: "rest" },
+    { name: "急诊入口", icon: "🚑", x: 61, y: 65, action: "health_check" },
+    { name: "地铁站", icon: "🚇", x: 78, y: 79, action: "city_back" }
+  ] },
+  { id: "arbitration", name: "法律服务中心", icon: "⚖️", x: 61, y: 28, w: 21, h: 17, shape: "52% 20%, 66% 18%, 76% 29%, 71% 41%, 55% 43%, 47% 31%", zoomX: 61, zoomY: 29, desc: "仲裁窗口、调解室、法律咨询台。不是爽文反击，是一场漫长拉扯。", actions: ["collect_evidence", "browse"], facilities: [
+    { name: "仲裁窗口", icon: "⚖️", x: 34, y: 33, action: "collect_evidence" },
+    { name: "调解室", icon: "🪑", x: 62, y: 38, action: "collect_evidence" },
+    { name: "打印店", icon: "🖨️", x: 35, y: 65, action: "print_resume" },
+    { name: "法律咨询台", icon: "📄", x: 62, y: 66, action: "collect_evidence" },
+    { name: "地铁站", icon: "🚇", x: 78, y: 79, action: "city_back" }
+  ] }
 ];
 function districtById(id) { return CITY_DISTRICTS.find(d => d.id === id) || null; }
 
@@ -64,6 +118,34 @@ function districtForStage(s) {
 function _cpi(s) { return (s.world && s.world.priceIndex) || 1; }
 function _cityCostMul(s) { return s.city ? (s.city.cost || 1) : 1; }
 if (typeof actions !== "undefined") {
+  const _addCityAction = (a) => { if (!actions.find(x => x.id === a.id)) actions.push(a); };
+  _addCityAction({ id: "prep_interview", name: "准备面试", emoji: "🪞", hours: 6, slotCost: 1, anyStage: true,
+    desc: "改简历、背项目、练自我介绍。不是变强很多，但至少不至于一开口就露怯。", preview: "🧠学识+　✨形象+　😣压力+",
+    resolve: s => { add(s, "knowledge", 1); add(s, "charm", 0.8); add(s, "stress", 2); flag(s, "interview_prepped"); if (typeof rememberFact === "function" && rnd(0.25)) rememberFact(s, { type: "jobhunt", text: "认真准备过一次面试，终于能把自己的经历讲顺。", tags: ["jobhunt"], intensity: 1 }); return { log: "你对着镜子把自我介绍练到舌头打结，又把简历里每个项目都编成能讲三分钟的故事。成年人的体面，有时候就是提前把慌张藏好。" }; } });
+  _addCityAction({ id: "print_resume", name: "打印/润色简历", emoji: "🖨️", hours: 2, slotCost: 0, anyStage: true,
+    desc: "打印几份简历，顺手让店员帮你调格式。纸很薄，承载的期待很重。", preview: "💸约¥20-60　求职成功率小幅提升",
+    resolve: s => { const c = Math.round((20 + Math.random() * 40) * _cpi(s) * _cityCostMul(s)); add(s, "cash", -c); flag(s, "resume_polished"); add(s, "mood", 1); return { log: `你花 ¥${c} 打印并润色了简历。A4 纸从机器里吐出来时，你突然觉得自己像一件待上架的商品。` }; } });
+  _addCityAction({ id: "coworker_lunch", name: "楼下和同事吃饭", emoji: "☕", hours: 3, slotCost: 0, anyStage: true, require: s => has(s, "employed"),
+    desc: "午饭是办公室情报交换所：谁被骂了、谁要离职、哪个项目要爆雷。", preview: "💸约¥40-120　🤝同事关系+　可能得到内幕",
+    resolve: s => { const c = Math.round((40 + Math.random() * 80) * _cpi(s) * _cityCostMul(s)); add(s, "cash", -c); add(s, "network", 1); add(s, "stress", -1); if (rnd(0.35)) { flag(s, "heard_office_rumor"); return { log: `你花 ¥${c} 和同事吃了顿饭。对方压低声音说：「最近别接那个项目，锅很大。」这顿饭突然变得值了。` }; } return { log: `你花 ¥${c} 和同事在楼下随便吃了点。大家嘴上说随便聊聊，话题却总会拐回绩效、加班和谁又被老板点名。` }; } });
+  _addCityAction({ id: "overtime_perf", name: "加班赶汇报", emoji: "📊", hours: 12, slotCost: 1, anyStage: true, require: s => has(s, "employed"),
+    desc: "会议室灯亮到很晚。PPT 改了又改，结论越来越漂亮，人越来越空。", preview: "💼绩效+　❤️健康-　😣压力+",
+    resolve: s => { s._overtimeStreak = (s._overtimeStreak || 0) + 1; add(s, "stress", 8); add(s, "health", -4); add(s, "reputation", 1); if (rnd(0.22)) flag(s, "boss_noticed"); return { log: `你在会议室把汇报改到凌晨。老板说「辛苦了」，然后又发来一版新要求。你的绩效也许涨了一点，黑眼圈肯定涨了很多。` }; } });
+  _addCityAction({ id: "collect_evidence", name: "整理证据材料", emoji: "📄", hours: 6, slotCost: 1, anyStage: true, require: s => has(s, "employed") || (s.workChains && (s.workChains.sever || s.workChains.blame || s.workChains.arb)),
+    desc: "聊天记录、打卡截图、工资流水。反击不是一句狠话，是一摞能站住脚的材料。", preview: "⚖️仲裁筹码+　😣压力+",
+    resolve: s => { s.workChains = s.workChains || {}; s.workChains.evidence = Math.min(10, (s.workChains.evidence || 0) + 2); add(s, "stress", 2); add(s, "insight", 1); if (typeof rememberFact === "function") rememberFact(s, { id: "work_evidence", once: true, type: "work_event", text: "开始保存加班、沟通和绩效证据。", tags: ["work", "arbitration"], intensity: 2 }); return { log: "你把聊天记录、打卡截图和工资流水一点点归档。那一刻你明白，职场里最朴素的安全感，是证据链。" }; } });
+  _addCityAction({ id: "move_near_office", name: "看离公司近的房", emoji: "🔑", hours: 6, slotCost: 1, anyStage: true,
+    desc: "通勤太久会慢慢吞掉生活。近一点的房子更贵，也更像一场现实妥协。", preview: "可能降低通勤压力　💸搬家/押金成本高",
+    resolve: s => { const cost = Math.round((1500 + Math.random() * 3500) * _cityCostMul(s)); add(s, "cash", -cost); s.commute = s.commute || {}; s.commute.far = false; s.commute.nearOffice = true; add(s, "stress", -5); add(s, "mood", -1); return { log: `你花了 ¥${cost} 定下一间离公司更近的小房子。房间小、租金贵，但每天少挤一小时地铁，像从生活里赎回一点自己。` }; } });
+  _addCityAction({ id: "learn_industry", name: "听项目/行业消息", emoji: "📋", hours: 5, slotCost: 1, anyStage: true,
+    desc: "在项目会议室和园区走廊里听风向。真正的机会，经常先以抱怨和需求的形式出现。", preview: "🧠洞察+　创业前置机会↑",
+    resolve: s => { add(s, "insight", 2); if (typeof addFounderPrep === "function") addFounderPrep(s, "industryInsight", 2); if (rnd(0.3)) flag(s, "got_lead"); return { log: "你听了一圈项目和甲方需求，发现大家骂得最狠的地方，往往也是市场还没人解决的地方。创业的火苗，先从别人的痛点里冒出来。" }; } });
+  _addCityAction({ id: "validate_need", name: "约人聊需求", emoji: "☕", hours: 5, slotCost: 1, anyStage: true,
+    desc: "在创业咖啡约潜在用户、同行或前同事，问最笨的问题：你到底愿不愿意付钱？", preview: "🚀验证需求　🤝人脉+　💸小额花费",
+    resolve: s => { const c = Math.round((60 + Math.random() * 120) * _cpi(s) * _cityCostMul(s)); add(s, "cash", -c); add(s, "network", 1); add(s, "insight", 2); if (typeof addFounderPrep === "function") addFounderPrep(s, "validatedNeed", 2); if (rnd(0.25)) flag(s, "got_lead"); return { log: `你花 ¥${c} 请人喝咖啡聊需求。对方吐槽了一堆现有方案的坑，最后补了一句：「真有人能解决，我愿意付钱。」这句话比鸡血管用。` }; } });
+  _addCityAction({ id: "side_project", name: "晚上做小项目", emoji: "🛠️", hours: 10, slotCost: 1, anyStage: true,
+    desc: "下班后写 demo、做表格、试着接单。它可能是副业，也可能是第一次创业的种子。", preview: "💰小概率赚钱　🚀创业准备+　❤️健康-",
+    resolve: s => { add(s, "health", -2); add(s, "stress", 3); if (typeof addFounderPrep === "function") addFounderPrep(s, "execution", 2); if (rnd(0.35)) { const earn = Math.round(600 + Math.random() * 2600); add(s, "cash", earn); return { log: `你熬夜做的小项目居然有人买单，收入 ¥${earn}。钱不多，但它证明了：你不只是打工机器。` }; } return { log: "你熬夜把小项目推进了一点。没有收入，没有掌声，只有凌晨两点的进度条和一杯冷掉的水。" }; } });
   actions.push(
     { id: "cheap_meal", name: "便利店随便吃点", emoji: "🍙", hours: 1, slotCost: 0, anyStage: true,
       desc: "饭团、关东煮、打折便当。不是不想吃好，是余额不同意。", preview: "💸约¥15-25　🙂压力-1（省钱但将就）",
@@ -89,6 +171,21 @@ if (typeof actions !== "undefined") {
 /* ===== 前端：成都俯瞰图 SVG 背景（环路 + 锦江 + 楼群 + 绿地）。viewBox 0 0 100 100，
  *       preserveAspectRatio=none 拉伸铺满，坐标与区域按钮的 x%/y% 对齐。 ===== */
 function cityMapSVG(s) {
+  const selected = s && s._cityDistrict ? districtById(s._cityDistrict) : null;
+  if (selected) {
+    const facs = (selected.facilities || []).map(f => {
+      const a = f.action === "city_back" ? null : _actById(f.action);
+      const ok = f.action === "city_back" || _legalAct(s, a);
+      const attrs = f.action === "city_back" ? `id="cityOverview"` : (ok && a ? `data-id="${a.id}"` : "");
+      return `<button class="cm-facility${ok ? "" : " locked"}" ${attrs} style="left:${f.x}%;top:${f.y}%" title="${a ? a.desc : selected.name}">
+        <span class="cf-ic">${f.icon}</span><span class="cf-name">${f.name}</span>${a ? `<small>${a.name}</small>` : `<small>返回城市图</small>`}
+      </button>`;
+    }).join("");
+    return `<div class="cm-photo cm-photo-zoom" aria-hidden="true" style="--zx:${selected.zoomX || selected.x}%;--zy:${selected.zoomY || selected.y}%"><img src="assets/img/city-overview-chengdu-mvp.png" alt=""></div>
+      <div class="cm-vignette cm-vignette-detail" aria-hidden="true"></div>
+      <div class="cm-detail-title"><b>${selected.icon} ${selected.name}</b><span>${selected.desc}</span></div>
+      <div class="cm-facilities">${facs}</div>`;
+  }
   const photoRec = recommendedDistrict(s);
   const photoRd = districtById(photoRec);
   const photoRecGlow = photoRd ? `<span class="cm-rec-glow" style="left:${photoRd.x}%;top:${photoRd.y}%"></span>` : "";
