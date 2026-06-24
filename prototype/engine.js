@@ -19,6 +19,7 @@
   let mapPurpose = null, mapCountry = null;   // 全球地图：用途(relocate/travel) + 当前展开的国家
   let bpSel = null;                            // 出生地选择：{provinceId, city, county, village}
   let mgId = null, mg = null;                  // 小游戏：当前游戏 id + 对局状态 {round,wins,flashy,done,result}
+  let gameHost = "play";                        // 小游戏/棋牌从哪儿打开：play=独立屏 / pc=内置在电脑游戏厅里
   let bgId = null, bgGame = null, bgBoard = null, bgOver = false, bgResult = "", bgLast = null, bgSel = null, bgTargets = [], bgKo = null, bgPasses = 0;  // 真·棋盘游戏
   let bgHistory = [], bgUndos = 0;  // ★批次5：悔棋——每局最多悔 2 次，每次悔一步（含对方应招）
   const BG_UNDO_MAX = 2;
@@ -63,6 +64,26 @@
     "标准": { cashMul: 1.0, costMul: 1.0, deathMul: 1.0, emoji: "⚖️", label: "原汁原味的平衡体验" },
     "硬核": { cashMul: 0.55, costMul: 1.35, deathMul: 1.35, emoji: "🔥", label: "白手起家、花销高、阎王催得紧——老手的挑战" }
   };
+  // 新手保护「家里兜底」：开局现金少（见 assetTierCash），但保护期内一旦断炊，
+  // 父母会按月打来生活费托住你——这就是「前半年没钱家里会打过来」。
+  // 兜多久(weeks)/给多宽(factor) 由出身决定，贴合中国家庭「供到毕业、啃老有度」的现实；
+  // 打钱额度按当月实际账单 total 计，自动随年代/通胀缩放（符合年份水平）。
+  const FAMILY_NET = {
+    poor:   { weeks: 16, factor: 1.0 },   // 寒门：父母东拼西凑，约 4 个月就到顶
+    worker: { weeks: 26, factor: 1.2 },   // 工薪：典型「供到上岸」，约半年
+    upper:  { weeks: 52, factor: 1.6 },   // 殷实/留学家庭：兜约一年，给得宽裕
+    rich:   { weeks: 78, factor: 2.2 }    // 暴发户/富裕：啃老能啃一年半
+  };
+  function familyNetFor(assetTier, st, difficulty) {
+    const base = FAMILY_NET[assetTier] || FAMILY_NET.worker;
+    let weeks = base.weeks, factor = base.factor;
+    if (has(st, "silver_spoon")) { weeks = 130; factor = 3.0; }              // 金汤匙：兜两年半、出手阔绰
+    else if (has(st, "born_poor")) { weeks = 8; factor = 0.9; }              // 苦命人：家里几乎指望不上
+    if (has(st, "fallen")) weeks = Math.round(weeks * 0.55);                 // 家道中落：兜底也短了
+    const dm = difficulty === "休闲" ? 1.5 : difficulty === "硬核" ? 0.4 : 1;  // 硬核老手早早断奶
+    weeks = Math.max(0, Math.round(weeks * dm));
+    return { until: weeks, factor: factor, weeks: weeks };
+  }
   let gameDiff = "标准";                        // 当前选定难度（标题页可改）
   // 留学周推进的行动表（参考《留学模拟器》：学业/打工/语言/思乡/旅行）。run(st,s) 即时结算，返回中文日志
   const _cl = (v) => Math.max(0, Math.min(100, v));
@@ -127,7 +148,7 @@
     { id: "love", name: "校园恋爱 · 心动", emoji: "❤️", hours: 8, hint: "🙂心情++ 🤝人脉+", desc: "图书馆偶遇、食堂蹭饭、操场散步到熄灯。青春里那点不计成本的心动。",
       run: (cp, s) => { cp.social = _cl(cp.social + 3); add(s, "mood", 7); if (!cp.love && rnd(0.55)) { cp.love = true; flag(s, "campus_romance"); s.timeline.push({ age: s.age, text: "大三这年，你在校园里遇见了一个让你心跳漏拍的人。" }); return "操场的路灯下，话题莫名其妙就聊不完了。心动来得猝不及防——你好像，谈恋爱了。"; } return cp.love ? "和TA又压了一次马路、吃了食堂二楼的糖醋里脊。平淡，却踏实地甜。" : "鼓了半天勇气还是没递出那杯奶茶。没关系，青春的喜欢，本就笨拙。"; } },
     { id: "parttime", name: "兼职 · 接单赚生活费", emoji: "🛵", hours: 12, hint: "💰进账 😣压力+", desc: "家教、跑腿、剪视频接私活。爸妈给的生活费之外，自己也能挣出点底气。",
-      run: (cp, s) => { const m = Math.round(700 + cp.social * 6 + Math.random() * 600); add(s, "cash", m); add(s, "stress", 3); s._monthPay = (s._monthPay || 0) + m; return `你接了几单家教/跑腿/剪辑，攒下 ¥${m.toLocaleString()}。第一次花自己挣的钱，心里有种说不出的踏实。`; } },
+      run: (cp, s) => { const m = Math.round(700 + cp.social * 6 + Math.random() * 600); add(s, "cash", m); add(s, "stress", 3); return `你接了几单家教/跑腿/剪辑，攒下 ¥${m.toLocaleString()}。第一次花自己挣的钱，心里有种说不出的踏实。`; } },
     { id: "rest", name: "躺平 · 打游戏睡懒觉", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力- 🙂心情+", desc: "翘掉没人点名的课、睡到中午、开黑到天亮。大学的容错，正在于此。",
       run: (cp, s) => { add(s, "health", 4); add(s, "stress", -8); add(s, "mood", 3); return "你把闹钟全关了，睡到日上三竿，再躺床上刷一下午手机。难得的、不用对谁负责的一天。"; } }
   ];
@@ -403,6 +424,7 @@
     if (st.gender === "男") { add(st, "body", 2); add(st, "strategy", 2); }
     else { add(st, "charm", 2); add(st, "mind", 2); }
     d.flags.forEach(f => flag(st, f));
+    st._familyNet = familyNetFor(d.assetTier, st, st.difficulty);   // 新手保护期：家里能兜多久/给多宽，由出身+难度定
     // ★批次2：从捏人 flag 解析大学专业 → s.major（求职门槛用）+ 框定「大三在校」起点
     const mf = d.flags.find(f => f.indexOf("bg_major_major_") === 0);
     if (mf) st.major = mf.replace("bg_major_major_", "");
@@ -604,24 +626,50 @@
       }
       const broke = s.cash < 0 && (s.assets || 0) <= 0 && !founderCushion;
       if (founderCushion && s.cash < -80000) s.cash = -80000;   // 创始人押公司能多借点，封底 -8万
+      let familyWire = 0, familyFirstWire = false;
       if (broke) {
         s._brokeMonths = (s._brokeMonths || 0) + 1;
-        flag(s, "starving");
-        const m = s._brokeMonths;
-        // 标准/休闲模式 + 年轻(<28)：有老家和父母兜底，断炊不至于几年内贫病而死——伤害减半。
-        const youthNet = (s.age || 18) < 28 && s.difficulty !== "硬核";
-        add(s, "health", -(youthNet ? Math.min(8, 1 + m) : Math.min(15, 2 + m * 2)));
-        add(s, "mood", -Math.min(12, 3 + m)); add(s, "stress", 7);
-        if (s.cash < -50000) s.cash = -50000;
-        // ★早期生存兜底★：年轻人断炊满 2 个月，回老家/父母接济一次（约 3 年冷却一次）。
-        // 换来活路与一笔过渡钱，代价是啃老的自尊折损——避免「20 出头就贫病交加死」这种不合理。
-        if (youthNet && m >= 2 && (s.week - (s._lastBailout || -99999)) >= 156) {
-          s._lastBailout = s.week;
-          const aid = Math.max(3000, Math.round(total * 2 - s.cash));   // 补到约能再撑两个月
-          add(s, "cash", aid);
+        const fn = s._familyNet;
+        const inWindow = fn && fn.until > 0 && s.week <= fn.until;
+        if (inWindow) {
+          // ★新手保护期·家里打钱★：开局现金少，断炊由父母按月打生活费托住——
+          // 「前半年没钱家里会打过来」。额度按当月账单算，随年代/通胀自动缩放。
+          familyWire = Math.max(total, Math.round(total * fn.factor - s.cash));   // 补到约能再撑一个月+缓冲
+          add(s, "cash", familyWire);
+          s._familyAid = (s._familyAid || 0) + familyWire;
+          s._familyWires = (s._familyWires || 0) + 1;
+          familyFirstWire = (s._familyWires === 1);
           s._brokeMonths = 0; delete s.flags.starving;
-          add(s, "health", 10); add(s, "mood", -4); add(s, "reputation", -2);
-          s.timeline.push({ age: s.age, text: `实在撑不下去，你灰头土脸地回了趟老家。父母没多责备，往你卡里打了 ¥${aid.toLocaleString()}，又把后备箱塞满了米面腊肉。啃老的滋味不好受，但日子总得先过下去——歇口气，再出来拼。` });
+          add(s, "mood", -2); add(s, "stress", 2);
+          income.push({ emoji: "📲", label: familyFirstWire ? "家里打来生活费" : "家里又贴补的生活费", amount: familyWire });
+          if (familyFirstWire) {
+            flag(s, "got_family_net");
+            s.timeline.push({ age: s.age, text: `卡里见了底，你硬着头皮跟家里开了口。没两天，父母往账上打了 ¥${familyWire.toLocaleString()}——「先顾好自己，钱不够再说，家里还撑得住」。隔着电话的那点踏实，和说不出口的亏欠，一起压上心头。` });
+          } else {
+            weekLog.push(`📲 又揭不开锅，家里打来 ¥${familyWire.toLocaleString()} 生活费应急（还在保护期内）。`);
+          }
+        } else {
+          // 保护期已过 / 出身兜不住 —— 真正的断炊，得自己扛
+          flag(s, "starving");
+          const m = s._brokeMonths;
+          const youthNet = (s.age || 18) < 28 && s.difficulty !== "硬核";
+          add(s, "health", -(youthNet ? Math.min(8, 1 + m) : Math.min(15, 2 + m * 2)));
+          add(s, "mood", -Math.min(12, 3 + m)); add(s, "stress", 7);
+          if (s.cash < -50000) s.cash = -50000;
+          // 断奶时刻：保护期刚过、头一回真饿肚子，给一记明确的人生节点
+          if (fn && fn.until > 0 && !has(s, "family_net_ended")) {
+            flag(s, "family_net_ended");
+            s.timeline.push({ age: s.age, text: `这回再难，你也没好意思再向家里伸手——爸妈年纪大了，能贴补的早都贴补过了。打这儿起，日子得自己撑起来。` });
+          }
+          // ★应急兜底★：年轻人断炊满 2 个月，回老家应急一次（约 3 年冷却）——避免「20 出头贫病而死」
+          if (youthNet && m >= 2 && (s.week - (s._lastBailout || -99999)) >= 156) {
+            s._lastBailout = s.week;
+            const aid = Math.max(3000, Math.round(total * 2 - s.cash));   // 补到约能再撑两个月
+            add(s, "cash", aid);
+            s._brokeMonths = 0; delete s.flags.starving;
+            add(s, "health", 10); add(s, "mood", -4); add(s, "reputation", -2);
+            s.timeline.push({ age: s.age, text: `实在撑不下去，你灰头土脸地回了趟老家。父母没多责备，往你卡里打了 ¥${aid.toLocaleString()}，又把后备箱塞满了米面腊肉。啃老的滋味不好受，但日子总得先过下去——歇口气，再出来拼。` });
+          }
         }
       } else if (has(s, "starving")) {
         delete s.flags.starving; s._brokeMonths = 0;
@@ -635,18 +683,19 @@
 
       // ★月度结算单★：只在「值得一看」的月份弹全屏（断炊/变卖资产/人生头一次），
       // 普通月份只在本周日志记一行、不阻断 —— 否则每月一弹、一辈子几百次确认，且快进也被反复打断，极伤流畅。
-      const billNotable = broke || soldAsset > 0 || !has(s, "saw_bill");
+      const repeatWire = familyWire > 0 && !familyFirstWire;
+      const billNotable = (broke && !repeatWire) || soldAsset > 0 || !has(s, "saw_bill");
       if (billNotable) {
         flag(s, "saw_bill");
         s._pendingBill = {
-          age: s.age, year: s.year, income, totalIncome,
+          age: s.age, year: s.year, income, totalIncome: totalIncome + familyWire,
           expenses: bill.items, totalExpense: total, soldAsset,
-          net: totalIncome - total, balance: Math.round(s.cash),
+          net: (totalIncome + familyWire) - total, balance: Math.round(s.cash),
           broke, brokeMonths: s._brokeMonths || 0, scene
         };
       } else {
-        const net = totalIncome - total;
-        weekLog.push(`🧾 ${s.year}年月度结算：进 ¥${Math.round(totalIncome).toLocaleString()} / 出 ¥${total.toLocaleString()}，${net >= 0 ? "结余" : "透支"} ¥${Math.abs(Math.round(net)).toLocaleString()}（余 ¥${Math.round(s.cash).toLocaleString()}）`);
+        const net = (totalIncome + familyWire) - total;
+        weekLog.push(`🧾 ${s.year}年月度结算：进 ¥${Math.round(totalIncome + familyWire).toLocaleString()} / 出 ¥${total.toLocaleString()}，${net >= 0 ? "结余" : "透支"} ¥${Math.abs(Math.round(net)).toLocaleString()}（余 ¥${Math.round(s.cash).toLocaleString()}）`);
       }
 
       if (s.stress > 45) add(s, "overdraft", Math.max(0, Math.round((s.stress - 45) / 9) - Math.round((s.stats.mind - 30) / 30)));
@@ -1508,19 +1557,16 @@
       const majorTxt0 = s.major && C._util.majorName ? C._util.majorName(s) : "某个专业";
       app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:640px;margin:6vh auto 0">
         <div class="ev-tag">${s.birthYear + 21} 年 · 21 岁 · 大三下学期</div>
-        <div class="ev-title">🪪 00 后的第一张工牌（还没拿到）</div>
-        <div class="ev-text">你是一个 00 后，读到了大三，专业是<b style="color:var(--amber2)">${majorTxt0}</b>。你不是不努力，只是这几年，努力越来越像一张没人解释规则的表格：秋招提前、实习要经验、经验要实习。<br><br>
-        手机里全是同龄人上岸、进厂、进大厂的故事。家里问你「毕业后想好没有」，招聘软件问你「是否接受高强度成长」，同学群里有人晒 offer，也有人突然沉默。你还没真正进入社会，社会已经把门槛、房租、通勤、算法筛选和一堆荒诞规矩摆在了门口。<br><br>
-        <i style="color:var(--dim)">没有老祖宗的鸡汤，没有逆天改命的剧本。只有一个普通的 00 后，去亲历一遍那段没人替你扛的、从学校到职场的难受日子。</i></div>
-        <div class="ev-choices"><button class="btn primary choice" id="introgo">投出第一份简历 →</button></div>
+        <div class="ev-title">🛏️ 早八的闹钟，又响了</div>
+        <div class="ev-text">六平米的宿舍，泡面味还没散。上铺的室友翻了个身继续打呼，桌上堆着外卖盒和一台嗡嗡转的旧笔记本。你是一个 00 后，读到了大三，专业是<b style="color:var(--amber2)">${majorTxt0}</b>。<br><br>
+        手机锁屏跳出一连串消息：同学群里有人晒大厂实习offer，有人把考研倒计时贴成了头像，家里又问「毕业后想好没有」。窗外是熟悉的校园，可所有人都在悄悄换赛道——这一年怎么过，会决定你毕业季站在什么样的起跑线上。<br><br>
+        <i style="color:var(--dim)">没有老祖宗的鸡汤，没有逆天改命的剧本。先把大三这几周认真过一遍：上课、实习、社团、还是躺平，时间和精力，都攥在你自己手里。</i></div>
+        <div class="ev-choices"><button class="btn primary choice" id="introgo">掀被子起床，开始大三这一学期 →</button></div>
       </div></div>`;
       document.getElementById("introgo").onclick = () => {
-        s._intro = false;
         s.age = Math.max(s.age || 18, 21);
         s.year = s.birthYear + s.age;
-        s.timeline.push({ age: s.age, text: "大三这年，你开始认真面对毕业后的第一份工作。" });
-        screen = "goalpick";
-        render();
+        startCampus();
       };
       return;
     }
@@ -1567,6 +1613,7 @@
     if (s._intro) return renderIntro();
     // ★月度结算单弹窗★：每月结算后优先弹出可视化收支账单（先于一切）
     if (s._pendingBill) return renderBill();
+    if (s.campus && s.campus.active) return renderCampus();   // 大三校园周推进模式接管界面
     if (s.study && s.study.active) return renderStudy();   // 留学周推进模式接管界面
     if (s.startup && s.startup.fulltime) return renderVenture();   // 全职创业经营模式接管界面
     // 进入大阶段时的「明确选择」优先弹出
@@ -3771,13 +3818,24 @@
   }
 
   /* ============================ 小游戏 ============================ */
-  function startMinigame(id) {
-    const g = (C._util.mgById ? C._util.mgById(id) : null); if (!g) { screen = "play"; render(); return; }
-    if (g.stake && s.cash < g.stake) { s._mgMsg = `玩「${g.name}」大约要花 ¥${g.stake.toLocaleString()}，你兜里不够。`; screen = "mgmenu"; render(); return; }
+  // 小游戏/棋牌结束或退出时，回到它被打开的地方（独立屏 or 电脑游戏厅）
+  function exitGameHost() {
+    mgId = null; mg = null; bgId = null; bgGame = null; bgBoard = null;
+    if (gameHost === "pc") { screen = "pc"; pcApp = "games"; } else { screen = "play"; }
+  }
+  function startMinigame(id, host) {
+    gameHost = host || "play";
+    const g = (C._util.mgById ? C._util.mgById(id) : null); if (!g) { exitGameHost(); render(); return; }
+    if (g.stake && s.cash < g.stake) {
+      const tip = `玩「${g.name}」大约要花 ¥${g.stake.toLocaleString()}，你兜里不够。`;
+      if (gameHost === "pc") { s._phoneMsg = "🎮 " + tip; mgId = null; mg = null; } else { s._mgMsg = tip; screen = "mgmenu"; }
+      render(); return;
+    }
     if (g.stake) add(s, "cash", -g.stake);
     commitPendingAct();                                    // 真的开玩了，才结算「找点乐子」这周的时间
     mgId = id; mg = { round: 0, wins: 0, losses: 0, flashy: false, done: false, result: "", log: [] };
-    screen = "minigame"; render();
+    if (gameHost !== "pc") screen = "minigame";            // 电脑内置：留在 pc 游戏厅里渲染
+    render();
   }
   function mgPlayRound(moveIdx) {
     const g = C._util.mgById(mgId); if (!g || mg.done) return;
@@ -3827,12 +3885,14 @@
     document.getElementById("mgback").onclick = () => { clearPendingAct(); screen = "play"; render(); };
   }
   /* ---------- 真·棋盘游戏（五子棋等）：点击落子 + AI 对弈 ---------- */
-  function startBoardGame(id) {
-    const g = (C._util.bgById ? C._util.bgById(id) : null); if (!g) { screen = "play"; render(); return; }
+  function startBoardGame(id, host) {
+    gameHost = host || "play";
+    const g = (C._util.bgById ? C._util.bgById(id) : null); if (!g) { exitGameHost(); render(); return; }
     commitPendingAct();                                    // 真的坐下对弈了，才结算「找点乐子」这周的时间
     bgId = id; bgGame = g; bgBoard = g.newBoard(); bgOver = false; bgResult = ""; bgLast = null; bgSel = null; bgTargets = []; bgKo = null; bgPasses = 0;
     bgHistory = []; bgUndos = 0;   // ★批次5：新一局重置悔棋
-    screen = "boardgame"; render();
+    if (gameHost !== "pc") screen = "boardgame";           // 电脑内置：留在 pc 游戏厅里渲染
+    render();
   }
   // —— 围棋：落子(提子/打劫) + 停手 + 数子终局 ——
   function bgGoEnd() {
