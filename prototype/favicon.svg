@@ -4,20 +4,18 @@
       <stop offset="0" stop-color="#23232e"/>
       <stop offset="1" stop-color="#0a0a0e"/>
     </linearGradient>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fff3ca"/>
       <stop offset="1" stop-color="#ffe0a0"/>
     </linearGradient>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)" stroke="#3ee07f" stroke-width="2"/>
-  <!-- rocket body -->
-  <path d="M32 10c7 5 10 13 10 22 0 4-1 7-2 9h-16c-1-2-2-5-2-9 0-9 3-17 10-22z" fill="url(#body)"/>
-  <!-- window -->
-  <circle cx="32" cy="26" r="5" fill="#15151c" stroke="#3ee07f" stroke-width="2"/>
-  <!-- fins -->
-  <path d="M22 33c-5 2-7 6-7 11 4-1 6-2 9-3z" fill="#3ee07f"/>
-  <path d="M42 33c5 2 7 6 7 11-4-1-6-2-9-3z" fill="#3ee07f"/>
-  <!-- flame -->
-  <path d="M27 43h10c-1 5-3 8-5 11-2-3-4-6-5-11z" fill="#ff9b9b"/>
-  <path d="M30 43h4c-.5 3-1.3 5-2 7-.7-2-1.5-4-2-7z" fill="#fff6dc"/>
+  <!-- 深色圆角徽章 + 微信绿描边 -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)" stroke="#3ee07f" stroke-width="2.5"/>
+  <!-- 「人」字：一撇一捺，就是人生 -->
+  <g fill="none" stroke="url(#ink)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M33 15 L17 50"/>
+    <path d="M30 23 L48 50"/>
+  </g>
+  <!-- 脚下一线绿：人生这条路 -->
+  <path d="M22 55 H42" fill="none" stroke="#3ee07f" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
 </svg>
