@@ -1328,7 +1328,7 @@ h2{font-size:26px;margin-bottom:6px}
 .screen.play .cm-dist.sel{
   border-color:#fff3ca;
   background:rgba(255,193,68,.25);
-  transform:scale(1.015);
+  transform:translate(-50%,-50%) scale(1.015);
 }
 .screen.play .cm-dist.rec:not(.sel){
   border-color:#7bd8ff;
