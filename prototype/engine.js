@@ -37,6 +37,26 @@
   let phoneCalc = { cur: "0", acc: null, op: null, fresh: true };  // 计算器状态
   let phoneReels = { n: 0, txt: "" };           // 短视频「摸鱼」状态：刷过几个
   let phoneWx = { tab: "chats", peer: null };   // 微信（绿泡泡）：当前子页 chats/moments/me + 正在聊的对象 pid
+  let pcApp = "home";                           // 电脑（笔记本/台式）当前打开的 app
+  let activeDev = "phone";                       // 当前正在操作的设备：phone / pc（决定 app 内跳转改哪个状态）
+  // 开局随身物品：手机人人都有；电脑等设备「勾选+少量花钱」带上，贵的从开局家底里扣
+  const GEAR_ITEMS = [
+    { id: "phone", icon: "📱", name: "智能手机", price: 0, locked: true, desc: "人手一台。新闻、微信、理财、钱包……口袋里的整个世界。" },
+    { id: "laptop", icon: "💻", name: "笔记本电脑", price: 6000, desc: "随身带着走、随时能用。大屏交易、搞钱工作台、数据看板、上网课——比手机顺手得多。" },
+    { id: "desktop", icon: "🖥️", name: "台式电脑", price: 8000, desc: "性能最强、用着最爽，但只能在家（定居城市）用。炒股、搞钱、学习，效率拉满。" },
+    { id: "headphone", icon: "🎧", name: "降噪耳机", price: 1500, desc: "戴上世界清净了。电脑上「学习」「搞钱」效率额外 +15%。" },
+    { id: "book", icon: "📚", name: "《财经入门》", price: 800, desc: "随身啃两页。开局见识 +2，看 K 线时多一分直觉。" }
+  ];
+  function gearById(id) { return GEAR_ITEMS.find(g => g.id === id); }
+  function hasGear(id) { return s && s.gear && s.gear.indexOf(id) >= 0; }
+  function hasComputer() { return hasGear("laptop") || hasGear("desktop"); }
+  // 台式只能在家(未出门)用；笔记本随时随地。返回当前能用的机型，否则 null
+  function activeComputerKind() {
+    const home = !s.away;
+    if (hasGear("desktop") && home) return "desktop";   // 在家优先用最强的台式
+    if (hasGear("laptop")) return "laptop";              // 笔记本随身
+    return null;                                          // 只有台式却出门在外 → 用不了
+  }
   // 难度档：影响开局家底、生活成本、死亡率（收入侧靠生活成本反向体现）
   const DIFFS = {
     "休闲": { cashMul: 2.0, costMul: 0.65, deathMul: 0.7, emoji: "🛋️", label: "家底厚、花销省、命更硬——专心看剧情" },
@@ -356,6 +376,12 @@
     if (DIFFS[st.difficulty]) st.cash = Math.round(st.cash * DIFFS[st.difficulty].cashMul);
     if (d.cohort.cashMul) st.cash = Math.round(st.cash * d.cohort.cashMul);   // 解锁出身的家底差异
     if (d.cohort.originFlag) flag(st, d.cohort.originFlag);
+    // 随身物品：手机必带；电脑等设备的花费从开局家底里扣（不够则归零，不倒欠）
+    st.gear = (d.gear && d.gear.slice()) || ["phone"];
+    if (st.gear.indexOf("phone") < 0) st.gear.unshift("phone");
+    let gearCost = 0; st.gear.forEach(gid => { const g = GEAR_ITEMS.find(x => x.id === gid); if (g && g.price) gearCost += g.price; });
+    if (gearCost > 0) st.cash = Math.max(0, st.cash - gearCost);
+    if (st.gear.indexOf("book") >= 0) add(st, "insight", 2);
     // 性别带来的轻微差异（总量相等、无优劣，仅起手风格不同）：男+体魄/谋略，女+魅力/心智
     if (st.gender === "男") { add(st, "body", 2); add(st, "strategy", 2); }
     else { add(st, "charm", 2); add(st, "mind", 2); }
@@ -1168,7 +1194,7 @@
     document.getElementById("nameto").onclick = () => {
       const v = document.getElementById("playerNameInput").value.trim();
       draft.playerName = (v || suggested).slice(0, 12);
-      if (draft.legacyChild) { s = newState(draft); screen = "goalpick"; }
+      if (draft.legacyChild) { screen = "gear"; }
       else { draft.stepIndex = 0; screen = "create"; }
       render();
     };
@@ -1401,7 +1427,7 @@
       draft._previewSel = null;
       applyOption(options[i]);
       if (draft.stepIndex < C.creationSteps.length - 1) { draft.stepIndex++; renderCreate(); }
-      else { s = newState(draft); screen = "play"; weekLog = []; render(); }
+      else { screen = "gear"; render(); }
     };
     document.querySelectorAll(".bgcard").forEach(el => {
       const i = parseInt(el.dataset.i, 10);
@@ -1409,6 +1435,55 @@
       el.onmouseleave = () => paintBars(shown);                  // 移开复位
       el.onclick = () => confirmPick(i);                         // 点一下直接确认（悬浮已能预览，无需二次确认）
     });
+  }
+
+  // 估算开局家底（与 newState 的现金算法一致，便于行囊页显示预算；忽略随机的家族传承）
+  function estimateStartCash(d) {
+    let c = (C.assetTierCash[d.assetTier] || 20000);
+    if (d.birthplace && d.birthplace.origin && d.birthplace.origin.cashMul) c *= d.birthplace.origin.cashMul;
+    const diff = d.difficulty || "标准";
+    if (DIFFS[diff]) c *= DIFFS[diff].cashMul;
+    if (d.cohort && d.cohort.cashMul) c *= d.cohort.cashMul;
+    return Math.round(c);
+  }
+  // —— 行囊：开局选随身物品（手机必带，电脑等勾选+扣钱）——
+  function renderGear() {
+    if (!draft) { screen = "title"; return render(); }
+    draft.gear = draft.gear || ["phone"];
+    if (draft.gear.indexOf("phone") < 0) draft.gear.unshift("phone");
+    const budget = estimateStartCash(draft);
+    const spent = draft.gear.reduce((a, id) => { const g = gearById(id); return a + (g && g.price ? g.price : 0); }, 0);
+    const left = budget - spent;
+    const cards = GEAR_ITEMS.map(g => {
+      const on = draft.gear.indexOf(g.id) >= 0;
+      const afford = on || g.price <= left;
+      const cls = g.locked ? "on locked" : on ? "on" : afford ? "" : "poor";
+      return `<div class="gear-card ${cls}" ${g.locked ? "" : `data-gear="${g.id}"`}>
+        <div class="gear-ic">${g.icon}</div>
+        <div class="gear-mid"><div class="gear-name">${g.name} ${g.locked ? '<span class="gear-tag">必带</span>' : on ? '<span class="gear-tag on">已带</span>' : ""}</div>
+          <div class="gear-desc">${g.desc}</div></div>
+        <div class="gear-buy"><div class="gear-price">${g.price ? "¥" + g.price.toLocaleString() : "免费"}</div>
+          ${g.locked ? "" : `<div class="gear-check">${on ? "✓" : (afford ? "＋" : "钱不够")}</div>`}</div>
+      </div>`;
+    }).join("");
+    app().innerHTML = `<div class="screen"><div class="scene-hero" style="${C.images.styleBg("create", 1200)}"><span class="scene-cap">🎒 行囊 · 带什么上路</span></div>
+      <h2 style="margin-top:0">🎒 收拾行囊</h2>
+      <p class="sub">出门闯荡前，挑挑随身要带的家伙。手机人人都有；<b style="color:var(--amber)">电脑等设备勾上就带走，花费从开局家底里扣</b>。带了笔记本/台式，就能在游戏里真的用一台电脑——大屏炒股、搞钱、上网课，比手机顺手。</p>
+      <div class="gear-budget">开局家底约 <b>¥${budget.toLocaleString()}</b>　·　行囊花费 <b style="color:var(--amber)">¥${spent.toLocaleString()}</b>　·　带走后剩 <b style="color:${left >= 0 ? "var(--green)" : "var(--red)"}">¥${left.toLocaleString()}</b></div>
+      <div class="gear-list">${cards}</div>
+      <div class="dead-btns"><button class="btn" id="gearback">← 返回</button><button class="btn primary" id="gearto">收拾妥当，出发 →</button></div></div>`;
+    document.querySelectorAll(".gear-card[data-gear]").forEach(el => el.onclick = () => {
+      const id = el.dataset.gear; const g = gearById(id); const i = draft.gear.indexOf(id);
+      if (i >= 0) { draft.gear.splice(i, 1); }
+      else { if (g.price > left) return; draft.gear.push(id); }
+      render();
+    });
+    document.getElementById("gearback").onclick = () => { if (draft.legacyChild) { screen = "namepick"; } else { draft.stepIndex = C.creationSteps.length - 1; screen = "create"; } render(); };
+    document.getElementById("gearto").onclick = () => {
+      s = newState(draft); weekLog = [];
+      screen = draft.legacyChild ? "goalpick" : "play";
+      render();
+    };
   }
 
   function renderIntro() {
@@ -2071,7 +2146,8 @@
     { id: "msg", icon: "🔔", name: "通知" },
     { id: "contacts", icon: "📇", name: "通讯录" },
     { id: "wallet", icon: "💰", name: "钱包" },
-    { id: "stocks", icon: "📈", name: "自选股" },
+    { id: "market", icon: "📈", name: "理财" },
+    { id: "stocks", icon: "📊", name: "自选股" },
     { id: "calendar", icon: "📅", name: "日历" },
     { id: "album", icon: "🖼️", name: "相册" },
     { id: "reels", icon: "🎬", name: "短视频" },
@@ -2175,6 +2251,30 @@
     if (log && log.length) { const last = log[log.length - 1]; return (last.me ? "我: " : "") + last.text; }
     return wxOpenLine(c.name, c.fav, null);
   }
+  // 熟悉度标签
+  function wxFamLabel(fav) { return fav >= 85 ? "❤️ 至交" : fav >= 70 ? "💚 熟络" : fav >= 50 ? "🙂 相识" : fav >= 30 ? "😐 点头之交" : "👋 陌生人"; }
+  // 备注资料：越熟越详细——一层层解锁对方的信息（性格/印象/常驻/癖好/近况）
+  function wxNote(p) {
+    const fav = wxFavVal(p), o = p.obj, lines = [];
+    lines.push(`身份 · ${p.role}`);
+    if (fav >= 30 && !p.isCast && o.kind) lines.push(`性格 · ${o.kind}`);
+    if (fav >= 45) {
+      if (!p.isCast && o.persona) lines.push(`印象 · ${o.persona.emoji || ""}${o.persona.name || ""}${o.persona.desc ? "，" + o.persona.desc : ""}`);
+      if (p.isCast && o.industry && C._util.INDUSTRIES && C._util.INDUSTRIES[o.industry]) lines.push(`行当 · ${C._util.INDUSTRIES[o.industry].name}`);
+    }
+    if (fav >= 60 && !p.isCast && o.homeCity) lines.push(`常驻 · ${o.homeCity}${o.residence ? " · " + o.residence : ""}${o.meetable ? " · 可约见" : " · 多远程联系"}`);
+    if (fav >= 70 && !p.isCast && o.persona && o.persona.quirk) lines.push(`小癖好 · ${o.persona.quirk}`);
+    if (fav >= 75 && p.isCast && o.pressure != null) lines.push(`近况 · ${o.pressure >= 60 ? "压力很大，最近不好过" : o.pressure >= 35 ? "日子还算稳当" : "状态轻松"}${o.crisis ? "，眼下正遇着难处" : ""}`);
+    if (fav >= 85) lines.push(p.isCast ? "至交 · 他的事就是你的事，关键时刻能托付。" : "至交 · 知根知底，落难时也愿拉你一把。");
+    return lines;
+  }
+  function wxNoteCard(p) {
+    const fav = wxFavVal(p);
+    const lines = wxNote(p);
+    const more = fav < 85 ? `<div class="wx-note-tip">再熟一点，你会知道更多关于 ta 的事。</div>` : "";
+    return `<div class="wx-note"><div class="wx-note-h"><span>📒 备注资料</span><span class="wx-fam">${wxFamLabel(fav)} · ${fav}</span></div>
+      ${lines.map(l => `<div class="wx-note-l">${l}</div>`).join("")}${more}</div>`;
+  }
   // 快捷回复表：真改好感 / 心情 / 现金
   const WX_REPLIES = [
     { id: "hi", label: "👋 打招呼", my: "在的，挺好的，你呢？", fav: 1, mood: 1, reply: p => wxFavVal(p) >= 50 ? "那就好，有空多聊！" : "哦，知道了。" },
@@ -2203,7 +2303,8 @@
       : `<div class="wx-bubble them"><span class="wx-b-av">${wxFace(fav, p.isCast)}</span><div class="wx-b-txt">${m.text}</div></div>`).join("");
     const reps = WX_REPLIES.map(r => `<button class="wx-rep" data-wxrep="${r.id}" ${r.cost && s.cash < r.cost ? "disabled" : ""}>${r.label}</button>`).join("");
     return `<div class="wx-chat">
-      <div class="wx-chat-head"><button class="wx-back" id="wxBack">‹</button><b>${p.name}</b><small>好感 ${fav}</small></div>
+      <div class="wx-chat-head"><button class="wx-back" id="wxBack">‹</button><b>${p.name}</b><small>${wxFamLabel(fav)} ${fav}</small></div>
+      ${wxNoteCard(p)}
       ${meta.crisis ? `<div class="wx-crisis">⚠️ ${p.name} 正遇上难处，点「❤️ 关心近况」当面回应 →</div>` : ""}
       <div class="wx-thread">${bubbles}</div>
       <div class="wx-reps">${reps}</div>
@@ -2342,10 +2443,15 @@
     const stkRow = st => { const chg = C._util.stockChange(s, st.id); const cls = chg > 0.05 ? "up" : chg < -0.05 ? "down" : "flat"; const hot = st.sector && st.sector === s.eraWind; const h = m.hold[st.id] || 0; return `<div class="stk-row"><span class="stk-nm">${st.emoji} ${st.name}${hot ? " 🔥" : ""}</span><span class="stk-px">¥${m.prices[st.id].toFixed(2)}</span><span class="stk-chg ${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%</span>${h ? `<span class="stk-hold">${h}股</span>` : ""}</div>`; };
     const held = C.stocks.filter(st => (m.hold[st.id] || 0) > 0).map(stkRow).join("");
     const watch = C.stocks.slice(0, 6).map(stkRow).join("");
-    return phoneHeader("📈 自选股", `持仓市值 ¥${Math.round(pv).toLocaleString()}`)
+    return phoneHeader("📊 自选股", `持仓市值 ¥${Math.round(pv).toLocaleString()}`)
       + (held ? `<div class="stk-sec">我的持仓</div>${held}` : '<div class="ph-empty">还没有持仓。</div>')
       + `<div class="stk-sec">大盘速览</div>${watch}`
-      + `<div class="ap-foot"><button class="btn primary" data-screen="market">打开理财，去交易 →</button></div>`;
+      + `<div class="ap-foot"><button class="btn primary" data-app="market">打开理财，去交易 →</button></div>`;
+  }
+  // —— 理财：完整交易（手机版）。大屏更顺手的版本在「电脑」里 ——
+  function appMarket() {
+    return phoneHeader("📈 理财 · 交易", "K线随人生生长 · 新闻→下周盘面")
+      + marketPanelHTML(false);
   }
   // —— 日历：当下时点 + 目标 + 最近大事 ——
   function appCalendar() {
@@ -2441,7 +2547,7 @@
   // app 路由：把当前 app 渲染成手机屏幕里的内容
   function phoneScreenBody() {
     if (phoneApp === "home") return phoneHome();
-    const m = { wechat: appWechat, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, calc: appCalc, weather: appWeather, settings: appSettings };
+    const m = { wechat: appWechat, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, calc: appCalc, weather: appWeather, settings: appSettings };
     return (m[phoneApp] || phoneHome)();
   }
   function renderPhone() {
@@ -2464,22 +2570,21 @@
         </aside>
       </div></div>`;
     bindNav();
+    activeDev = "phone";
     document.getElementById("closep").onclick = () => { screen = "play"; render(); };
-    const home = document.getElementById("phHomeBtn"); if (home) home.onclick = () => { phoneApp = "home"; phoneWx.peer = null; s._phoneMsg = null; render(); };
-    const back = document.getElementById("phBack"); if (back) back.onclick = () => { phoneApp = "home"; phoneWx.peer = null; s._phoneMsg = null; render(); };
-    // 打开 app
-    document.querySelectorAll(".ph-app[data-app]").forEach(b => b.onclick = () => { phoneApp = b.dataset.app; s._phoneMsg = null; render(); });
-    // app 内跳到另一个 app
-    document.querySelectorAll("[data-app]:not(.ph-app)").forEach(b => b.onclick = () => { phoneApp = b.dataset.app; s._phoneMsg = null; render(); });
-    // 跳到顶层屏幕（社交圈/消费/理财）
+    document.querySelectorAll(".ph-app[data-app]").forEach(b => b.onclick = () => { openDeviceApp(b.dataset.app); render(); });
+    bindDeviceApps();
+  }
+  // 设备通用：当前在哪台设备就改哪个 app 状态
+  function openDeviceApp(id) { if (activeDev === "pc") pcApp = id; else phoneApp = id; s._phoneMsg = null; }
+  function goDeviceHome() { if (activeDev === "pc") pcApp = "home"; else phoneApp = "home"; phoneWx.peer = null; s._phoneMsg = null; }
+  // 手机 / 电脑 app 内的所有交互（共用一套绑定，谁在前台就作用于谁）
+  function bindDeviceApps() {
+    ["phHomeBtn", "pcHomeBtn"].forEach(id => { const el = document.getElementById(id); if (el) el.onclick = () => { goDeviceHome(); render(); }; });
+    const back = document.getElementById("phBack"); if (back) back.onclick = () => { goDeviceHome(); render(); };
+    document.querySelectorAll(".pc-app[data-app]").forEach(b => b.onclick = () => { openDeviceApp(b.dataset.app); render(); });
+    document.querySelectorAll("[data-app]:not(.ph-app):not(.pc-app)").forEach(b => b.onclick = () => { openDeviceApp(b.dataset.app); render(); });
     document.querySelectorAll("[data-screen]").forEach(b => b.onclick = () => { screen = b.dataset.screen; weekLog = []; render(); });
-    // 信息：回应关键角色危机 → 触发对应事件
-    document.querySelectorAll(".msg-row[data-castev]").forEach(b => b.onclick = () => {
-      const ev = b.dataset.castev;
-      const id = ev === "startup_invite" ? "ev_cast_invite" : ev === "reunite" ? "ev_cast_reunite" : "ev_cast_help";
-      const e = C.events.find(x => x.id === id);
-      if (e) { try { if (!e.cond || e.cond(s)) { enterEvent(e); screen = "event"; render(); return; } } catch (x) { } }
-    });
     // 头条：深扒
     const dig = document.getElementById("dig"); if (dig) dig.onclick = () => {
       add(s, "insight", 2); add(s, "mood", -2); flag(s, "wind_hint");
@@ -2498,7 +2603,7 @@
       s.timeline.push({ age: s.age, text: `用手机给 ${c.name} 转了 ¥2,000。` });
       render();
     });
-    // 短视频：刷一个
+    // 短视频
     const rl = document.getElementById("rlNext"); if (rl) rl.onclick = () => {
       phoneReels.n++;
       phoneReels.txt = REELS_POOL[(phoneReels.n - 1) % REELS_POOL.length];
@@ -2506,15 +2611,150 @@
       add(s, "mood", gain); if (phoneReels.n >= 6) add(s, "stress", 1);
       render();
     };
-    // 计算器：按键
+    // 计算器
     document.querySelectorAll(".cl-k[data-k]").forEach(b => b.onclick = () => { calcInput(b.dataset.k); render(); });
-    // 微信：子页切换 / 打开对话 / 返回列表 / 快捷回复 / 朋友圈点赞 / 发朋友圈
+    // 微信
     document.querySelectorAll("[data-wxtab]").forEach(b => b.onclick = () => { phoneWx.tab = b.dataset.wxtab; phoneWx.peer = null; s._phoneMsg = null; render(); });
     document.querySelectorAll("[data-wxopen]").forEach(b => b.onclick = () => { phoneWx.peer = b.dataset.wxopen; s._phoneMsg = null; render(); });
     const wxb = document.getElementById("wxBack"); if (wxb) wxb.onclick = () => { phoneWx.peer = null; s._phoneMsg = null; render(); };
     document.querySelectorAll("[data-wxrep]").forEach(b => b.onclick = () => { wxReply(b.dataset.wxrep); });
     document.querySelectorAll("[data-wxlike]").forEach(b => b.onclick = () => { wxLike(b.dataset.wxlike); });
     document.querySelectorAll("[data-wxpost]").forEach(b => b.onclick = () => { wxPost(b.dataset.wxpost); });
+    // 理财买卖/区间/图表
+    bindMarket();
+    // 电脑：搞钱工作台 / 学习充电站
+    document.querySelectorAll("[data-gig]").forEach(b => b.onclick = () => { pcWorkDo(b.dataset.gig); });
+    document.querySelectorAll("[data-course]").forEach(b => b.onclick = () => { pcStudyDo(b.dataset.course); });
+  }
+
+  /* ============================ 💻 电脑（笔记本 / 台式）============================ */
+  const STAT_CN = { body: "体魄", mind: "心智", knowledge: "学识", strategy: "谋略", charm: "魅力", insight: "见识" };
+  const PC_APPS = [
+    { id: "trade", icon: "📈", name: "交易台" },
+    { id: "work", icon: "💼", name: "搞钱工作台" },
+    { id: "data", icon: "📊", name: "数据看板" },
+    { id: "study", icon: "📚", name: "学习充电站" },
+    { id: "browser", icon: "🌐", name: "浏览器" },
+    { id: "wechat", icon: "💬", name: "微信", green: true }
+  ];
+  const PC_GIGS = [
+    { id: "freelance", icon: "💻", label: "接私活 · 写代码", stat: "knowledge", base: 1200, mood: -1, stress: 2, txt: "熬夜赶完需求，钱到账，人也熬虚了。" },
+    { id: "media", icon: "🎬", label: "做自媒体 · 剪视频", stat: "charm", base: 700, mood: 1, stress: 1, txt: "涨了点粉，一笔广告费打了过来。" },
+    { id: "design", icon: "🎨", label: "接设计单 · 做海报", stat: "insight", base: 1000, mood: 0, stress: 1, txt: "甲方改了八版，总算过稿结款。" },
+    { id: "anal", icon: "📈", label: "写行情复盘 · 投稿", stat: "strategy", base: 900, mood: 0, stress: 1, txt: "一篇复盘投出去，平台给了稿酬。" },
+    { id: "label", icon: "🧩", label: "数据标注 · 外包", stat: "mind", base: 450, mood: -1, stress: 1, txt: "机械又枯燥，但稳稳一笔进账。" }
+  ];
+  const PC_COURSES = [
+    { id: "code", icon: "💻", label: "编程进阶", stat: "knowledge" },
+    { id: "biz", icon: "📈", label: "商业财经", stat: "strategy" },
+    { id: "comm", icon: "🗣️", label: "沟通表达", stat: "charm" },
+    { id: "think", icon: "🧠", label: "思维训练", stat: "mind" },
+    { id: "insight", icon: "🔭", label: "洞察趋势", stat: "insight" },
+    { id: "fit", icon: "💪", label: "健身计划", stat: "body" }
+  ];
+  function pcGigEarn(g) { return Math.round((g.base + (s.stats[g.stat] || 30) * 7) * (hasGear("headphone") ? 1.15 : 1) * (activeComputerKind() === "desktop" ? 1.1 : 1)); }
+  function pcStudyAmt() { return 2 + (hasGear("headphone") ? 1 : 0) + (activeComputerKind() === "desktop" ? 1 : 0); }
+  function pcWorkDo(id) {
+    if (s._pcWorkWk === s.week) return;
+    const g = PC_GIGS.find(x => x.id === id); if (!g) return;
+    const earn = pcGigEarn(g); s._pcWorkWk = s.week;
+    add(s, "cash", earn); add(s, g.stat, 1); if (g.mood) add(s, "mood", g.mood); if (g.stress) add(s, "stress", g.stress);
+    s._phoneMsg = `💰 ${g.txt} 到手 ¥${earn.toLocaleString()}（${STAT_CN[g.stat]} +1）。`;
+    s.timeline.push({ age: s.age, text: `用电脑${g.label}，赚了 ¥${earn.toLocaleString()}。` });
+    render();
+  }
+  function pcStudyDo(id) {
+    if (s._pcStudyWk === s.week) return;
+    const c = PC_COURSES.find(x => x.id === id); if (!c) return;
+    const amt = pcStudyAmt(); s._pcStudyWk = s.week;
+    add(s, c.stat, amt); add(s, "mood", -1);
+    s._phoneMsg = `📚 你专心上了一门「${c.label}」，${STAT_CN[c.stat]} +${amt}。`;
+    s.timeline.push({ age: s.age, text: `用电脑上网课「${c.label}」，${STAT_CN[c.stat]}有所提升。` });
+    render();
+  }
+  function pcHome() {
+    const nw = Math.round(netWorth(s));
+    const icons = PC_APPS.map(a => `<button class="pc-app" data-app="${a.id}"><span class="pc-ic${a.green ? " ph-ic-wx" : ""}">${a.icon}</span><span class="pc-nm">${a.name}</span></button>`).join("");
+    return `<div class="pc-home">
+      <div class="pc-widgets">
+        <div class="pc-w pc-w-clock"><div class="pc-clock">${phoneClock()}</div><div class="pc-date">${s.year}年${seasonName()} · ${s.age}岁</div></div>
+        <div class="pc-w"><small>身价</small><b>¥${nw.toLocaleString()}</b></div>
+        <div class="pc-w"><small>现金</small><b>¥${Math.round(s.cash || 0).toLocaleString()}</b></div>
+      </div>
+      <div class="pc-grid">${icons}</div>
+      <div class="pc-tip">💡 笔记本随身可用；台式只能在家用，但效率更高。</div>
+    </div>`;
+  }
+  function pcTrade() { return phoneHeader("📈 交易台", "大屏 K 线 · 批量买卖 · 比手机顺手") + marketPanelHTML(true); }
+  function pcWork() {
+    const worked = s._pcWorkWk === s.week;
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    const rows = PC_GIGS.map(g => `<button class="pc-gig" data-gig="${g.id}" ${worked ? "disabled" : ""}><span class="pc-gig-ic">${g.icon}</span><span class="pc-gig-mid"><b>${g.label}</b><small>预计 ¥${pcGigEarn(g).toLocaleString()} · 看「${STAT_CN[g.stat]}」</small></span><span class="pc-gig-go">${worked ? "本周已干" : "开工 →"}</span></button>`).join("");
+    return phoneHeader("💼 搞钱工作台", worked ? "本周已经搞过一笔了" : "挑个活，开工赚钱") + msg
+      + `<div class="pc-gigs">${rows}</div>`
+      + `<p class="ap-note">电脑能接的活儿，一周能干一笔。收入随对应能力越高越多；戴降噪耳机或用台式还有加成。干活也耗心力。</p>`;
+  }
+  function pcStudy() {
+    const studied = s._pcStudyWk === s.week;
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    const amt = pcStudyAmt();
+    const rows = PC_COURSES.map(c => `<button class="pc-gig" data-course="${c.id}" ${studied ? "disabled" : ""}><span class="pc-gig-ic">${c.icon}</span><span class="pc-gig-mid"><b>${c.label}</b><small>${STAT_CN[c.stat]} +${amt}</small></span><span class="pc-gig-go">${studied ? "本周已学" : "上课 →"}</span></button>`).join("");
+    return phoneHeader("📚 学习充电站", studied ? "今天学过了，脑子得歇歇" : "上网课，给自己充电") + msg
+      + `<div class="pc-gigs">${rows}</div>`
+      + `<p class="ap-note">一周能专心上一门课。比起线下，电脑上学更高效；戴降噪耳机或用台式效率更高。学习略耗心情。</p>`;
+  }
+  function pcData() {
+    const nw = netWorth(s); const pv = C._util.stockValue ? C._util.stockValue(s) : 0;
+    const bars = C.STAT_KEYS.map(statBar).join("");
+    const prof = C._util.profileSummary ? C._util.profileSummary(s) : "";
+    const infl = C._util.influenceSummary ? C._util.influenceSummary(s) : "";
+    const reach = C._util.socialReach ? C._util.socialReach(s) : (s.social || []).length;
+    const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null;
+    return phoneHeader("📊 数据看板", "把人生摊开看")
+      + `<div class="wl-rows">
+        <div class="wl-r"><span>总身价</span><b style="color:var(--green)">¥${Math.round(nw).toLocaleString()}</b></div>
+        <div class="wl-r"><span>现金 / 持仓</span><b>¥${Math.round(s.cash || 0).toLocaleString()} / ¥${Math.round(pv).toLocaleString()}</b></div>
+        ${mb ? `<div class="wl-r"><span>每月账单</span><b style="color:var(--red)">¥${mb.total.toLocaleString()}</b></div>` : ""}
+        <div class="wl-r"><span>人脉触达</span><b>约 ${reach} 人</b></div>
+        <div class="wl-r"><span>声誉 / 人脉值</span><b>${Math.round(s.reputation || 0)} / ${Math.round(s.network || 0)}</b></div>
+      </div>
+      <div class="stk-sec">六维能力</div><div class="bars">${bars}</div>
+      ${prof ? `<div class="pc-data-line">🪪 ${prof}</div>` : ""}
+      ${infl ? `<div class="pc-data-line">🏛️ 影响力：${infl}</div>` : ""}
+      <div class="stk-sec">行业风向</div>${industryBoardHTML() || '<div class="ph-empty">暂无行业数据。</div>'}`;
+  }
+  function pcScreenBody() {
+    if (pcApp === "home") return pcHome();
+    const m = { trade: pcTrade, work: pcWork, data: pcData, study: pcStudy, browser: appNews, wechat: appWechat };
+    return (m[pcApp] || pcHome)();
+  }
+  function renderPc() {
+    activeDev = "pc";
+    const kind = activeComputerKind();
+    const onHome = pcApp === "home";
+    const title = kind === "desktop" ? "🖥️ 台式电脑" : "💻 笔记本电脑";
+    let inner;
+    if (!kind) {
+      inner = `<div class="pc-unavail">🚪 你正出门在外，家里的台式机够不着。<br><br>想随时随地办公，得带上一台 <b>笔记本电脑</b>。</div>`;
+    } else {
+      inner = `<div class="pc-screen ${onHome ? "is-home" : ""}">${pcScreenBody()}</div>`;
+    }
+    app().innerHTML = `<div class="screen">${navBar("pc")}
+      <div class="play-cols">
+        <section class="play-main">
+          <div class="pcdev ${kind === "desktop" ? "desktop" : "laptop"}">
+            <div class="pc-topbar"><span class="pc-dots"><i></i><i></i><i></i></span><span class="pc-wtitle">${title} · 荒诞人生 OS</span><button class="pc-close" id="pcClose">✕</button></div>
+            <div class="pc-body">${inner}</div>
+            ${kind === "laptop" ? `<div class="pc-hinge"></div>` : ""}
+          </div>
+        </section>
+        <aside class="play-side">${dashboard()}
+          <div class="scene-hero" style="${C.images.styleBg("market", 1200)}"><span class="scene-cap">${title} · 比手机顺手的家伙</span></div>
+        </aside>
+      </div></div>`;
+    bindNav();
+    const close = document.getElementById("pcClose"); if (close) close.onclick = () => { screen = "play"; render(); };
+    bindDeviceApps();
   }
 
   // —— 把一段叙事文本切成「逐句浮现」的片段（按句末标点/换行断句，保留句内 HTML）——
@@ -2673,6 +2913,7 @@
   /* ============================ 顶部导航 + 商城 + 社交圈 ============================ */
   function navBar(cur) {
     const tabs = [["play", "🎮 人生"], ["shop", "🛒 消费"], ["market", "📈 理财"], ["social", "👥 社交圈"], ["phone", "📱 手机"]];
+    if (hasComputer()) tabs.push(["pc", "💻 电脑"]);
     return `<div class="nav">${tabs.map(([k, t]) => `<button class="navbtn ${cur === k ? "on" : ""}" data-nav="${k}">${t}</button>`).join("")}<button class="navbtn" id="reincarnate" title="放弃这一生，回到投胎页重开" style="margin-left:auto;border-color:rgba(255,107,107,.5);color:var(--red)">🔄 重开</button></div>`;
   }
   // 放弃当前这一生，回到标题页重新投胎（已解锁成就/图鉴在 localStorage，不受影响）
@@ -2687,6 +2928,7 @@
       const k = b.dataset.nav; weekLog = []; s._buyMsg = null; s._mktMsg = null; s._castMsg = null;
       s._pendingAct = null;             // 切换到别的页 = 放弃当前挂起的换城市/找乐子，不计时间
       if (k === "phone") { phoneApp = "home"; phoneWx = { tab: "chats", peer: null }; s._phoneMsg = null; }   // 每次点开手机都回到主屏
+      if (k === "pc") { pcApp = "home"; phoneWx = { tab: "chats", peer: null }; s._phoneMsg = null; }          // 每次打开电脑都回到桌面
       screen = k;
       render();
     });
@@ -2791,13 +3033,17 @@
     for (let g = 0; g <= 4; g++) { const y = padT + (H - padT - padB) * g / 4; grid += `<line x1="0" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>`; }
     let series;
     if (line) {
-      // 折线图：收盘价连线 + 渐变面积填充，按区间首尾涨跌着色
+      // 折线图：逐段着色——这一段比上一段高就绿、低就红；面积填充保持淡中性灰
       const pts = data.map((k, i) => `${cx(i).toFixed(1)},${Y(k.c).toFixed(1)}`);
-      const rise = data[n - 1].c >= data[0].c;
-      const col = rise ? "var(--green)" : "var(--red)";
       const base = (H - padB).toFixed(1);
-      const area = `<polygon points="${cx(0).toFixed(1)},${base} ${pts.join(" ")} ${cx(n - 1).toFixed(1)},${base}" fill="${col}" opacity="0.1"/>`;
-      series = `${area}<polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="1.4"/>`;
+      const area = `<polygon points="${cx(0).toFixed(1)},${base} ${pts.join(" ")} ${cx(n - 1).toFixed(1)},${base}" fill="var(--dim)" opacity="0.06"/>`;
+      let segLines = "";
+      for (let i = 1; i < n; i++) {
+        const up = data[i].c >= data[i - 1].c;
+        const col = up ? "var(--green)" : "var(--red)";
+        segLines += `<line x1="${cx(i - 1).toFixed(1)}" y1="${Y(data[i - 1].c).toFixed(1)}" x2="${cx(i).toFixed(1)}" y2="${Y(data[i].c).toFixed(1)}" stroke="${col}" stroke-width="1.4" stroke-linecap="round"/>`;
+      }
+      series = `${area}${segLines}`;
     } else {
       series = data.map((k, i) => {
         const x = cx(i);
@@ -2831,7 +3077,8 @@
     if (cat.dir < 0) return '<span class="mkt-cat bear">⚠️ 降温</span>';
     return '<span class="mkt-cat bull">📈 消息</span>';
   }
-  function renderMarket() {
+  // 行情面板（可复用：理财大屏 / 手机理财 app / 电脑交易台）。big=大屏布局（更宽 K 线）
+  function marketPanelHTML(big) {
     const m = s.market;
     const portVal = C._util.stockValue(s);
     const longest = Math.max.apply(null, C.stocks.map(st => (C._util.stockCandles(s, st.id) || []).length).concat([0]));
@@ -2841,6 +3088,7 @@
       const cls = chg > 0.05 ? "up" : chg < -0.05 ? "down" : "flat";
       const arrow = chg > 0.05 ? "▲" : chg < -0.05 ? "▼" : "■";
       const canBuy1 = s.cash >= price; const canBuy10 = s.cash >= price * 10;
+      const canBuy100 = s.cash >= price * 100;
       const tag = st.kind === "safe" ? "避险" : st.kind === "index" ? "指数" : st.kind === "crypto" ? "加密" : st.sector;
       const candles = C._util.stockCandles(s, st.id);
       const shown = mktRange > 0 ? Math.min(mktRange, candles.length) : candles.length;
@@ -2854,6 +3102,7 @@
           <div class="mkt-act">
             <button class="btn mbtn" data-buy="${st.id}" data-n="1" ${canBuy1 ? "" : "disabled"}>买1</button>
             <button class="btn mbtn" data-buy="${st.id}" data-n="10" ${canBuy10 ? "" : "disabled"}>买10</button>
+            ${big ? `<button class="btn mbtn" data-buy="${st.id}" data-n="100" ${canBuy100 ? "" : "disabled"}>买100</button>` : ""}
             <button class="btn mbtn sell" data-buy="${st.id}" data-n="-1" ${hold > 0 ? "" : "disabled"}>卖1</button>
             <button class="btn mbtn sell" data-buy="${st.id}" data-n="-9999" ${hold > 0 ? "" : "disabled"}>清仓</button>
           </div>
@@ -2861,30 +3110,38 @@
         <div class="mkt-chart">${klineSVG(candles, mktRange, mktChartType)}<span class="kline-meta">周线 · 近 ${shown} 周${badge ? " · 📰 有催化" : ""}</span></div>
       </div>`;
     }).join("");
-    // 基本面 ↔ 盘面：最近一屏新闻形成的板块催化（一周后兑现）
     const nlog = (m.newsLog || []).filter(x => C._util.stocksBySector(x.sector).length);
     const digest = nlog.length ? nlog.map(x => {
       const stk = C._util.stocksBySector(x.sector)[0];
       const dirTxt = x.early ? '<i class="nd-omen">🌱 苗头·下一轮风向</i>' : x.dir < 0 ? '<i class="nd-bear">⚠️ 利空降温</i>' : '<i class="nd-bull">📈 利好</i>';
       return `<div class="nd-row"><span class="nd-sec">${stk ? stk.emoji : "📰"} ${x.sector}</span>${dirTxt}<span class="nd-line">「${x.headline}」<small> · ${x.source}</small></span></div>`;
-    }).join("") : `<div class="nd-empty">最近没什么值得盘的消息。多去 <b>📱 手机</b> 翻翻新闻——读懂正在发酵的赛道，下周开盘往往就有反应。</div>`;
+    }).join("") : `<div class="nd-empty">最近没什么值得盘的消息。多读读新闻——读懂正在发酵的赛道，下周开盘往往就有反应。</div>`;
     const ranges = [[26, "近半年"], [52, "近1年"], [156, "近3年"], [0, "全部"]];
     const rangeBtns = ranges.map(r => `<button class="rgbtn ${mktRange === r[0] ? "on" : ""}" data-rg="${r[0]}">${r[1]}</button>`).join("");
     const typeBtn = `<button class="rgbtn typebtn" id="charttype">${mktChartType === "candle" ? "📉 切折线图" : "🕯️ 切蜡烛图"}</button>`;
     const msg = s._mktMsg ? `<div class="logbox"><div class="log">${s._mktMsg}</div></div>` : "";
+    return `<div class="mkt-sum">
+        <div class="ms"><small>持仓市值</small><b>¥${portVal.toLocaleString()}</b></div>
+        <div class="ms"><small>累计投入</small><b>¥${Math.round(m.invested || 0).toLocaleString()}</b></div>
+        <div class="ms"><small>浮动盈亏</small><b style="color:${portVal - (m.invested || 0) >= 0 ? "var(--green)" : "var(--red)"}">${portVal - (m.invested || 0) >= 0 ? "+" : ""}¥${Math.round(portVal - (m.invested || 0)).toLocaleString()}</b></div>
+      </div>
+      <div class="mkt-news"><div class="mkt-news-h">📰 基本面风向 · 新闻 → 下周盘面</div>${digest}</div>${msg}
+      <div class="mkt-toolbar"><span class="mkt-range-l">区间</span>${rangeBtns}${typeBtn}<span class="mkt-range-r">已积累 ${longest} 周行情</span></div>
+      <div class="mkt-list ${big ? "mkt-list-big" : ""}">${cards}</div>`;
+  }
+  // 行情交互绑定（买卖/区间/图表切换）——理财大屏 / 手机 / 电脑共用
+  function bindMarket() {
+    document.querySelectorAll(".mbtn[data-buy]").forEach(b => b.onclick = () => { tradeStock(b.dataset.buy, parseInt(b.dataset.n, 10)); render(); });
+    document.querySelectorAll(".rgbtn[data-rg]").forEach(b => b.onclick = () => { mktRange = parseInt(b.dataset.rg, 10); render(); });
+    const ct = document.getElementById("charttype"); if (ct) ct.onclick = () => { mktChartType = mktChartType === "candle" ? "line" : "candle"; render(); };
+  }
+  function renderMarket() {
     app().innerHTML = `<div class="screen">${navBar("market")}
       <div class="play-cols">
         <section class="play-main">
           <h2 style="margin-top:0">📈 理财 · 股票账户</h2>
-          <p class="sub">周线 K 线随人生<b style="color:var(--amber)">逐周生长</b>。价格随时代景气与风口波动，<b style="color:var(--amber)">更跟着基本面新闻走</b>：手机新闻里反复念叨的赛道，一般<b style="color:var(--amber)">到下一周开盘就兑现对应涨跌</b>。读懂正在发酵、甚至刚冒苗头的赛道，先人一步埋伏——但热度见顶时别当最后接盘的人。持仓市值并入你的身价。</p>
-          <div class="mkt-sum">
-            <div class="ms"><small>持仓市值</small><b>¥${portVal.toLocaleString()}</b></div>
-            <div class="ms"><small>累计投入</small><b>¥${Math.round(m.invested || 0).toLocaleString()}</b></div>
-            <div class="ms"><small>浮动盈亏</small><b style="color:${portVal - (m.invested || 0) >= 0 ? "var(--green)" : "var(--red)"}">${portVal - (m.invested || 0) >= 0 ? "+" : ""}¥${Math.round(portVal - (m.invested || 0)).toLocaleString()}</b></div>
-          </div>
-          <div class="mkt-news"><div class="mkt-news-h">📰 基本面风向 · 新闻 → 下周盘面</div>${digest}</div>${msg}
-          <div class="mkt-toolbar"><span class="mkt-range-l">区间</span>${rangeBtns}${typeBtn}<span class="mkt-range-r">已积累 ${longest} 周行情</span></div>
-          <div class="mkt-list">${cards}</div>
+          <p class="sub">周线 K 线随人生<b style="color:var(--amber)">逐周生长</b>。价格随时代景气与风口波动，<b style="color:var(--amber)">更跟着基本面新闻走</b>：新闻里反复念叨的赛道，一般<b style="color:var(--amber)">到下一周开盘就兑现对应涨跌</b>。读懂正在发酵、甚至刚冒苗头的赛道，先人一步埋伏——但热度见顶时别当最后接盘的人。持仓市值并入你的身价。</p>
+          ${marketPanelHTML(false)}
         </section>
         <aside class="play-side">${dashboard()}
           ${industryBoardHTML()}
@@ -2892,9 +3149,7 @@
         </aside>
       </div></div>`;
     bindNav();
-    document.querySelectorAll(".mbtn").forEach(b => b.onclick = () => { tradeStock(b.dataset.buy, parseInt(b.dataset.n, 10)); render(); });
-    document.querySelectorAll(".rgbtn[data-rg]").forEach(b => b.onclick = () => { mktRange = parseInt(b.dataset.rg, 10); render(); });
-    const ct = document.getElementById("charttype"); if (ct) ct.onclick = () => { mktChartType = mktChartType === "candle" ? "line" : "candle"; render(); };
+    bindMarket();
   }
   // 关键角色(cast)区：把主线里的固定角色摆进社交圈，带信任/压力/危机，危机可一键回应
   const CAST_CRISIS_LABEL = { debt: "陷入债务，向你求助", illness: "家中有人病了", startup_invite: "想拉你合伙创业", layoff: "刚被裁，正失落", reunite: "想和你复合" };
@@ -3452,7 +3707,7 @@
   let _lastScreen = null;
   function render() {
     const changed = screen !== _lastScreen; _lastScreen = screen;
-    ({ title: renderTitle, cohort: renderCohort, birthplace: renderBirthplace, namepick: renderNamePick, legacykids: renderLegacyKids, create: renderCreate, goalpick: renderGoalPick, play: renderPlay, event: renderEvent, phone: renderPhone, shop: renderShop, market: renderMarket, social: renderSocial, map: renderMap, travel: renderTravel, dead: renderDead, gallery: renderGallery, mgmenu: renderMgMenu, minigame: renderMinigame, boardgame: renderBoardGame }[screen] || renderTitle)();
+    ({ title: renderTitle, cohort: renderCohort, birthplace: renderBirthplace, namepick: renderNamePick, legacykids: renderLegacyKids, create: renderCreate, gear: renderGear, goalpick: renderGoalPick, play: renderPlay, event: renderEvent, phone: renderPhone, pc: renderPc, shop: renderShop, market: renderMarket, social: renderSocial, map: renderMap, travel: renderTravel, dead: renderDead, gallery: renderGallery, mgmenu: renderMgMenu, minigame: renderMinigame, boardgame: renderBoardGame }[screen] || renderTitle)();
     // 只有真正切换页面时才放入场动画；同一页内（点行动/导航刷新）不再整页闪一下
     if (changed) { const sc = app().querySelector(".screen"); if (sc) sc.classList.add("screen-enter"); }
   }
