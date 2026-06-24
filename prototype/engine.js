@@ -36,6 +36,7 @@
   let phoneApp = "home";                        // 当前打开的 app：home=主屏
   let phoneCalc = { cur: "0", acc: null, op: null, fresh: true };  // 计算器状态
   let phoneReels = { n: 0, txt: "" };           // 短视频「摸鱼」状态：刷过几个
+  let phoneWx = { tab: "chats", peer: null };   // 微信（绿泡泡）：当前子页 chats/moments/me + 正在聊的对象 pid
   // 难度档：影响开局家底、生活成本、死亡率（收入侧靠生活成本反向体现）
   const DIFFS = {
     "休闲": { cashMul: 2.0, costMul: 0.65, deathMul: 0.7, emoji: "🛋️", label: "家底厚、花销省、命更硬——专心看剧情" },
@@ -1581,8 +1582,9 @@
     app().innerHTML = `<div class="screen play">${navBar("play")}
       <div class="play-cols">
         <section class="play-main">
-          <div class="play-main-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 在城市里过你的一周</div>
+          <div class="play-main-h"><span>🗺️ ${s.city ? s.city.name : "成都"} · ${s.year}</span><small>点击城市片区，进入场景安排这一周</small></div>
           ${cityMapHtml}
+          ${questHtml}
           ${mainStageHtml}
           ${tipHtml}
           ${districtPanelHtml}
@@ -1593,11 +1595,8 @@
         </section>
         <aside class="play-side">
           ${dashboard()}
-          ${sceneHero}
           ${sceneAmbHtml}
-          <div class="stagebar">📍 ${st.climate}</div>
           ${memHtml}${logHtml}
-          ${weekCalendar()}
         </aside>
       </div></div>`;
     bindNav();
@@ -2068,8 +2067,9 @@
   /* ============================ 📱 手机：一台真能用的手机 ============================ */
   // app 注册表：主屏图标网格按此顺序排列
   const PHONE_APPS = [
+    { id: "wechat", icon: "💬", name: "微信", green: true },
     { id: "news", icon: "📰", name: "头条" },
-    { id: "msg", icon: "💬", name: "信息" },
+    { id: "msg", icon: "🔔", name: "通知" },
     { id: "contacts", icon: "📇", name: "通讯录" },
     { id: "wallet", icon: "💰", name: "钱包" },
     { id: "stocks", icon: "📈", name: "自选股" },
@@ -2081,13 +2081,13 @@
     { id: "settings", icon: "⚙️", name: "设置" }
   ];
   function seasonName() { const w = s.week % 52; return w < 13 ? "春" : w < 26 ? "夏" : w < 39 ? "秋" : "冬"; }
-  // 各 app 的红点角标（信息=危机/系统提醒数）
+  // 各 app 的红点角标（微信=关键角色危机；通知=系统提醒）
   function phoneBadges() {
     const b = {};
-    let msg = 0;
-    if (s.cast) msg += Object.keys(s.cast).filter(k => s.cast[k] && s.cast[k].crisis).length;
-    if (has(s, "starving")) msg += 1;
-    if (msg) b.msg = msg;
+    let wx = 0;
+    if (s.cast) wx += Object.keys(s.cast).filter(k => s.cast[k] && s.cast[k].crisis).length;
+    if (wx) b.wechat = wx;
+    if (has(s, "starving")) b.msg = 1;
     return b;
   }
   // 顶部 app 标题栏 + 返回主屏
@@ -2101,7 +2101,7 @@
     const nw = Math.round(netWorth(s));
     const icons = PHONE_APPS.map(a => {
       const bd = badges[a.id] || 0;
-      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic">${a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
+      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : ""}">${a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
     }).join("");
     return `<div class="ph-home">
       <div class="ph-widgets">
@@ -2121,13 +2121,9 @@
       + `<div class="ap-foot"><button class="btn primary" id="dig">🌙 熬夜深扒，多翻几页</button></div>`
       + `<p class="ap-note">没人会直接告诉你答案。但翻得够多，好几条看似无关的新闻，其实都在反复念叨同一件事。</p>`;
   }
-  // —— 信息：把人生剧本里的人 + 系统通知做成聊天列表 ——
+  // —— 通知：系统类消息（账单 / 行情 / 风口 / 生存警报）。人际全部交给微信 ——
   function phoneThreads() {
     const out = [];
-    if (s.cast) Object.keys(s.cast).forEach(k => {
-      const c = s.cast[k]; if (!c || !c.name) return;
-      if (c.crisis) out.push({ id: "cast_" + k, av: "🎭", who: c.name, role: c.role, time: "刚刚", text: (CAST_CRISIS_LABEL[c.crisis] || "有急事找你") + "……在吗？", castev: c.crisis, urgent: true });
-    });
     if (has(s, "starving")) out.push({ id: "warn", av: "🆘", who: "生存警报", role: "系统", time: "现在", text: "你已资不抵债、坐吃山空，再不想办法就要断炊了。", to: "wallet", urgent: true });
     const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null;
     if (mb) out.push({ id: "bank", av: "🏦", who: "招银通知", role: "账单", time: "本月", text: `本月各项账单合计约 ¥${mb.total.toLocaleString()}，记得留足余额。`, to: "wallet" });
@@ -2139,21 +2135,170 @@
       const hot = Object.keys(s.knownSignals).filter(id => (s.knownSignals[id].confidence || 0) >= 50 && SIGNAL_LABEL[id]);
       if (hot.length) out.push({ id: "sig", av: "📡", who: "风口雷达", role: "情报", time: "近期", text: `你嗅到的方向：${hot.slice(0, 3).map(id => SIGNAL_LABEL[id]).join("、")}。读懂趋势，押对赛道。`, to: "news" });
     }
-    // 关系最好的两位 NPC 主动问候（点开去社交圈走动）
-    (s.social || []).slice().sort((a, b) => (b.attitude || 0) - (a.attitude || 0)).slice(0, 2).forEach((n, i) => {
-      if ((n.attitude || 0) < 60) return;
-      out.push({ id: "soc_" + i, av: "🙂", who: n.name, role: n.role, time: "今天", text: pick(["最近怎么样？有空一起坐坐。", "好久没联系了，挺想你的。", "下次约个饭呗，我请。"]), to: "social" });
-    });
     return out;
   }
   function appMessages() {
     const th = phoneThreads();
-    const rows = th.length ? th.map(t => `<button class="msg-row${t.urgent ? " urgent" : ""}" ${t.castev ? `data-castev="${t.castev}"` : ""} ${t.to ? (["social"].includes(t.to) ? `data-screen="${t.to}"` : `data-app="${t.to}"`) : ""}>
+    const rows = th.length ? th.map(t => `<button class="msg-row${t.urgent ? " urgent" : ""}" ${t.to ? (["social"].includes(t.to) ? `data-screen="${t.to}"` : `data-app="${t.to}"`) : ""}>
         <span class="msg-av">${t.av}</span>
         <span class="msg-mid"><span class="msg-top"><b>${t.who}</b><small>${t.time}</small></span><span class="msg-prev">${t.text}</span></span>
-        <span class="msg-go">${t.castev ? "回应›" : "查看›"}</span>
-      </button>`).join("") : `<div class="ph-empty">📭 暂无新消息，岁月静好。</div>`;
-    return phoneHeader("💬 信息", `${th.length} 条会话`) + `<div class="msg-list">${rows}</div>`;
+        <span class="msg-go">查看›</span>
+      </button>`).join("") : `<div class="ph-empty">📭 暂无新通知，岁月静好。</div>`;
+    return phoneHeader("🔔 通知", `${th.length} 条系统消息`) + `<div class="msg-list">${rows}</div>`;
+  }
+
+  /* ============================ 💬 微信（绿泡泡）============================ */
+  // 联系人定位：pid = "cast:KEY"（关键角色，用 trust）或 "soc:IDX"（社交圈，用 attitude）
+  function wxPeer(pid) {
+    if (!pid) return null;
+    if (pid.indexOf("cast:") === 0) { const k = pid.slice(5); const c = s.cast && s.cast[k]; return c ? { id: pid, obj: c, isCast: true, name: c.name, role: c.role } : null; }
+    const i = +pid.slice(4); const n = (s.social || [])[i]; return n ? { id: pid, obj: n, isCast: false, idx: i, name: n.name, role: n.role } : null;
+  }
+  function wxFavVal(p) { return Math.round(p.isCast ? (p.obj.trust || 50) : (p.obj.attitude || 50)); }
+  function wxFav(p, d) { if (p.isCast) p.obj.trust = Math.max(0, Math.min(100, (p.obj.trust || 50) + d)); else p.obj.attitude = Math.max(0, Math.min(100, (p.obj.attitude || 50) + d)); }
+  function wxFace(fav, cast) { return cast ? "🎭" : fav >= 70 ? "😊" : fav >= 40 ? "🙂" : "😒"; }
+  function wxSeed(str) { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 100000; return h; }
+  // 微信好友 = 关键角色 + 关系靠前的社交圈
+  function wxContacts() {
+    const arr = [];
+    if (s.cast) Object.keys(s.cast).forEach(k => { const c = s.cast[k]; if (c && c.name) arr.push({ pid: "cast:" + k, name: c.name, role: c.role, fav: Math.round(c.trust || 50), crisis: c.crisis, star: true }); });
+    (s.social || []).map((n, i) => ({ n, i })).sort((a, b) => (b.n.attitude || 0) - (a.n.attitude || 0)).slice(0, 12).forEach(({ n, i }) => arr.push({ pid: "soc:" + i, name: n.name, role: n.role, fav: Math.round(n.attitude || 0) }));
+    return arr;
+  }
+  function wxOpenLine(name, fav, crisis) {
+    if (crisis) return (CAST_CRISIS_LABEL[crisis] || "有急事找你") + "……在吗？";
+    const pool = fav >= 70 ? ["哈哈最近忙啥呢？", "上次那事多谢你！", "啥时候出来聚聚～"] : fav >= 45 ? ["在吗？", "最近怎么样？", "好久不见。"] : ["嗯。", "有事？", "……"];
+    return pool[wxSeed(name) % pool.length];
+  }
+  function wxLastLine(c) {
+    if (c.crisis) return (CAST_CRISIS_LABEL[c.crisis] || "有急事找你") + "……";
+    const log = s._wxlog && s._wxlog[c.pid];
+    if (log && log.length) { const last = log[log.length - 1]; return (last.me ? "我: " : "") + last.text; }
+    return wxOpenLine(c.name, c.fav, null);
+  }
+  // 快捷回复表：真改好感 / 心情 / 现金
+  const WX_REPLIES = [
+    { id: "hi", label: "👋 打招呼", my: "在的，挺好的，你呢？", fav: 1, mood: 1, reply: p => wxFavVal(p) >= 50 ? "那就好，有空多聊！" : "哦，知道了。" },
+    { id: "care", label: "❤️ 关心近况", my: "最近还顺吗？有需要尽管开口。", fav: 2, mood: 1, reply: "谢谢你还记挂着我，挺好的。" },
+    { id: "meal", label: "🍚 约饭(¥200)", cost: 200, my: "周末出来吃个饭呗，我请！", fav: 3, mood: 2, reply: "哈哈好啊，那说定了～" },
+    { id: "hb", label: "🧧 发红包(¥888)", cost: 888, my: "[红包] 一点心意，收下～", fav: 6, mood: 1, reply: "哎哟太客气了，谢谢谢谢！" },
+    { id: "borrow", label: "💰 开口借钱", special: true }
+  ];
+  function wxChatList() {
+    const cs = wxContacts();
+    if (!cs.length) return `<div class="ph-empty">还没有微信好友。多出去走动、认识些人吧。</div>`;
+    return `<div class="wx-list">${cs.map(c => `<div class="wx-row" data-wxopen="${c.pid}">
+      <span class="wx-av">${wxFace(c.fav, c.star)}${c.crisis ? '<i class="wx-dot"></i>' : ""}</span>
+      <span class="wx-mid"><span class="wx-top"><b>${c.name}</b><small>${c.role}</small></span><span class="wx-prev">${wxLastLine(c)}</span></span>
+    </div>`).join("")}</div>`;
+  }
+  function wxChatView() {
+    const p = wxPeer(phoneWx.peer);
+    if (!p) { phoneWx.peer = null; return wxChatList(); }
+    const meta = wxContacts().find(c => c.pid === p.id) || {};
+    const fav = wxFavVal(p);
+    const log = (s._wxlog && s._wxlog[p.id]) || [];
+    let bubbles = `<div class="wx-bubble them"><span class="wx-b-av">${wxFace(fav, p.isCast)}</span><div class="wx-b-txt">${wxOpenLine(p.name, fav, meta.crisis)}</div></div>`;
+    bubbles += log.map(m => m.me
+      ? `<div class="wx-bubble me"><div class="wx-b-txt">${m.text}</div><span class="wx-b-av">🙂</span></div>`
+      : `<div class="wx-bubble them"><span class="wx-b-av">${wxFace(fav, p.isCast)}</span><div class="wx-b-txt">${m.text}</div></div>`).join("");
+    const reps = WX_REPLIES.map(r => `<button class="wx-rep" data-wxrep="${r.id}" ${r.cost && s.cash < r.cost ? "disabled" : ""}>${r.label}</button>`).join("");
+    return `<div class="wx-chat">
+      <div class="wx-chat-head"><button class="wx-back" id="wxBack">‹</button><b>${p.name}</b><small>好感 ${fav}</small></div>
+      ${meta.crisis ? `<div class="wx-crisis">⚠️ ${p.name} 正遇上难处，点「❤️ 关心近况」当面回应 →</div>` : ""}
+      <div class="wx-thread">${bubbles}</div>
+      <div class="wx-reps">${reps}</div>
+    </div>`;
+  }
+  function wxMomentText(c) {
+    const pool = c.fav >= 70 ? ["今天和老友吃饭，聊到深夜，真好。", "生活再难，身边有这些人就值了。", "又是元气满满的一天💪"]
+      : c.fav < 40 ? ["呵呵。", "有些人，认清了就好。", "不想说话。"]
+        : ["周末愉快～", "打工人打工魂😪", "今天天气不错。", "新的一周，加油。", "求推荐好吃的店！"];
+    return pool[wxSeed(c.name + c.role) % pool.length];
+  }
+  function wxMoments() {
+    const cs = wxContacts().slice(0, 8);
+    const posted = s._wxPosted === s.week;
+    const pub = `<div class="mo-pub"><span class="mo-pub-h">发条朋友圈</span><div class="mo-pub-btns">
+      <button class="mo-pubbtn" data-wxpost="flex" ${posted ? "disabled" : ""}>✨ 晒一晒</button>
+      <button class="mo-pubbtn" data-wxpost="soul" ${posted ? "disabled" : ""}>🌱 发鸡汤</button>
+      <button class="mo-pubbtn" data-wxpost="emo" ${posted ? "disabled" : ""}>🌧️ 吐个槽</button></div>${posted ? '<small class="mo-pub-tip">今天已经发过了。</small>' : ""}</div>`;
+    const mine = s._wxMyMoment ? `<div class="mo-post mine"><div class="mo-top"><span class="mo-av">🙂</span><b>${s.playerName || "我"}</b></div><div class="mo-txt">${s._wxMyMoment}</div></div>` : "";
+    const posts = cs.length ? cs.map(c => {
+      const liked = s._wxLiked && s._wxLiked[c.pid + ":" + s.week];
+      const likes = (wxSeed(c.name) % 28) + 2 + (liked ? 1 : 0);
+      return `<div class="mo-post"><div class="mo-top"><span class="mo-av">${wxFace(c.fav, c.star)}</span><b>${c.name}</b><small>${c.role}</small></div>
+        <div class="mo-txt">${wxMomentText(c)}</div>
+        <div class="mo-foot"><button class="mo-like ${liked ? "on" : ""}" data-wxlike="${c.pid}">${liked ? "❤️" : "🤍"} ${likes}</button></div></div>`;
+    }).join("") : `<div class="ph-empty">朋友圈静悄悄的。</div>`;
+    return `<div class="wx-moments">${pub}${mine}${posts}</div>`;
+  }
+  function wxMe() {
+    return `<div class="wx-me">
+      <div class="wx-me-top"><span class="wx-me-av">🙂</span><div class="wx-me-id"><b>${s.playerName || "无名之人"}</b><small>微信号：lifesim_${s.age}${(s.playerName || "me").length}</small><small>📍 ${s.city ? C._util.cityFull(s.city) : "地球某处"}</small></div></div>
+      <div class="wx-me-wallet"><span>💰 微信钱包 · 零钱</span><b>¥${Math.round(s.cash || 0).toLocaleString()}</b></div>
+      <div class="ap-foot"><button class="btn" data-app="wallet">打开钱包 →</button></div>
+    </div>`;
+  }
+  function appWechat() {
+    if (phoneWx.peer) return wxChatView();
+    const tab = phoneWx.tab || "chats";
+    const tabs = [["chats", "💬 聊天"], ["moments", "📸 朋友圈"], ["me", "👤 我"]].map(([k, t]) => `<button class="wx-tab ${tab === k ? "on" : ""}" data-wxtab="${k}">${t}</button>`).join("");
+    const body = tab === "moments" ? wxMoments() : tab === "me" ? wxMe() : wxChatList();
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    return phoneHeader("💬 微信", "绿泡泡 · " + (tab === "moments" ? "朋友圈" : tab === "me" ? "个人" : "聊天"))
+      + `<div class="wx-tabs">${tabs}</div>${msg}${body}`;
+  }
+  // 微信交互：回复 / 借钱 / 点赞 / 发朋友圈（都真改状态）
+  function wxTriggerCrisis(crisis) {
+    const id = crisis === "startup_invite" ? "ev_cast_invite" : crisis === "reunite" ? "ev_cast_reunite" : "ev_cast_help";
+    const e = C.events.find(x => x.id === id);
+    if (e) { try { if (!e.cond || e.cond(s)) { enterEvent(e); screen = "event"; render(); return; } } catch (x) { } }
+    render();
+  }
+  function wxBorrow(p) {
+    const f = wxFavVal(p); s._wxlog = s._wxlog || {}; const log = s._wxlog[p.id] = s._wxlog[p.id] || [];
+    log.push({ me: true, text: "在吗？最近手头有点紧，能不能周转一下…" });
+    if (f >= 58) {
+      const amt = 2000 + Math.round(f * 80); add(s, "cash", amt); wxFav(p, -3); add(s, "network", 1);
+      log.push({ me: false, text: `没问题，给你转 ¥${amt.toLocaleString()} 了，先应急。` });
+      s._phoneMsg = `💸 ${p.name} 二话不说借了你 ¥${amt.toLocaleString()}——人情债也是债，记得还。（对方好感 -3）`;
+      s.timeline.push({ age: s.age, text: `微信向 ${p.name} 借到 ¥${amt.toLocaleString()}。` });
+    } else {
+      wxFav(p, -4);
+      log.push({ me: false, text: pick(["不好意思啊，我最近也紧……", "哎我这阵子也周转不开诶。", "下次吧下次，见谅。"]) });
+      s._phoneMsg = `😅 ${p.name} 委婉地拒绝了。开口借钱最伤交情——好感 -4。`;
+    }
+    if (log.length > 12) s._wxlog[p.id] = log.slice(-12);
+  }
+  function wxReply(id) {
+    const p = wxPeer(phoneWx.peer); if (!p) return;
+    const r = WX_REPLIES.find(x => x.id === id); if (!r) return;
+    if (p.isCast && p.obj.crisis && id === "care") { wxTriggerCrisis(p.obj.crisis); return; }   // 危机当面回应 → 触发事件
+    if (id === "borrow") { wxBorrow(p); render(); return; }
+    if (r.cost && s.cash < r.cost) return;
+    if (r.cost) add(s, "cash", -r.cost);
+    wxFav(p, r.fav || 0); if (r.mood) add(s, "mood", r.mood);
+    if (id === "hb" && p.isCast) p.obj.pressure = Math.max(0, (p.obj.pressure || 30) - 6);
+    s._wxlog = s._wxlog || {}; const log = s._wxlog[p.id] = s._wxlog[p.id] || [];
+    log.push({ me: true, text: r.my });
+    log.push({ me: false, text: typeof r.reply === "function" ? r.reply(p) : r.reply });
+    if (log.length > 12) s._wxlog[p.id] = log.slice(-12);
+    if (r.cost) s.timeline.push({ age: s.age, text: `微信上${id === "hb" ? "给 " + p.name + " 发了红包" : "请 " + p.name + " 吃饭"}（¥${r.cost}）。` });
+    render();
+  }
+  function wxLike(pid) {
+    s._wxLiked = s._wxLiked || {}; const key = pid + ":" + s.week; if (s._wxLiked[key]) return;
+    s._wxLiked[key] = true; const p = wxPeer(pid); if (p) wxFav(p, 1);
+    render();
+  }
+  function wxPost(kind) {
+    if (s._wxPosted === s.week) return;
+    s._wxPosted = s.week;
+    if (kind === "flex") { s._wxMyMoment = pick(["刚换了新车，提车现场📸", "年度目标又近了一步，继续冲！", "晒晒最近的小成绩，感谢一路有你们。"]); add(s, "reputation", 2); add(s, "mood", 3); if (C._util.socialShift) C._util.socialShift(s, 1); s._phoneMsg = "✨ 你晒了条朋友圈。点赞如潮——多数人捧场，也有人默默把你屏蔽了。声誉+2，心情+3。"; }
+    else if (kind === "soul") { s._wxMyMoment = pick(["越努力越幸运，共勉🌱", "平凡的日子也要好好过。", "愿你我都被生活温柔以待。"]); add(s, "mood", 2); s._phoneMsg = "🌱 一碗温吞的鸡汤，发完自己心里也暖了点。心情+2。"; }
+    else { s._wxMyMoment = pick(["累了，真的累了。", "成年人的世界没有容易二字。", "算了，不说了。"]); add(s, "mood", -1); if (C._util.socialShift) C._util.socialShift(s, -1); s._phoneMsg = "🌧️ 你发了条 emo 动态。情绪是真了，但有人觉得你负能量。心情-1。"; }
+    render();
   }
   // —— 通讯录：关键角色 + 社交圈，按亲疏排，点开去走动 ——
   function appContacts() {
@@ -2297,7 +2442,7 @@
   // app 路由：把当前 app 渲染成手机屏幕里的内容
   function phoneScreenBody() {
     if (phoneApp === "home") return phoneHome();
-    const m = { news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, calc: appCalc, weather: appWeather, settings: appSettings };
+    const m = { wechat: appWechat, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, calc: appCalc, weather: appWeather, settings: appSettings };
     return (m[phoneApp] || phoneHome)();
   }
   function renderPhone() {
@@ -2321,8 +2466,8 @@
       </div></div>`;
     bindNav();
     document.getElementById("closep").onclick = () => { screen = "play"; render(); };
-    const home = document.getElementById("phHomeBtn"); if (home) home.onclick = () => { phoneApp = "home"; s._phoneMsg = null; render(); };
-    const back = document.getElementById("phBack"); if (back) back.onclick = () => { phoneApp = "home"; s._phoneMsg = null; render(); };
+    const home = document.getElementById("phHomeBtn"); if (home) home.onclick = () => { phoneApp = "home"; phoneWx.peer = null; s._phoneMsg = null; render(); };
+    const back = document.getElementById("phBack"); if (back) back.onclick = () => { phoneApp = "home"; phoneWx.peer = null; s._phoneMsg = null; render(); };
     // 打开 app
     document.querySelectorAll(".ph-app[data-app]").forEach(b => b.onclick = () => { phoneApp = b.dataset.app; s._phoneMsg = null; render(); });
     // app 内跳到另一个 app
@@ -2364,6 +2509,13 @@
     };
     // 计算器：按键
     document.querySelectorAll(".cl-k[data-k]").forEach(b => b.onclick = () => { calcInput(b.dataset.k); render(); });
+    // 微信：子页切换 / 打开对话 / 返回列表 / 快捷回复 / 朋友圈点赞 / 发朋友圈
+    document.querySelectorAll("[data-wxtab]").forEach(b => b.onclick = () => { phoneWx.tab = b.dataset.wxtab; phoneWx.peer = null; s._phoneMsg = null; render(); });
+    document.querySelectorAll("[data-wxopen]").forEach(b => b.onclick = () => { phoneWx.peer = b.dataset.wxopen; s._phoneMsg = null; render(); });
+    const wxb = document.getElementById("wxBack"); if (wxb) wxb.onclick = () => { phoneWx.peer = null; s._phoneMsg = null; render(); };
+    document.querySelectorAll("[data-wxrep]").forEach(b => b.onclick = () => { wxReply(b.dataset.wxrep); });
+    document.querySelectorAll("[data-wxlike]").forEach(b => b.onclick = () => { wxLike(b.dataset.wxlike); });
+    document.querySelectorAll("[data-wxpost]").forEach(b => b.onclick = () => { wxPost(b.dataset.wxpost); });
   }
 
   // —— 把一段叙事文本切成「逐句浮现」的片段（按句末标点/换行断句，保留句内 HTML）——
@@ -2535,7 +2687,7 @@
       if (b.id === "reincarnate") return;   // 重开按钮单独处理（带确认）
       const k = b.dataset.nav; weekLog = []; s._buyMsg = null; s._mktMsg = null; s._castMsg = null;
       s._pendingAct = null;             // 切换到别的页 = 放弃当前挂起的换城市/找乐子，不计时间
-      if (k === "phone") { phoneApp = "home"; s._phoneMsg = null; }   // 每次点开手机都回到主屏
+      if (k === "phone") { phoneApp = "home"; phoneWx = { tab: "chats", peer: null }; s._phoneMsg = null; }   // 每次点开手机都回到主屏
       screen = k;
       render();
     });
