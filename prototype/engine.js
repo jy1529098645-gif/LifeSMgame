@@ -1738,8 +1738,14 @@
       </div></div>`;
     bindNav();
     // ★城市俯瞰图：点区域 → 切换到该区域（行动随之变化）
-    document.querySelectorAll(".cm-dist-label").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; s._cityFacility = null; render(); });
-    document.querySelectorAll(".cm-facility[data-fac]").forEach(el => el.onclick = () => { s._cityFacility = el.dataset.fac; render(); });
+    const cityMapGrid = document.querySelector(".citymap-grid");
+    if (cityMapGrid) cityMapGrid.onclick = (e) => {
+      const el = e.target.closest(".cm-dist-label[data-dist],.cm-facility[data-fac]");
+      if (!el || !cityMapGrid.contains(el)) return;
+      e.preventDefault(); e.stopPropagation();
+      if (el.dataset.dist) { s._cityDistrict = el.dataset.dist; s._cityFacility = null; render(); return; }
+      if (el.dataset.fac) { s._cityFacility = el.dataset.fac; render(); }
+    };
     const cityRegionBackBtn = document.getElementById("cityRegionBack"); if (cityRegionBackBtn) cityRegionBackBtn.onclick = () => { s._cityFacility = null; render(); };
     const cityOverviewBtn = document.getElementById("cityOverview"); if (cityOverviewBtn) cityOverviewBtn.onclick = () => { s._cityDistrict = null; s._cityFacility = null; render(); };
     document.querySelectorAll(".track,.cm-scene-action[data-id]").forEach(el => el.onclick = () => {
