@@ -11,18 +11,18 @@
 
 // 成都·区域表（x/y 为俯瞰图百分比坐标）。actions = 该区域可做的行动 id（复用 C.actions）。
 const CITY_DISTRICTS = [
-  { id: "campus",       name: "学校/宿舍", icon: "🎓", x: 16, y: 70, desc: "宿舍、自习室、社团海报，和快毕业的焦虑。", actions: ["study", "prep_interview", "ask_senior", "parttime", "rest", "browse"] },
-  { id: "talent_market",name: "招聘会/人才市场", icon: "📨", x: 40, y: 58, desc: "展板、二维码、排队投简历的人，和看不见尽头的竞争。", actions: ["jobhunt", "prep_interview", "ask_senior"] },
-  { id: "office_cbd",   name: "写字楼区", icon: "🏢", x: 60, y: 40, desc: "玻璃幕墙很亮，工牌挂在胸前的人走得很快。", actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "learn_industry"] },
-  { id: "tech_park",    name: "产业园/外包园区", icon: "💻", x: 76, y: 50, desc: "工位、外包项目、甲方需求和凌晨上线。", actions: ["work", "learn_industry", "side_project", "validate_need"] },
-  { id: "rental",       name: "出租屋/城中村", icon: "🏚️", x: 28, y: 80, desc: "押一付三、隔音很差、楼下永远在装修。", actions: ["rest", "move_near_office", "side_project", "cook_home"] },
-  { id: "metro",        name: "地铁/通勤", icon: "🚇", x: 50, y: 72, desc: "早高峰、迟到风险、被挤成纸片的人。", actions: ["move_near_office", "browse", "rest"] },
-  { id: "mall",         name: "商圈/便利店", icon: "🛒", x: 64, y: 66, desc: "吃饭、买衣服、便利店饭团，和工资到账后的短暂错觉。", actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize"] },
-  { id: "park",         name: "公园/棋牌角", icon: "♟️", x: 20, y: 44, desc: "石桌上的残局，嘴毒的大爷，和看不出底细的人。", actions: ["leisure", "exercise", "talk_to_mentor"] },
-  { id: "clinic",       name: "医院/社区诊所", icon: "🏥", x: 80, y: 32, desc: "排队、挂号、体检报告，和舍不得花的钱。", actions: ["health_check", "rest"] },
-  { id: "phone",        name: "手机/网络", icon: "📱", x: 86, y: 72, desc: "招聘软件、朋友圈、小红书、反诈提醒和焦虑信息流。", actions: ["browse", "jobhunt", "invest", "reply_family"] },
-  { id: "home",         name: "家/和父母通话", icon: "🏠", x: 14, y: 30, desc: "饭桌上的唠叨、催促与底气，电话那头渐白的头发。", actions: ["reply_family", "rest", "browse"] },
-  { id: "arbitration",  name: "劳动仲裁窗口", icon: "⚖️", x: 70, y: 20, desc: "攥着证据的人、冷脸 HR 和写满条款的桌子。", actions: ["collect_evidence"] }
+  { id: "campus",       name: "学校/宿舍", icon: "🎓", x: 17, y: 25, desc: "宿舍、自习室、社团海报，和快毕业的焦虑。", actions: ["study", "prep_interview", "ask_senior", "parttime", "rest", "browse"] },
+  { id: "talent_market",name: "招聘会/人才市场", icon: "📨", x: 51, y: 82, desc: "展板、二维码、排队投简历的人，和看不见尽头的竞争。", actions: ["jobhunt", "prep_interview", "ask_senior"] },
+  { id: "office_cbd",   name: "写字楼区", icon: "🏢", x: 49, y: 43, desc: "玻璃幕墙很亮，工牌挂在胸前的人走得很快。", actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "learn_industry"] },
+  { id: "tech_park",    name: "产业园/外包园区", icon: "💻", x: 82, y: 18, desc: "工位、外包项目、甲方需求和凌晨上线。", actions: ["work", "learn_industry", "side_project", "validate_need"] },
+  { id: "rental",       name: "出租屋/城中村", icon: "🏚️", x: 73, y: 55, desc: "押一付三、隔音很差、楼下永远在装修。", actions: ["rest", "move_near_office", "side_project", "cook_home"] },
+  { id: "metro",        name: "地铁/通勤", icon: "🚇", x: 50, y: 88, desc: "早高峰、迟到风险、被挤成纸片的人。", actions: ["move_near_office", "browse", "rest"] },
+  { id: "mall",         name: "商圈/便利店", icon: "🛒", x: 20, y: 76, desc: "吃饭、买衣服、便利店饭团，和工资到账后的短暂错觉。", actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize"] },
+  { id: "park",         name: "公园/棋牌角", icon: "♟️", x: 18, y: 48, desc: "石桌上的残局，嘴毒的大爷，和看不出底细的人。", actions: ["leisure", "exercise", "talk_to_mentor"] },
+  { id: "clinic",       name: "医院/社区诊所", icon: "🏥", x: 79, y: 79, desc: "排队、挂号、体检报告，和舍不得花的钱。", actions: ["health_check", "rest"] },
+  { id: "phone",        name: "手机/网络", icon: "📱", x: 90, y: 66, desc: "招聘软件、朋友圈、小红书、反诈提醒和焦虑信息流。", actions: ["browse", "jobhunt", "invest", "reply_family"] },
+  { id: "home",         name: "家/和父母通话", icon: "🏠", x: 35, y: 19, desc: "饭桌上的唠叨、催促与底气，电话那头渐白的头发。", actions: ["reply_family", "rest", "browse"] },
+  { id: "arbitration",  name: "劳动仲裁窗口", icon: "⚖️", x: 60, y: 29, desc: "攥着证据的人、冷脸 HR 和写满条款的桌子。", actions: ["collect_evidence"] }
 ];
 function districtById(id) { return CITY_DISTRICTS.find(d => d.id === id) || null; }
 
@@ -91,6 +91,10 @@ if (typeof actions !== "undefined") {
 /* ===== 前端：成都俯瞰图 SVG 背景（环路 + 锦江 + 楼群 + 绿地）。viewBox 0 0 100 100，
  *       preserveAspectRatio=none 拉伸铺满，坐标与区域按钮的 x%/y% 对齐。 ===== */
 function cityMapSVG(s) {
+  const photoRec = recommendedDistrict(s);
+  const photoRd = districtById(photoRec);
+  const photoRecGlow = photoRd ? `<span class="cm-rec-glow" style="left:${photoRd.x}%;top:${photoRd.y}%"></span>` : "";
+  return `<div class="cm-photo" aria-hidden="true"><img src="assets/img/city-overview-chengdu-mvp.png" alt=""></div><div class="cm-vignette" aria-hidden="true"></div>${photoRecGlow}`;
   // 楼群：在写字楼/产业园/商圈一带铺密一点，城中村矮一点
   const bld = [];
   const cluster = (cx, cy, n, maxH, hue) => {

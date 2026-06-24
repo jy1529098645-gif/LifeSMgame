@@ -1504,15 +1504,14 @@
         ? C._util.routeFilterActions(s, C.actions, st)
         : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })()));
     // ★城市俯瞰图：当前选中的区域决定本周能做的行动（区域是行动入口，doc §3-§5）
-    let cityMapHtml = "", curDistName = "", curDistDesc = "";
+    let cityMapHtml = "", curDistName = "", curDistDesc = "", districtPanelHtml = "";
     let avail = _weekActs;
     if (C._util.CITY_DISTRICTS && C._util.districtActions) {
-      const curDist = C._util.districtForStage(s);
-      s._cityDistrict = curDist;
+      const curDist = (s._cityDistrict && C._util.districtById(s._cityDistrict)) ? s._cityDistrict : null;
       const recDist = C._util.recommendedDistrict ? C._util.recommendedDistrict(s) : null;
-      const dActs = C._util.districtActions(s, curDist);
-      avail = dActs.length ? dActs : _weekActs;
-      const curD = C._util.districtById(curDist); curDistName = curD ? `${curD.icon} ${curD.name}` : ""; curDistDesc = curD ? curD.desc : "";
+      const dActs = curDist ? C._util.districtActions(s, curDist) : [];
+      avail = curDist ? (dActs.length ? dActs : _weekActs) : [];
+      const curD = curDist ? C._util.districtById(curDist) : null; curDistName = curD ? `${curD.icon} ${curD.name}` : ""; curDistDesc = curD ? curD.desc : "";
       const dots = C._util.CITY_DISTRICTS.map(d => {
         const sel = d.id === curDist, rec = d.id === recDist;
         const n = C._util.districtActions(s, d.id).length;
@@ -1521,7 +1520,16 @@
         return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-ico">${d.icon}</span><span class="cm-name">${d.name}</span>${badges}</button>`;
       }).join("");
       const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
-      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 点一个地方去做事${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid">${svg}${dots}</div></div>`;
+      const overview = C._util.CITY_DISTRICTS.map(d => {
+        const n = C._util.districtActions(s, d.id).length;
+        const rec = d.id === recDist;
+        const sig = C._util.districtSignal ? C._util.districtSignal(s, d.id) : {};
+        return `<button class="district-card${rec ? " rec" : ""}${sig.hot ? " hot" : ""}" data-dist="${d.id}"><span class="dc-ico">${d.icon}</span><span class="dc-main"><b>${d.name}</b><em>${d.desc}</em></span><span class="dc-meta">${rec ? "主线建议" : sig.hot ? "有故事" : `${n} 项行动`}</span></button>`;
+      }).join("");
+      districtPanelHtml = curD
+        ? `<div class="district-detail"><div class="dd-top"><div><span class="dd-kicker">当前区域</span><h3>${curD.icon} ${curD.name}</h3></div><button class="btn tiny" id="cityOverview">返回城市总览</button></div><p>${curD.desc}</p><div class="dd-facts"><span>可做行动 ${dActs.length || _weekActs.length}</span><span>${curDist === recDist ? "主线建议区域" : "自由探索区域"}</span></div></div>`
+        : `<div class="district-overview"><div class="do-top"><span>城市总览</span><b>先点一个区域，再安排本周行动</b></div><div class="district-list">${overview}</div></div>`;
+      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 城市俯瞰图${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid">${svg}${dots}</div></div>`;
     }
     const done = s._weekActs || {};
     // ★行动格（slots）真正接管周回合（doc §2）：用完格子即可结束本周；hours 退为体力/过劳的次级成本。
@@ -1592,8 +1600,9 @@
           ${tipHtml}
           ${allocHtml}
           ${weekBudgetHtml}
-          ${cityMapHtml ? `<div class="tracks-h">📍 在「${curDistName}」你可以做：${curDistDesc ? `<span class="td-desc">${curDistDesc}</span>` : ""}</div>` : ""}
-          <div class="tracks">${rows}</div>
+          ${districtPanelHtml}
+          ${cityMapHtml && curDistName ? `<div class="tracks-h">📍 在「${curDistName}」你可以做：${curDistDesc ? `<span class="td-desc">${curDistDesc}</span>` : ""}</div>` : ""}
+          ${rows ? `<div class="tracks">${rows}</div>` : ""}
           ${lockedHtml}
           <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary ${weekFull ? "" : "dis"}" id="endweek" ${weekFull ? "" : "disabled"} title="${weekFull ? "" : "本周还有行动格没用，安排满了才能过完这周"}">${weekFull ? "结束本周 →" : `⏳ 还剩 ${slotsLeft} 格`}</button></div>
         </section>
@@ -1609,6 +1618,8 @@
     bindNav();
     // ★城市俯瞰图：点区域 → 切换到该区域（行动随之变化）
     document.querySelectorAll(".cm-dist").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; render(); });
+    document.querySelectorAll(".district-card").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; render(); });
+    const cityOverviewBtn = document.getElementById("cityOverview"); if (cityOverviewBtn) cityOverviewBtn.onclick = () => { s._cityDistrict = null; render(); };
     document.querySelectorAll(".track").forEach(el => el.onclick = () => {
       const a = C.actions.find(x => x.id === el.dataset.id);
       // ★行动格门槛：格子不够就不能点（决策类 slotCost=0 不受限）
