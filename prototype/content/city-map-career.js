@@ -12,68 +12,68 @@
 // 成都·区域表：总览只显示可点击地名标签；点击后放大到同一角度的区域图，再显示真实设施点。
 // x/y 是地名标签位置；facilities 是区域放大图上的可点击设施。
 const CITY_DISTRICTS = [
-  { id: "campus", name: "川大望江校园", icon: "🎓", x: 18, y: 24, w: 27, h: 22, shape: "8% 24%, 18% 10%, 36% 14%, 43% 31%, 33% 46%, 14% 43%", zoomX: 18, zoomY: 24, desc: "校园、宿舍、自习室和毕业前的焦虑。", actions: ["campus_lecture", "campus_cram", "campus_intern", "campus_club", "campus_rest"], facilities: [
-    { name: "教学楼", icon: "🏫", x: 24, y: 23, action: "campus_lecture" },
-    { name: "自习室", icon: "📖", x: 38, y: 34, action: "campus_cram" },
-    { name: "校招宣讲厅", icon: "📣", x: 58, y: 42, action: "campus_intern" },
-    { name: "食堂", icon: "🍚", x: 34, y: 64, action: "campus_club" },
-    { name: "宿舍区", icon: "🛏️", x: 70, y: 72, action: "campus_rest" }
+  { id: "campus", name: "川大望江校区", icon: "🎓", x: 18, y: 24, w: 27, h: 22, shape: "8% 24%, 18% 10%, 36% 14%, 43% 31%, 33% 46%, 14% 43%", zoomX: 18, zoomY: 24, desc: "公共教学楼、图书馆、学生食堂和毕业前的焦虑。", actions: ["campus_lecture", "campus_cram", "campus_intern", "campus_club", "campus_rest"], facilities: [
+    { name: "公共教学楼", icon: "🏫", x: 24, y: 23, action: "campus_lecture" },
+    { name: "图书馆", icon: "📖", x: 38, y: 34, action: "campus_cram" },
+    { name: "就业指导中心", icon: "📣", x: 58, y: 42, action: "campus_intern" },
+    { name: "学生食堂", icon: "🍚", x: 34, y: 64, action: "campus_club" },
+    { name: "学生宿舍区", icon: "🛏️", x: 70, y: 72, action: "campus_rest" }
   ] },
-  { id: "talent_market", name: "人才服务中心", icon: "📨", x: 50, y: 82, w: 25, h: 17, shape: "39% 76%, 54% 72%, 68% 80%, 64% 94%, 45% 95%, 36% 87%", zoomX: 50, zoomY: 84, desc: "招聘大厅、打印店、面试等候区，求职者在这里排队碰运气。", actions: ["jobhunt", "prep_interview", "print_resume", "browse"], facilities: [
+  { id: "talent_market", name: "公共就业服务中心", icon: "📨", x: 50, y: 82, w: 25, h: 17, shape: "39% 76%, 54% 72%, 68% 80%, 64% 94%, 45% 95%, 36% 87%", zoomX: 50, zoomY: 84, desc: "服务大厅、招聘专区、打印店和面试等候区，求职者在这里排队碰运气。", actions: ["jobhunt", "prep_interview", "print_resume", "browse"], facilities: [
     { name: "就业服务大厅", icon: "📨", x: 34, y: 33, action: "jobhunt" },
-    { name: "简历打印社", icon: "🖨️", x: 62, y: 30, action: "print_resume" },
-    { name: "面试等候区", icon: "🪑", x: 48, y: 54, action: "prep_interview" },
-    { name: "求职咖啡馆", icon: "☕", x: 31, y: 72, action: "cheap_meal" },
+    { name: "图文打印店", icon: "🖨️", x: 62, y: 30, action: "print_resume" },
+    { name: "招聘面试等候区", icon: "🪑", x: 48, y: 54, action: "prep_interview" },
+    { name: "楼下咖啡店", icon: "☕", x: 31, y: 72, action: "cheap_meal" },
     { name: "地铁站入口", icon: "🚇", x: 72, y: 76, action: "city_back" }
   ] },
-  { id: "office_cbd", name: "高新区写字楼", icon: "🏢", x: 50, y: 43, w: 31, h: 28, shape: "38% 30%, 57% 26%, 70% 39%, 66% 60%, 49% 67%, 34% 55%, 31% 40%", zoomX: 51, zoomY: 44, desc: "玻璃幕墙、工牌、电梯和开不完的会。", actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "move_near_office"], facilities: [
+  { id: "office_cbd", name: "高新区商务楼宇", icon: "🏢", x: 50, y: 43, w: 31, h: 28, shape: "38% 30%, 57% 26%, 70% 39%, 66% 60%, 49% 67%, 34% 55%, 31% 40%", zoomX: 51, zoomY: 44, desc: "玻璃幕墙、工牌、前台闸机和开不完的会。", actions: ["work", "overtime_perf", "coworker_lunch", "collect_evidence", "move_near_office"], facilities: [
     { name: "写字楼大堂", icon: "🏢", x: 31, y: 30, action: "work" },
     { name: "开放办公区", icon: "💻", x: 55, y: 34, action: "work" },
-    { name: "会议室", icon: "📊", x: 67, y: 54, action: "overtime_perf" },
+    { name: "公司会议室", icon: "📊", x: 67, y: 54, action: "overtime_perf" },
     { name: "楼下咖啡馆", icon: "☕", x: 40, y: 70, action: "coworker_lunch" },
     { name: "地铁站入口", icon: "🚇", x: 74, y: 77, action: "city_back" }
   ] },
-  { id: "tech_park", name: "天府软件园", icon: "💻", x: 82, y: 20, w: 25, h: 24, shape: "70% 10%, 87% 8%, 96% 22%, 91% 39%, 74% 42%, 66% 28%", zoomX: 83, zoomY: 20, desc: "外包楼、项目会议室、园区食堂和创业咖啡。", actions: ["work", "side_project", "validate_need", "learn_industry", "cheap_meal"], facilities: [
-    { name: "外包公司楼", icon: "🏭", x: 34, y: 30, action: "work" },
+  { id: "tech_park", name: "天府软件园", icon: "💻", x: 82, y: 20, w: 25, h: 24, shape: "70% 10%, 87% 8%, 96% 22%, 91% 39%, 74% 42%, 66% 28%", zoomX: 83, zoomY: 20, desc: "研发楼、项目会议室、园区食堂和创业孵化空间。", actions: ["work", "side_project", "validate_need", "learn_industry", "cheap_meal"], facilities: [
+    { name: "软件研发楼", icon: "🏭", x: 34, y: 30, action: "work" },
     { name: "项目会议室", icon: "📋", x: 61, y: 36, action: "learn_industry" },
-    { name: "创业咖啡馆", icon: "☕", x: 47, y: 59, action: "validate_need" },
+    { name: "创业孵化空间", icon: "☕", x: 47, y: 59, action: "validate_need" },
     { name: "园区食堂", icon: "🍱", x: 25, y: 70, action: "cheap_meal" },
-    { name: "园区地铁口", icon: "🚇", x: 75, y: 76, action: "city_back" }
+    { name: "园区地铁站口", icon: "🚇", x: 75, y: 76, action: "city_back" }
   ] },
-  { id: "rental", name: "城南租住区", icon: "🏚️", x: 74, y: 57, w: 25, h: 22, shape: "65% 49%, 82% 46%, 94% 58%, 88% 74%, 70% 76%, 61% 63%", zoomX: 73, zoomY: 58, desc: "出租屋、中介门店、小卖部、菜市场和楼上永远不停的装修。", actions: ["rest", "move_near_office", "cook_home", "side_project", "browse"], facilities: [
-    { name: "合租出租屋", icon: "🛏️", x: 33, y: 32, action: "rest" },
+  { id: "rental", name: "城南租住片区", icon: "🏚️", x: 74, y: 57, w: 25, h: 22, shape: "65% 49%, 82% 46%, 94% 58%, 88% 74%, 70% 76%, 61% 63%", zoomX: 73, zoomY: 58, desc: "合租房、中介门店、农贸市场和楼上永远不停的装修。", actions: ["rest", "move_near_office", "cook_home", "side_project", "browse"], facilities: [
+    { name: "合租公寓", icon: "🛏️", x: 33, y: 32, action: "rest" },
     { name: "房产中介门店", icon: "🔑", x: 58, y: 33, action: "move_near_office" },
-    { name: "菜市场", icon: "🥬", x: 33, y: 61, action: "cook_home" },
-    { name: "小卖部", icon: "🏪", x: 60, y: 62, action: "cheap_meal" },
+    { name: "社区农贸市场", icon: "🥬", x: 33, y: 61, action: "cook_home" },
+    { name: "社区便利店", icon: "🏪", x: 60, y: 62, action: "cheap_meal" },
     { name: "地铁站入口", icon: "🚇", x: 77, y: 77, action: "city_back" }
   ] },
-  { id: "mall", name: "春熙路商圈", icon: "🛒", x: 20, y: 77, w: 25, h: 21, shape: "8% 68%, 25% 64%, 38% 75%, 34% 91%, 15% 94%, 5% 82%", zoomX: 20, zoomY: 77, desc: "商场、餐饮街、影院和地铁口，体面生活在这里明码标价。", actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize", "browse"], facilities: [
-    { name: "商场", icon: "🛍️", x: 35, y: 31, action: "buy_outfit" },
-    { name: "餐饮街", icon: "🍲", x: 58, y: 38, action: "treat_self" },
-    { name: "便利店", icon: "🏪", x: 29, y: 62, action: "cheap_meal" },
-    { name: "酒吧/影院", icon: "🎬", x: 61, y: 64, action: "socialize" },
-    { name: "地铁站", icon: "🚇", x: 76, y: 78, action: "city_back" }
+  { id: "mall", name: "春熙路商圈", icon: "🛒", x: 20, y: 77, w: 25, h: 21, shape: "8% 68%, 25% 64%, 38% 75%, 34% 91%, 15% 94%, 5% 82%", zoomX: 20, zoomY: 77, desc: "购物中心、餐饮街区、影院和地铁口，体面生活在这里明码标价。", actions: ["cheap_meal", "treat_self", "buy_outfit", "socialize", "browse"], facilities: [
+    { name: "购物中心", icon: "🛍️", x: 35, y: 31, action: "buy_outfit" },
+    { name: "餐饮街区", icon: "🍲", x: 58, y: 38, action: "treat_self" },
+    { name: "24小时便利店", icon: "🏪", x: 29, y: 62, action: "cheap_meal" },
+    { name: "影院娱乐区", icon: "🎬", x: 61, y: 64, action: "socialize" },
+    { name: "地铁站入口", icon: "🚇", x: 76, y: 78, action: "city_back" }
   ] },
-  { id: "park", name: "人民公园", icon: "♟️", x: 18, y: 49, w: 25, h: 24, shape: "8% 39%, 24% 34%, 38% 44%, 35% 61%, 18% 66%, 5% 54%", zoomX: 18, zoomY: 49, desc: "茶馆、棋牌角、湖边步道。这里能回血，也能遇见奇怪的人。", actions: ["leisure", "exercise", "talk_to_mentor", "browse"], facilities: [
-    { name: "茶馆", icon: "🍵", x: 32, y: 30, action: "leisure" },
-    { name: "棋牌角", icon: "♟️", x: 58, y: 38, action: "leisure" },
+  { id: "park", name: "人民公园", icon: "♟️", x: 18, y: 49, w: 25, h: 24, shape: "8% 39%, 24% 34%, 38% 44%, 35% 61%, 18% 66%, 5% 54%", zoomX: 18, zoomY: 49, desc: "公园茶馆、棋牌角、湖边步道。这里能回血，也能遇见奇怪的人。", actions: ["leisure", "exercise", "talk_to_mentor", "browse"], facilities: [
+    { name: "公园茶馆", icon: "🍵", x: 32, y: 30, action: "leisure" },
+    { name: "棋牌活动角", icon: "♟️", x: 58, y: 38, action: "leisure" },
     { name: "湖边步道", icon: "🌿", x: 36, y: 62, action: "exercise" },
-    { name: "健身器材", icon: "🏃", x: 63, y: 65, action: "exercise" },
-    { name: "地铁站", icon: "🚇", x: 78, y: 78, action: "city_back" }
+    { name: "健身器材区", icon: "🏃", x: 63, y: 65, action: "exercise" },
+    { name: "地铁站入口", icon: "🚇", x: 78, y: 78, action: "city_back" }
   ] },
-  { id: "clinic", name: "华西医院片区", icon: "🏥", x: 79, y: 80, w: 25, h: 18, shape: "68% 72%, 84% 70%, 96% 80%, 91% 94%, 72% 96%, 63% 85%", zoomX: 79, zoomY: 80, desc: "门诊、体检中心、药房和急诊。身体的问题会在这里变成账单。", actions: ["health_check", "rest", "browse"], facilities: [
-    { name: "门诊楼", icon: "🏥", x: 34, y: 32, action: "health_check" },
+  { id: "clinic", name: "华西医院片区", icon: "🏥", x: 79, y: 80, w: 25, h: 18, shape: "68% 72%, 84% 70%, 96% 80%, 91% 94%, 72% 96%, 63% 85%", zoomX: 79, zoomY: 80, desc: "门诊大厅、体检中心、门诊药房和急诊入口。身体的问题会在这里变成账单。", actions: ["health_check", "rest", "browse"], facilities: [
+    { name: "门诊大厅", icon: "🏥", x: 34, y: 32, action: "health_check" },
     { name: "体检中心", icon: "🩺", x: 61, y: 35, action: "health_check" },
-    { name: "药房", icon: "💊", x: 34, y: 64, action: "rest" },
+    { name: "门诊药房", icon: "💊", x: 34, y: 64, action: "rest" },
     { name: "急诊入口", icon: "🚑", x: 61, y: 65, action: "health_check" },
-    { name: "地铁站", icon: "🚇", x: 78, y: 79, action: "city_back" }
+    { name: "地铁站入口", icon: "🚇", x: 78, y: 79, action: "city_back" }
   ] },
-  { id: "arbitration", name: "法律服务中心", icon: "⚖️", x: 61, y: 28, w: 21, h: 17, shape: "52% 20%, 66% 18%, 76% 29%, 71% 41%, 55% 43%, 47% 31%", zoomX: 61, zoomY: 29, desc: "仲裁窗口、调解室、法律咨询台。不是爽文反击，是一场漫长拉扯。", actions: ["collect_evidence", "browse"], facilities: [
-    { name: "仲裁窗口", icon: "⚖️", x: 34, y: 33, action: "collect_evidence" },
-    { name: "调解室", icon: "🪑", x: 62, y: 38, action: "collect_evidence" },
-    { name: "打印店", icon: "🖨️", x: 35, y: 65, action: "print_resume" },
-    { name: "法律咨询台", icon: "📄", x: 62, y: 66, action: "collect_evidence" },
-    { name: "地铁站", icon: "🚇", x: 78, y: 79, action: "city_back" }
+  { id: "arbitration", name: "劳动人事争议仲裁院", icon: "⚖️", x: 61, y: 28, w: 21, h: 17, shape: "52% 20%, 66% 18%, 76% 29%, 71% 41%, 55% 43%, 47% 31%", zoomX: 61, zoomY: 29, desc: "立案受理窗口、调解室、法律援助咨询台。不是爽文反击，是一场漫长拉扯。", actions: ["collect_evidence", "browse"], facilities: [
+    { name: "立案受理窗口", icon: "⚖️", x: 34, y: 33, action: "collect_evidence" },
+    { name: "仲裁调解室", icon: "🪑", x: 62, y: 38, action: "collect_evidence" },
+    { name: "图文打印店", icon: "🖨️", x: 35, y: 65, action: "print_resume" },
+    { name: "法律援助咨询台", icon: "📄", x: 62, y: 66, action: "collect_evidence" },
+    { name: "地铁站入口", icon: "🚇", x: 78, y: 79, action: "city_back" }
   ] }
 ];
 function districtById(id) { return CITY_DISTRICTS.find(d => d.id === id) || null; }
