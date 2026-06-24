@@ -401,6 +401,22 @@ h2{font-size:26px;margin-bottom:6px}
 .wxb.them .wxb-txt::before{content:"";position:absolute;left:-5px;top:13px;border:5px solid transparent;border-right-color:#fff;border-left:0}
 .wxb.me .wxb-txt{background:#95ec69;color:#0a330f}
 .wxb.me .wxb-txt::after{content:"";position:absolute;right:-5px;top:13px;border:5px solid transparent;border-left-color:#95ec69;border-right:0}
+/* 红包 / 转账卡片 */
+.wxb-rc{max-width:200px}
+.wxb.me .wxb-rc{margin-left:auto}
+.wx-rc{width:200px;border-radius:8px;overflow:hidden;cursor:default;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.wx-rc[data-wxclaim]{cursor:pointer}
+.wx-rc[data-wxclaim]:hover{filter:brightness(1.06)}
+.wx-rc .rc-row{display:flex;align-items:center;gap:10px;padding:11px 12px}
+.wx-rc .rc-ic{font-size:26px;flex:none}
+.wx-rc .rc-mid{min-width:0}
+.wx-rc .rc-mid b{font-size:17px;color:#fff;display:block}
+.wx-rc .rc-mid small{font-size:11px;color:rgba(255,255,255,.85)}
+.wx-rc .rc-foot{font-size:10px;color:rgba(255,255,255,.7);padding:4px 12px;border-top:1px solid rgba(255,255,255,.15)}
+.wx-rc.hb{background:linear-gradient(135deg,#f6584f,#e8392f)}
+.wx-rc.tf{background:linear-gradient(135deg,#f5a623,#f08c1d)}
+.wx-rc.got{opacity:.72;filter:saturate(.7)}
+.wx-rc.got .rc-ic{filter:grayscale(.3)}
 .wxc-input{display:flex;align-items:center;gap:6px;padding:8px;background:#1b2026;border-top:1px solid #000;position:sticky;bottom:0}
 .wxc-ibtn{background:#262d35;border:none;color:#cfd2d6;width:34px;height:34px;border-radius:7px;font-size:17px;cursor:pointer;flex:none}
 .wxc-field{flex:1;height:34px;border-radius:7px;border:none;background:#fff;color:#111;padding:0 10px;font-size:14px;font-family:inherit;min-width:0}

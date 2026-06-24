@@ -648,8 +648,12 @@
     // 每 4 周 ≈ 一个月：月度收支结算（先发工资收入，再扣账单），生成「月度结算单」弹窗
     if (s.week % 4 === 0) {
       const income = [];   // 本月收入项（月底发薪 + 年终奖 + 已即时到账的零工）
-      // 🧧 爸/妈月初生活费红包（绿泡泡对话里也能看到）；断奶后停发
-      if (!has(s, "family_net_ended") && famMonthlyAllowance() && s._famAllowNotice) income.push({ emoji: "🧧", label: FAM_NAME[s._famAllowNotice.who] + "·生活费", amount: s._famAllowNotice.amt });
+      // 💸 爸/妈月初生活费：以「微信转账」发到绿泡泡，待你收款；上月没领的自动到账计入本月收入。断奶后停发
+      if (!has(s, "family_net_ended")) {
+        const collected = famMonthlyAllowance();
+        if (collected > 0) income.push({ emoji: "🧧", label: "家里·生活费", amount: collected });
+        if (s._famAllowNotice) weekLog.push(`💸 ${FAM_NAME[s._famAllowNotice.who]}给你转了这个月生活费 ¥${s._famAllowNotice.amt.toLocaleString()}，去绿泡泡点「收款」领。`);
+      }
       // 💼 月薪：在职就月底发（按本月出勤比例，满 4 周拿满，保底 60%）
       if (s.job) {
         const ratio = Math.max(0.6, Math.min(1, (s._monthWork || 0) / 4));
@@ -2166,24 +2170,24 @@
       blurb: "家在小地方，爸妈起早贪黑供你读出来，省吃俭用、话不多，把最好的都留给了你。",
       dad: { open: ["在外头还顺利不？吃饭莫省，钱不够说一声。", "你妈念叨你好几回了，得空回个话。", "家里都好，你莫挂心，照顾好自己。", "活路再忙也要按时吃饭，身体是本钱。"], reply: ["嗯，晓得了，你也是。", "行，那爸不打扰你忙。", "乖，听话。"] },
       mom: { open: ["崽啊，天凉了记得加衣裳。", "钱够用不？妈这有，莫亏着自己。", "昨天炖了汤，可惜你不在屋头。", "想你了，过年早点回来嘛。"], reply: ["哎哟知道你忙，妈不多说。", "记得吃饭，啊。", "在外头注意身体。"] },
-      home: [{ w: "妈", t: "崽今天吃饭没得哦？" }, { w: "爸", t: "少问两句，娃儿忙。" }, { w: "妈", t: "炖了排骨，拍给你看 [图片]" }, { w: "妈", t: "天气预报说要降温，记到加衣裳。" }, { w: "爸", t: "钱不够给屋头说，莫硬扛。" }],
-      clan: [{ w: "大伯", t: "都转发个：早起一杯水，养生又长寿🌿" }, { w: "二姨", t: "娃儿在大城市出息咯，几时带对象回来嘛~" }, { w: "三舅", t: "@所有人 周末杀年猪，都回来吃刨汤！" }, { w: "幺姑", t: "哪个晓得这个药酒方子灵不灵哦？" }, { w: "表哥", t: "恭喜恭喜，发个红包接龙图个热闹🧧" }],
+      home: [{ w: "妈", t: "崽今天吃饭没得哦？" }, { w: "爸", t: "你妈又开始了，娃儿忙得很。" }, { w: "妈", t: "我问一哈都不行啊！@崽 周末回来不？给你炖排骨。" }, { w: "爸", t: "钱不够给屋头说，莫硬扛。" }, { w: "妈", t: "对头，天要降温了，记到加衣裳。" }],
+      clan: [{ w: "大伯", t: "都看哈这个：早起一杯水，养生又长寿🌿" }, { w: "三舅", t: "大伯天天转发这些，哈哈哈" }, { w: "二姨", t: "@崽 在大城市出息咯，几时带对象回来嘛~" }, { w: "幺姑", t: "就是噻，该相看相看了。" }, { w: "三舅", t: "周末杀年猪，都回来吃刨汤！我先发个红包热闹下👇" }, { w: "三舅", hb: 6.66 }, { w: "大伯", t: "手快有手慢无！" }],
       allow: [1500, 1600, 1700], allowNote: { low: ["这个月就这些，省着点用，莫乱花。", "家里也紧，紧着吃饭要紧。"], high: ["不够再跟妈说，莫饿着自己。", "拿去，在外头别亏待自己。"] }
     },
     worker: {
       blurb: "普通工薪家庭，爸妈是厂里/单位的老实人，最盼你稳定、别折腾，唠叨里全是操心。",
       dad: { open: ["最近工作咋样？别太拼，身体要紧。", "你妈让我问你周末回不回来吃饭。", "要不考虑考个编制？稳当。", "房租交了没？手头紧就说话。"], reply: ["嗯，知道就好。", "行，你忙吧。", "注意身体。"] },
       mom: { open: ["按时吃饭啊，别老点外卖。", "对象处得咋样了？妈不催，就问问。", "降温了，多穿点。", "钱够花不？妈给你打点过去。"], reply: ["哎，妈就唠叨这几句。", "记得早点睡。", "在外注意安全。"] },
-      home: [{ w: "妈", t: "今天加班不？别太晚。" }, { w: "爸", t: "周末回来吃饭吧，你妈买了菜。" }, { w: "妈", t: "给你寄了点特产，查收 [图片]" }, { w: "爸", t: "工作稳定最重要，别老想跳。" }, { w: "妈", t: "隔壁王阿姨儿子又升职了……" }],
-      clan: [{ w: "大姨", t: "@大家 转发：这5种食物千万别一起吃！" }, { w: "二叔", t: "娃儿在大公司上班，了不起！" }, { w: "表姐", t: "建了个家族相册，都来传娃娃照片📷" }, { w: "小舅", t: "今年过年聚哪家？投个票。" }, { w: "姑妈", t: "有没得合适的姑娘介绍给我们家娃儿~" }],
+      home: [{ w: "妈", t: "今天加班不？别太晚。" }, { w: "爸", t: "你妈一天到晚就知道催。" }, { w: "妈", t: "我这不是关心嘛！@儿子 周末回来吃饭不？买了你爱吃的。" }, { w: "妈", t: "给你寄了点特产，查收 [图片]" }, { w: "爸", t: "工作稳当最重要，钱不够说话。" }],
+      clan: [{ w: "大姨", t: "@大家 转发个：这5种食物千万别一起吃！" }, { w: "二叔", t: "大姨这养生文我看了八百遍咯哈哈" }, { w: "表姐", t: "二叔你上回说的工作给问没？" }, { w: "二叔", t: "在问着呢急啥。话说咱家娃在大公司，了不起！" }, { w: "姑妈", t: "说起来娃儿对象有着落没？我这有个合适的。" }, { w: "小舅", t: "过年都回来啊，我先包个红包图个吉利🧧" }, { w: "小舅", hb: 8.88 }, { w: "大姨", t: "谢谢小舅，新年发财！" }],
       allow: [1600, 1800, 1900], allowNote: { low: ["这个月先这些，下月发了再补你。", "省着点，别月底吃土。"], high: ["够不够？不够言语一声。", "拿着，该花花，别太省。"] }
     },
     wealthy: {
       blurb: "家境优渥，爸妈见过世面，给得起也舍得给，话里带着分寸，盼你有出息、别躺平。",
       dad: { open: ["最近在忙什么项目？需要资源跟我说。", "别光顾着玩，正事上点心。", "你妈又给你安排了个饭局，去不去？", "账上钱够吗？不够我让财务转。"], reply: ["嗯，有想法是好事。", "行，自己拿主意。", "注意分寸。"] },
       mom: { open: ["宝贝，最近气色怎么样？别熬夜。", "周末陪妈去看个展？", "新出的那款表我让人给你留了。", "缺什么直接刷卡，别替我们省。"], reply: ["妈就是想你了。", "照顾好自己。", "早点休息。"] },
-      home: [{ w: "妈", t: "今晚家宴，张姨掌勺，回来吗？" }, { w: "爸", t: "忙就别勉强，正事要紧。" }, { w: "妈", t: "给你订了体检套餐，记得去 [图片]" }, { w: "爸", t: "那个项目我看了，靠谱再投。" }, { w: "妈", t: "李伯伯家闺女回国了，改天聚聚。" }],
-      clan: [{ w: "大伯", t: "@各位 家族基金这季度分红已到账📈" }, { w: "二姑", t: "娃儿这么优秀，考虑接班不？" }, { w: "堂哥", t: "周末游艇趴，都来啊🛥️" }, { w: "姨妈", t: "那块地的事，回头家里碰个头。" }, { w: "舅舅", t: "给孩子们的红包发群里了🧧" }],
+      home: [{ w: "妈", t: "今晚家宴，张姨掌勺，回来吗？" }, { w: "爸", t: "忙就别勉强，正事要紧。" }, { w: "妈", t: "偶尔也得陪陪家里嘛。@宝贝 给你订了体检，记得去 [图片]" }, { w: "爸", t: "那个项目我看了，靠谱再投，缺钱跟我说。" }, { w: "妈", t: "李伯伯家闺女回国了，改天聚聚？" }],
+      clan: [{ w: "大伯", t: "@各位 家族基金这季度分红已到账📈" }, { w: "二姑", t: "大伯辛苦！咱家娃这么优秀，考虑接班不？" }, { w: "堂哥", t: "接啥班，先来周末游艇趴🛥️" }, { w: "姨妈", t: "那块地的事，回头家里碰个头。" }, { w: "舅舅", t: "先给孩子们包个红包，沾沾喜气🧧" }, { w: "舅舅", hb: 88 }, { w: "堂哥", t: "谢谢舅舅！" }],
       allow: [1800, 1900, 2000], allowNote: { low: ["先打这些，不够随时说。", "别替我们省，该花花。"], high: ["拿着零花，不够再要。", "别亏待自己，钱不是问题。"] }
     }
   };
@@ -2215,34 +2219,52 @@
     const pool = (D[p.famKey] || D.mom).open;
     return pool[(wxSeed(s.playerName || "") + Math.floor(s.week / 4)) % pool.length];
   }
-  // 群聊气泡线（小群/大家族）：模板 + 玩家在群里发过的话
-  function famGroupLines(key) {
-    const D = FAM_DATA[famArch()];
-    const base = (D[key] || []).slice();
-    const log = (s._wxlog && s._wxlog["fam:" + key]) || [];
-    return base.map(x => ({ me: false, who: x.w, text: x.t })).concat(log);
+  // 群成员头像（按称呼粗判性别/辈分）
+  function famMemberAv(who) {
+    if (/妈|姨|姑|姐|奶|婶|嫂/.test(who || "")) return "👩";
+    if (/爸|伯|叔|舅|哥|爷|公/.test(who || "")) return "👨";
+    return "🧑";
   }
-  // 月初固定生活费红包：关系更好的那一方发，金额 1500-2000 整百，受出身约束
+  // 群聊：首次打开时把"对话式"模板灌进 _wxlog（含可领的红包），之后就是真实聊天记录
+  function famGroupLog(key) {
+    const pid = "fam:" + key;
+    s._wxlog = s._wxlog || {}; s._famSeed = s._famSeed || {};
+    if (!s._famSeed[pid]) {
+      const tpl = FAM_DATA[famArch()][key] || [];
+      s._wxlog[pid] = tpl.map(x => x.hb != null
+        ? { me: false, who: x.w, type: "hb", amount: x.hb, note: "恭喜发财，大吉大利", claimed: false }
+        : { me: false, who: x.w, text: x.t });
+      s._famSeed[pid] = true;
+    }
+    return s._wxlog[pid];
+  }
+  // 没领的家里转账/红包自动到账（生活费不白丢），返回到账总额
+  function famAutoCollect() {
+    let total = 0;
+    ["fam:dad", "fam:mom"].forEach(pid => { const log = s._wxlog && s._wxlog[pid]; if (!log) return; log.forEach(m => { if (!m.me && !m.claimed && (m.type === "transfer" || m.type === "hb")) { m.claimed = true; total += Number(m.amount) || 0; } }); });
+    if (total) add(s, "cash", total);
+    return total;
+  }
+  // 月初生活费：关系更好的一方以「微信转账」发来（1500-2000整百，待你收款）；上月没领的自动到账
   function famMonthlyAllowance() {
     const month = Math.floor(s.week / 4);
-    if (s._famAllowMonth === month) return false;
+    if (s._famAllowMonth === month) return 0;
     s._famAllowMonth = month;
+    const collected = famAutoCollect();   // 上个月忘收的，先自动到账
     const D = FAM_DATA[famArch()];
     const who = famBetter();
     const t = famTrust(who);
     let amt = D.allow[t >= 82 ? 2 : t >= 66 ? 1 : 0];
     amt = Math.max(1500, Math.min(2000, Math.round(amt / 100) * 100));
-    add(s, "cash", amt);
     const high = amt >= 1800;
     const note = pick(D.allowNote[high ? "high" : "low"]);
     const pid = "fam:" + who;
     s._wxlog = s._wxlog || {}; const log = s._wxlog[pid] = s._wxlog[pid] || [];
-    log.push({ me: false, text: `[红包] 这个月的生活费，记得查收。` });
+    log.push({ me: false, type: "transfer", amount: amt, note: "这个月的生活费", claimed: false });
     log.push({ me: false, text: note });
-    if (log.length > 40) s._wxlog[pid] = log.slice(-40);
-    s.timeline.push({ age: s.age, text: `${FAM_NAME[who]}发来这个月生活费 ¥${amt.toLocaleString()}。` });
+    if (log.length > 60) s._wxlog[pid] = log.slice(-60);
     s._famAllowNotice = { who, amt };
-    return true;
+    return collected;
   }
   // 微信好友 = 亲情(爸/妈/小群/大群) + 关键角色 + 关系靠前的社交圈
   function wxContacts() {
@@ -2264,7 +2286,7 @@
   function wxLastLine(c) {
     if (c.crisis) return (CAST_CRISIS_LABEL[c.crisis] || "有急事找你") + "……";
     const log = s._wxlog && s._wxlog[c.pid];
-    if (log && log.length) { const last = log[log.length - 1]; return (last.me ? "我: " : (last.who ? last.who + ": " : "")) + last.text; }
+    if (log && log.length) { const last = log[log.length - 1]; const body = last.text || (last.type === "hb" ? "[微信红包]" : last.type === "transfer" ? "[微信转账]" : ""); return (last.me ? "我: " : (last.who ? last.who + ": " : "")) + body; }
     if (c.fam) {
       if (c.famKey === "home") { const h = FAM_DATA[famArch()].home; return "妈: " + h[wxSeed("home") % h.length].t; }
       if (c.famKey === "clan") { const cl = FAM_DATA[famArch()].clan; const m = cl[wxSeed("clan") % cl.length]; return m.w + ": " + m.t; }
@@ -2317,7 +2339,9 @@
     { id: "hi", label: "👋 打招呼", my: "在的，挺好的，你呢？", fav: 1, mood: 1, reply: p => wxFavVal(p) >= 50 ? "那就好，有空多聊！" : "哦，知道了。" },
     { id: "care", label: "❤️ 关心近况", my: "最近还顺吗？有需要尽管开口。", fav: 2, mood: 1, reply: "谢谢你还记挂着我，挺好的。" },
     { id: "meal", label: "🍚 约饭(¥200)", cost: 200, my: "周末出来吃个饭呗，我请！", fav: 3, mood: 2, reply: "哈哈好啊，那说定了～" },
-    { id: "hb", label: "🧧 发红包(¥888)", cost: 888, my: "[红包] 一点心意，收下～", fav: 6, mood: 1, reply: "哎哟太客气了，谢谢谢谢！" },
+    { id: "hb", label: "🧧 发红包(¥888)", cost: 888, hb: 888, fav: 6, mood: 1 },
+    { id: "tf1", label: "💸 转账¥200", cost: 200, tf: 200, fav: 2 },
+    { id: "tf2", label: "💸 转账¥1000", cost: 1000, tf: 1000, fav: 4 },
     { id: "borrow", label: "💰 开口借钱", special: true }
   ];
   // 仿真：伪时间戳 + 未读数
@@ -2421,8 +2445,27 @@
   }
   // —— 聊天详情：顶栏 + 气泡（头像+尾巴）+ 备注(可展开) + 输入栏 + ＋面板 ——
   // 一条「对方」气泡（群里带发言人名字与头像）
-  function wxThemBubble(text, av, who) {
-    return `<div class="wxb them">${who ? `<span class="wxb-av">${av}</span><div class="wxb-col"><span class="wxb-who">${who}</span><div class="wxb-txt">${text}</div></div>` : `<span class="wxb-av">${av}</span><div class="wxb-txt">${text}</div>`}</div>`;
+  // 红包/转账卡片
+  function wxRedCard(m, claimKey) {
+    const isHb = m.type === "hb"; const claimable = !m.me && !m.claimed;
+    const amt = (typeof m.amount === "number" && m.amount % 1) ? m.amount.toFixed(2) : m.amount;
+    const statusSub = m.claimed ? (isHb ? "已领取" : "已收款") : (m.note || (isHb ? "微信红包" : "微信转账"));
+    const foot = isHb ? "微信红包" : "微信转账";
+    const hint = claimable ? ` · 点击${isHb ? "领取" : "收款"}` : (m.me && !m.claimed ? " · 待对方收款" : "");
+    return `<div class="wx-rc ${isHb ? "hb" : "tf"}${m.claimed ? " got" : ""}" ${claimable ? `data-wxclaim="${claimKey}"` : ""}>
+      <div class="rc-row"><span class="rc-ic">${isHb ? "🧧" : "💸"}</span><div class="rc-mid"><b>¥${amt}</b><small>${statusSub}</small></div></div>
+      <div class="rc-foot">${foot}${hint}</div></div>`;
+  }
+  // 统一渲染一条消息（文字气泡 / 红包卡 / 转账卡），群里带发言人名字与头像
+  function wxRenderMsg(m, themAv, claimKey) {
+    const av = m.who ? famMemberAv(m.who) : themAv;
+    if (m.type === "hb" || m.type === "transfer") {
+      const card = wxRedCard(m, claimKey || "");
+      return m.me ? `<div class="wxb me rc-wrap"><div class="wxb-rc">${card}</div><span class="wxb-av">🙂</span></div>`
+        : `<div class="wxb them rc-wrap"><span class="wxb-av">${av}</span>${m.who ? `<div class="wxb-col"><span class="wxb-who">${m.who}</span><div class="wxb-rc">${card}</div></div>` : `<div class="wxb-rc">${card}</div>`}</div>`;
+    }
+    return m.me ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
+      : `<div class="wxb them"><span class="wxb-av">${av}</span>${m.who ? `<div class="wxb-col"><span class="wxb-who">${m.who}</span><div class="wxb-txt">${m.text}</div></div>` : `<div class="wxb-txt">${m.text}</div>`}</div>`;
   }
   function wxChatView() {
     const p = wxPeer(phoneWx.peer);
@@ -2432,17 +2475,12 @@
     const av = p.fam ? p.av : wxFace(fav, p.isCast);
     let bubbles = "";
     if (p.fam && p.group) {
-      // 群聊：模板成员发言 + 玩家发过的话，带发言人名字
-      famGroupLines(p.famKey).forEach(m => {
-        bubbles += m.me ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
-          : wxThemBubble(m.text, "🧑", m.who || "家人");
-      });
+      const log = famGroupLog(p.famKey);   // 对话式群聊（含可领红包），存在 _wxlog 里
+      bubbles = log.map((m, i) => wxRenderMsg(m, "🧑", p.id + "|" + i)).join("");
     } else {
       const log = (s._wxlog && s._wxlog[p.id]) || [];
-      bubbles = wxThemBubble(p.fam ? famOpener(p) : wxOpenLine(p.name, fav, meta.crisis), av);
-      bubbles += log.map(m => m.me
-        ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
-        : wxThemBubble(m.text, av)).join("");
+      bubbles = wxRenderMsg({ me: false, text: p.fam ? famOpener(p) : wxOpenLine(p.name, fav, meta.crisis) }, av, "");
+      bubbles += log.map((m, i) => wxRenderMsg(m, av, p.id + "|" + i)).join("");
     }
     // 群聊不出现金钱面板，只能发言；爸妈/好友有快捷回复
     const plusGrid = (phoneWx.plus && !p.group) ? `<div class="wxc-panel">${WX_REPLIES.map(r => {
@@ -2532,16 +2570,37 @@
     const r = WX_REPLIES.find(x => x.id === id); if (!r) return;
     if (p.isCast && p.obj.crisis && id === "care") { wxTriggerCrisis(p.obj.crisis); return; }   // 危机当面回应 → 触发事件
     if (id === "borrow") { wxBorrow(p); render(); return; }
-    if (r.cost && s.cash < r.cost) return;
+    if (r.cost && s.cash < r.cost) { s._phoneMsg = "💸 余额不足，发不出。"; render(); return; }
     if (r.cost) add(s, "cash", -r.cost);
     wxFav(p, r.fav || 0); if (r.mood) add(s, "mood", r.mood);
     if (id === "hb" && p.isCast) p.obj.pressure = Math.max(0, (p.obj.pressure || 30) - 6);
     s._wxlog = s._wxlog || {}; const log = s._wxlog[p.id] = s._wxlog[p.id] || [];
-    log.push({ me: true, text: r.my });
-    const replyText = p.fam ? pick(FAM_DATA[famArch()][p.famKey].reply) : (typeof r.reply === "function" ? r.reply(p) : r.reply);
-    log.push({ me: false, text: replyText });
+    if (r.hb) {                                   // 发红包：对方秒抢
+      log.push({ me: true, type: "hb", amount: r.hb, note: "一点心意，收下", claimed: true });
+      log.push({ me: false, text: p.fam ? "你这孩子，还给我发红包，乖。" : "哎哟太客气了，谢谢谢谢！" });
+    } else if (r.tf) {                            // 转账：对方收款
+      log.push({ me: true, type: "transfer", amount: r.tf, note: "转账给你", claimed: true });
+      log.push({ me: false, text: p.fam ? "你自己留着花，别老想着我们。" : "收到啦，谢谢～" });
+    } else {
+      log.push({ me: true, text: r.my });
+      const replyText = p.fam ? pick(FAM_DATA[famArch()][p.famKey].reply) : (typeof r.reply === "function" ? r.reply(p) : r.reply);
+      log.push({ me: false, text: replyText });
+    }
     if (log.length > 40) s._wxlog[p.id] = log.slice(-40);
-    if (r.cost) s.timeline.push({ age: s.age, text: `用绿泡泡${id === "hb" ? "给 " + p.name + " 发了红包" : "请 " + p.name + " 吃饭"}（¥${r.cost}）。` });
+    if (r.cost) s.timeline.push({ age: s.age, text: `用绿泡泡给 ${p.name} ${r.hb ? "发了红包" : r.tf ? "转了账" : "花了钱"}（¥${r.cost}）。` });
+    render();
+  }
+  // 领红包 / 收转账：真到账（key = "pid|idx"）
+  function wxClaim(key) {
+    const sep = key.lastIndexOf("|"); if (sep < 0) return;
+    const pid = key.slice(0, sep), idx = parseInt(key.slice(sep + 1), 10);
+    const log = s._wxlog && s._wxlog[pid]; if (!log || !log[idx]) return;
+    const m = log[idx]; if (m.me || m.claimed) return;
+    m.claimed = true;
+    const amt = Number(m.amount) || 0; add(s, "cash", amt);
+    const isHb = m.type === "hb";
+    s._phoneMsg = `${isHb ? "🧧 领到红包" : "💰 收款"} ¥${amt}，已存入零钱。`;
+    s.timeline.push({ age: s.age, text: `在绿泡泡${isHb ? "抢到红包" : "收到转账"} ¥${amt}。` });
     render();
   }
   function wxLike(pid) {
@@ -2921,6 +2980,7 @@
     const wxInput = document.getElementById("wxInput"); if (wxInput) wxInput.onkeydown = (e) => { if (e.key === "Enter") { wxSendText(wxInput.value); } };
     document.querySelectorAll("[data-wxrep]").forEach(b => b.onclick = () => { phoneWx.plus = false; wxReply(b.dataset.wxrep); });
     document.querySelectorAll("[data-wxlike]").forEach(b => b.onclick = () => { wxLike(b.dataset.wxlike); });
+    document.querySelectorAll("[data-wxclaim]").forEach(b => b.onclick = () => { wxClaim(b.dataset.wxclaim); });
     document.querySelectorAll("[data-wxpost]").forEach(b => b.onclick = () => { wxPost(b.dataset.wxpost); });
     const wxCover = document.getElementById("wxCover"); if (wxCover) wxCover.onclick = () => { const ids = (typeof WALLPAPERS !== "undefined" ? WALLPAPERS : []).map(w => w.id); if (!ids.length) return; const i = ids.indexOf(s._wxCover || "dusk"); s._wxCover = ids[(i + 1) % ids.length]; render(); };
     // 老大直聘：打开岗位沟通 / 返回 / 投简历 / 面试
