@@ -2515,24 +2515,20 @@
     return m.me ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
       : `<div class="wxb them"><span class="wxb-av">${av}</span>${m.who ? `<div class="wxb-col"><span class="wxb-who">${m.who}</span><div class="wxb-txt">${m.text}</div></div>` : `<div class="wxb-txt">${m.text}</div>`}</div>`;
   }
+  // 一段会话的所有气泡（手机/电脑共用）
+  function wxBuildBubbles(p, fav, meta) {
+    const av = p.fam ? p.av : wxFace(fav, p.isCast);
+    if (p.fam && p.group) { const log = famGroupLog(p.famKey); return log.map((m, i) => wxRenderMsg(m, "🧑", p.id + "|" + i)).join(""); }
+    if (p.fam) { const log = famParentSeed(p.id, p.famKey); return log.map((m, i) => wxRenderMsg(m, av, p.id + "|" + i)).join(""); }
+    const log = (s._wxlog && s._wxlog[p.id]) || [];
+    return wxRenderMsg({ me: false, text: wxSocialOpen(p, fav, (meta || {}).crisis) }, av, "") + log.map((m, i) => wxRenderMsg(m, av, p.id + "|" + i)).join("");
+  }
   function wxChatView() {
     const p = wxPeer(phoneWx.peer);
     if (!p) { phoneWx.peer = null; return wxChatsPage(); }
     const meta = wxContacts().find(c => c.pid === p.id) || {};
     const fav = wxFavVal(p);
-    const av = p.fam ? p.av : wxFace(fav, p.isCast);
-    let bubbles = "";
-    if (p.fam && p.group) {
-      const log = famGroupLog(p.famKey);   // 对话式群聊（含可领红包），存在 _wxlog 里
-      bubbles = log.map((m, i) => wxRenderMsg(m, "🧑", p.id + "|" + i)).join("");
-    } else if (p.fam) {
-      const log = famParentSeed(p.id, p.famKey);   // 爸/妈：带聊天历史
-      bubbles = log.map((m, i) => wxRenderMsg(m, av, p.id + "|" + i)).join("");
-    } else {
-      const log = (s._wxlog && s._wxlog[p.id]) || [];
-      bubbles = wxRenderMsg({ me: false, text: wxSocialOpen(p, fav, meta.crisis) }, av, "");
-      bubbles += log.map((m, i) => wxRenderMsg(m, av, p.id + "|" + i)).join("");
-    }
+    const bubbles = wxBuildBubbles(p, fav, meta);
     // 群聊不出现金钱面板，只能发言；爸妈/好友有快捷回复
     const plusGrid = (phoneWx.plus && !p.group) ? `<div class="wxc-panel">${WX_REPLIES.map(r => {
       const dis = r.cost && s.cash < r.cost;
@@ -3348,9 +3344,56 @@
     return phoneHeader("🤖 智能助手", "看了你的处境，给几条建议")
       + `<div class="pc-tips">${tips.map(t => `<div class="pc-tip-row">${t}</div>`).join("")}</div>`;
   }
+  /* —— 💬 绿泡泡·电脑端：仿真桌面客户端（左侧栏 + 会话列表 + 大对话区）—— */
+  function pcWxRail(tab, unread) {
+    return `<div class="wd-rail">
+      <div class="wd-rail-av">🙂</div>
+      <button class="wd-rb${tab === "chats" ? " on" : ""}" data-wxtab="chats" title="聊天">💬${unread ? `<i class="wd-dot">${unread > 99 ? "99+" : unread}</i>` : ""}</button>
+      <button class="wd-rb${tab === "contacts" ? " on" : ""}" data-wxtab="contacts" title="通讯录">👥</button>
+      <button class="wd-rb${phoneWx.sub === "moments" ? " on" : ""}" data-wxsub="moments" title="朋友圈">🧭</button>
+      <div class="wd-rail-sp"></div>
+      <button class="wd-rb${tab === "me" ? " on" : ""}" data-wxtab="me" title="我">⚙️</button>
+    </div>`;
+  }
+  function pcWxRow(c) {
+    const active = phoneWx.peer === c.pid ? " on" : ""; const ur = wxUnread(c);
+    return `<div class="wd-li${active}" data-wxopen="${c.pid}">
+      <span class="wd-av">${wxAvatarOf(c)}${ur ? `<i class="wd-libadge">${ur}</i>` : ""}</span>
+      <span class="wd-li-mid"><span class="wd-li-top"><b>${c.name}</b><small>${wxTime(c)}</small></span><span class="wd-li-prev">${wxLastLine(c)}</span></span>
+    </div>`;
+  }
+  function pcWxConvo() {
+    const p = wxPeer(phoneWx.peer); if (!p) return "";
+    const meta = wxContacts().find(c => c.pid === p.id) || {};
+    const fav = wxFavVal(p);
+    const bubbles = wxBuildBubbles(p, fav, meta);
+    const tools = !p.group ? `<div class="wd-tools">${WX_REPLIES.map(r => { const dis = r.cost && s.cash < r.cost; const parts = r.label.split(" "); return `<button class="wd-tool" data-wxrep="${r.id}" ${dis ? "disabled" : ""}>${parts[0]}<small>${parts.slice(1).join("")}</small></button>`; }).join("")}</div>` : `<div class="wd-tools dim">群里发个言吧～</div>`;
+    return `<div class="wd-convo">
+      <div class="wd-convo-top"><b id="wxInfo">${p.name}</b><span class="wd-convo-sub">${p.role || ""}${p.fam ? "" : " · " + wxFamLabel(fav)}</span><button class="wd-more" id="wxInfo2">资料 ⌄</button></div>
+      ${phoneWx.info ? wxNoteCard(p) : ""}
+      <div class="wd-thread wxc-thread">${bubbles}</div>
+      <div class="wd-inputwrap">${tools}
+        <textarea id="wxInput" class="wd-field" placeholder="输入消息，Enter 发送…"></textarea>
+        <div class="wd-sendbar"><button class="wxc-send" id="wxSend">发送(Enter)</button></div>
+      </div></div>`;
+  }
+  function pcWechat() {
+    const tab = phoneWx.tab || "chats";
+    const cs = wxContacts();
+    const unread = cs.reduce((a, c) => a + wxUnread(c), 0);
+    if (phoneWx.sub === "moments") return `<div class="wd-wx">${pcWxRail(tab, unread)}<div class="wd-moments">${wxMomentsPage()}</div></div>`;
+    let list;
+    if (tab === "contacts") { const fam = cs.filter(c => c.fam), star = cs.filter(c => c.star && !c.fam), norm = cs.filter(c => !c.star); const sec = (t, arr) => arr.length ? `<div class="wd-sec">${t}</div>` + arr.map(pcWxRow).join("") : ""; list = sec("💗 家人", fam) + sec("★ 关键角色", star) + sec("联系人", norm); }
+    else { list = cs.map(pcWxRow).join(""); }
+    const mid = `<div class="wd-mid"><div class="wd-search">🔍 搜索</div><div class="wd-list">${list}</div></div>`;
+    const right = tab === "me" ? `<div class="wd-mepane">${wxMe()}</div>`
+      : phoneWx.peer ? pcWxConvo()
+        : `<div class="wd-empty"><div class="wd-empty-ic">💬</div><div>选择一个会话开始聊天</div><small>绿泡泡 电脑版</small></div>`;
+    return `<div class="wd-wx">${pcWxRail(tab, unread)}${mid}<div class="wd-right">${right}</div></div>`;
+  }
   function pcScreenBody() {
     if (pcApp === "home") return pcHome();
-    const m = { trade: pcTrade, work: pcWork, data: pcData, study: pcStudy, shop: pcShop, mail: pcMail, games: pcGames, assistant: pcAssistant, browser: appNews, wechat: appWechat };
+    const m = { trade: pcTrade, work: pcWork, data: pcData, study: pcStudy, shop: pcShop, mail: pcMail, games: pcGames, assistant: pcAssistant, browser: appNews, wechat: pcWechat };
     return (m[pcApp] || pcHome)();
   }
   function renderPc() {
@@ -3375,7 +3418,7 @@
         <span class="pc-mb-r"><span class="pc-mb-stat">💰¥${Math.round(s.cash || 0).toLocaleString()}　❤️${Math.round(s.health)}</span>📶 <span class="pc-batt"><i style="width:${Math.max(10, 100 - s.age)}%"></i></span> ${phoneClock()}　<button class="pc-power" id="pcClose" title="关机回到生活">⏻</button></span>
       </div>`;
     const dock = `<div class="pc-dock">${PC_APPS.map(a => `<button class="pc-dockapp ${pcApp === a.id ? "on" : ""}" data-app="${a.id}" title="${a.name}"><span class="pc-dock-ic${a.green ? " ph-ic-wx" : ""}">${a.svg || a.icon}</span><i class="pc-dock-dot" style="${pcApp === a.id ? "" : "opacity:0"}"></i></button>`).join("")}</div>`;
-    const screenArea = `<div class="pc-screen-area">${menubar}<div class="pc-body ${onHome ? "is-home" : ""}">${pcScreenBody()}</div>${dock}</div>`;
+    const screenArea = `<div class="pc-screen-area">${menubar}<div class="pc-body ${onHome ? "is-home" : ""}${pcApp === "wechat" ? " pc-flush" : ""}">${pcScreenBody()}</div>${dock}</div>`;
     const lidOrMon = kind === "desktop"
       ? `<div class="pcdev desktop"><div class="pc-bezel"><div class="pc-cam"></div>${screenArea}</div></div><div class="pc-neck"></div><div class="pc-base"></div>`
       : `<div class="pcdev laptop"><div class="pc-lid"><div class="pc-cam"></div>${screenArea}</div></div><div class="pc-deck"><div class="pc-keys"></div><div class="pc-pad"></div></div>`;
