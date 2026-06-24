@@ -23,7 +23,9 @@ const ACTION_EVENT_BIAS = {
   work:             ["ev_commute_", "ev_wc_blame", "ev_wc_credit", "ev_wc_probation", "ev_wc_nopay"],
   browse:           ["ev_fraud_contact"],
   invest:           ["ev_fraud_contact", "ev_fraud_pushin"],
-  jobhunt:          ["ev_wc_"],   // 求职相关由 ev_jobhunt 自身处理，这里留空名义
+  jobhunt:          ["ev_jh_"],   // 00后求职荒诞：已读不回/AI筛/免费方案/群面/同学晒offer/假HR
+  prep_interview:   ["ev_jh_weird_question", "ev_jh_group_interview"],
+  ask_senior:       ["ev_jh_classmate_offer", "ev_cn_invite_chess"],
   rest:             ["ev_hc_"]
 };
 

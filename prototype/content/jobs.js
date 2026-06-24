@@ -78,7 +78,18 @@ function jobSalary(s) {
 
 // 投一份简历，返回 {ok, text?}（ok=true 进面试）
 function applyJob(s, job) {
+  // ★00后求职：应届新人前几次海投基本石沉大海，求职得熬几周，不再一投就进面（MVP §6）
+  if (typeof ensureJobhunt === "function") {
+    const jh = ensureJobhunt(s); jh.applications = (jh.applications || 0) + 1;
+    if (!has(s, "ever_employed") && jh.applications <= 2) {
+      jh.rejections = (jh.rejections || 0) + 1; jh.ghosted = (jh.ghosted || 0) + 1;
+      bumpMomentum(s, -2); s._jobhuntFails = (s._jobhuntFails || 0) + 1;
+      const r = ["「感谢关注，您的条件暂不匹配本岗位」", "简历投出去，连个自动回复都没有", "「您的简历已进入人才库」（不会再有下文了）", "「岗位已招满/关闭」——明明昨天还挂着"];
+      return { ok: false, text: `你投出「${job.name}」的简历，满怀期待。结果——${pick(r)}。应届的海投，十有八九是这样石沉大海。` };
+    }
+  }
   const w = s.world; let p = job.base;
+  if (!has(s, "ever_employed") && (job.tier || 0) >= 3) p *= 0.5;   // 应届直接够大厂/好岗更难
   for (const k in (job.req || {})) if (k !== "network") p *= Math.min(1.25, (s.stats[k] || 0) / job.req[k]);
   if (has(s, "edu_top")) p *= 1.3; else if (has(s, "edu_bachelor")) p *= 1.08; else if (has(s, "edu_none")) p *= 0.7;
   if (has(s, "haigui_back")) p *= 1.2;
@@ -100,6 +111,7 @@ function applyJob(s, job) {
       : (job.tier >= 3 ? hi : lo)[Math.floor(Math.random() * (job.tier >= 3 ? hi : lo).length)];
     return { ok: false, text: `你投出「${job.name}」的简历，满怀期待地等着。结果——${reason}。` };
   }
+  if (typeof ensureJobhunt === "function") ensureJobhunt(s).interviews = (ensureJobhunt(s).interviews || 0) + 1;   // 进面计数
   return { ok: true };
 }
 // 录用

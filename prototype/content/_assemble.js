@@ -23,6 +23,7 @@ window.CONTENT = {
     initWorld, tickWorld, livingCost, monthlyBill, luckBias, statEdge, bumpMomentum, windPayoff, bigWindfall,
     jobSalary, jobById, applyJob, hireJob,
     MAJORS, majorById, majorName, majorFit, majorBlocks,
+    ensureJobhunt, newGradJobsFor, NEW_GRAD_JOBS,
     generateOpportunities, oppCardFor,
     generateLifeOpportunities, lifeOppApply, LIFE_OPP_TYPE_NAME,
     getWeekActions, getActionPreview, canRunAction, STAGE_ACTIONS, SCENE_ACTIONS,

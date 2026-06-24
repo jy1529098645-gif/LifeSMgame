@@ -108,6 +108,9 @@
     C.cohorts.forEach(c => { const d = Math.abs((c.year || y) - y); if (d < dist) { dist = d; best = c; } });
     return best;
   }
+  function defaultCohort() {
+    return (C.cohorts || []).find(c => c && c.id === "00") || (C.cohorts || [])[0];
+  }
   function startLegacyChildDraft(child) {
     const M = C._util.loadMeta ? C._util.loadMeta() : {};
     const lg = M.legacy || {};
@@ -322,7 +325,7 @@
       cohort: d.cohort.id, cohortName: d.cohort.name, birthYear: d.birthYear, bg: d.picks.join(" · "),
       playerName: (d.playerName && d.playerName.trim()) || defaultPlayerName(d.gender),
       gender: d.gender || "男", orientation: d.orientation || "异", civilRank: 0, partnerGender: null,
-      week: 0, startAge: 18, age: 18, year: d.birthYear + 18, stageId: "youth",
+      week: 0, startAge: 21, age: 21, year: d.birthYear + 21, stageId: "youth",
       stats: stats, network: 10, reputation: 0,
       cash: C.assetTierCash[d.assetTier] || 20000, assets: 0,
       health: 70 + Math.round((stats.body - 30) * 0.4), mood: 60, stress: 10, overdraft: 0,
@@ -372,13 +375,13 @@
     let lg = null; if (C._util.applyLegacy) { try { lg = C._util.applyLegacy(st); } catch (e) { } }
     st._intro = true;                 // 开场「老祖宗的话」
     st.eraWind = C.windAt(st.year);
-    st.hours = stageOf(18).weeklyHours;
+    st.hours = stageOf(21).weeklyHours;
     rollWeekPlan(st);                 // 初始化第一周的天气与排程
     refreshNews(st);
     const bpTxt = d.birthplace ? `生于${d.birthplace.path}。${(d.birthplace.origin && d.birthplace.origin.note) || ""} ` : "";
     const lgTxt = lg ? `家族传承：${lg.note}${lg.cash ? `（继承家底 ¥${lg.cash.toLocaleString()}）` : ""} ` : "";
     const lineTxt = d.legacyChild ? `你是上一代的孩子「${d.legacyChild.name}」，在${st.legacyParentName || "上一代"}的人生余波里成年。` : "";
-    st.timeline.push({ age: 18, text: `${d.birthYear} 年，${st.playerName}的人生正式开始（${d.cohort.name}·${st.gender}）。${bpTxt}${lgTxt}${lineTxt}成长轨迹：${d.picks.join("、")}。18 岁，故事开始。` });
+    st.timeline.push({ age: 21, text: `${st.year} 年，${st.playerName}读到了大三（${d.cohort.name}·${st.gender}·${st.major && C._util.majorName ? C._util.majorName(st) : "在校生"}）。${bpTxt}${lgTxt}${lineTxt}成长轨迹：${d.picks.join("、")}。21 岁，毕业的影子已经压上来——故事从这里开始。` });
     return st;
   }
 
@@ -1150,7 +1153,7 @@
   }
 
   function renderNamePick() {
-    if (!draft) startDraft(C.cohorts[1]);
+    if (!draft) startDraft(defaultCohort());
     const suggested = draft.playerName || defaultPlayerName(draft.gender);
     app().innerHTML = `<div class="screen"><h2>给自己起个名字</h2><p class="sub">名字不会改变数值，但会进入时间线、结局和家族传承。</p>
       <div class="namebox"><label>角色姓名</label><input id="playerNameInput" maxlength="12" value="${suggested}"><small>${draft.legacyChild ? "这是上一代的孩子。你可以沿用原名，也可以改名。" : "不填会自动生成一个名字。"}</small></div>
@@ -1200,7 +1203,7 @@
   }
 
   function renderCohort() {
-    if (!draft) startDraft(C.cohorts[1]);
+    if (!draft) startDraft(defaultCohort());
     const cunl = C._util.metaUnlocked ? C._util.metaUnlocked() : {};
     const cards = C.cohorts.map(c => {
       const locked = c.locked && !cunl[c.locked];
@@ -1403,16 +1406,37 @@
   }
 
   function renderIntro() {
+    if (window.MVP_00_CAREER) {
+      const majorTxt0 = s.major && C._util.majorName ? C._util.majorName(s) : "某个专业";
+      app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:640px;margin:6vh auto 0">
+        <div class="ev-tag">${s.birthYear + 21} 年 · 21 岁 · 大三下学期</div>
+        <div class="ev-title">🪪 00 后的第一张工牌（还没拿到）</div>
+        <div class="ev-text">你是一个 00 后，读到了大三，专业是<b style="color:var(--amber2)">${majorTxt0}</b>。你不是不努力，只是这几年，努力越来越像一张没人解释规则的表格：秋招提前、实习要经验、经验要实习。<br><br>
+        手机里全是同龄人上岸、进厂、进大厂的故事。家里问你「毕业后想好没有」，招聘软件问你「是否接受高强度成长」，同学群里有人晒 offer，也有人突然沉默。你还没真正进入社会，社会已经把门槛、房租、通勤、算法筛选和一堆荒诞规矩摆在了门口。<br><br>
+        <i style="color:var(--dim)">没有老祖宗的鸡汤，没有逆天改命的剧本。只有一个普通的 00 后，去亲历一遍那段没人替你扛的、从学校到职场的难受日子。</i></div>
+        <div class="ev-choices"><button class="btn primary choice" id="introgo">投出第一份简历 →</button></div>
+      </div></div>`;
+      document.getElementById("introgo").onclick = () => {
+        s._intro = false;
+        s.age = Math.max(s.age || 18, 21);
+        s.year = s.birthYear + s.age;
+        s.timeline.push({ age: s.age, text: "大三这年，你开始认真面对毕业后的第一份工作。" });
+        screen = "goalpick";
+        render();
+      };
+      return;
+    }
+    const majorTxt = s.major && C._util.majorName ? C._util.majorName(s) : "某个专业";
     app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:600px;margin:6vh auto 0">
-      <div class="ev-tag">${s.birthYear + 18} 年 · 18 岁 · 故事开始之前</div>
-      <div class="ev-title">👴 老祖宗的话</div>
-      <div class="ev-text">十八岁这年，临行前，家里最年长的太爷爷把你叫到跟前，浑浊的眼睛盯着你，一字一句地说：<br><br>
-      「娃啊，记住——<b style="color:var(--amber2)">打工是不可能打工的，这辈子都不可能打工的。</b>一个『工』字，上面一横下面一横，中间一竖到底，<b style="color:var(--amber2)">永远没有出头之日</b>。」<br><br>
-      「想出头，要么读书读出个名堂，要么自己当老板。给人打工，到头来只是个『工具人』。」<br><br>
-      <i style="color:var(--dim)">这句话你将信将疑。可往后几十年的风风雨雨里，你会无数次想起这个下午。是真理，还是毒鸡汤？只有你自己的人生能回答。</i></div>
-      <div class="ev-choices"><button class="btn primary choice" id="introgo">我记住了，出发 →</button></div>
+      <div class="ev-tag">${s.year} 年 · 21 岁 · 大三下学期</div>
+      <div class="ev-title">🪪 00 后的第一张工牌（还没拿到）</div>
+      <div class="ev-text">你是一个 00 后，读到了大三，专业是<b style="color:var(--amber2)">${majorTxt}</b>。<br><br>
+      课还在上，但所有人都在悄悄换赛道：朋友圈里同学开始晒实习、晒 offer；家族群里七大姑八大姨问「工作找好没」；爸妈嘴上说「别有压力」，转头就发来一篇《考公上岸的人生有多稳》。<br><br>
+      你打开招聘软件，第一次认真地刷起了岗位。屏幕上密密麻麻的「<b style="color:var(--amber2)">3 年经验</b>」「<b style="color:var(--amber2)">985 优先</b>」「<b style="color:var(--amber2)">薪资面议</b>」，让你心里咯噔一下。<br><br>
+      <i style="color:var(--dim)">没有老祖宗的鸡汤，没有逆天改命的剧本。只有一个普通的 00 后，要去亲历一遍——从学校到职场，那段没人替你扛的难受日子。</i></div>
+      <div class="ev-choices"><button class="btn primary choice" id="introgo">投出第一份简历 →</button></div>
     </div></div>`;
-    document.getElementById("introgo").onclick = () => { s._intro = false; s.timeline.push({ age: 18, text: "太爷爷说：「打工是不可能打工的。」你带着这句话上了路。" }); screen = "goalpick"; render(); };
+    document.getElementById("introgo").onclick = () => { s._intro = false; s.timeline.push({ age: 21, text: "大三这年，你打开招聘软件，投出了人生第一份简历。" }); screen = "goalpick"; render(); };
   }
   // 本周 7 天日历：每天显示天气 + 已排满程度 + 行动小图标
   function weekCalendar() {
@@ -1495,7 +1519,7 @@
       <div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span>${cost}</div>
       <div class="tk-desc">${a.desc}</div>${prev ? `<div class="tk-hint">${prev}</div>` : ""}</div>`; }).join("");
     const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
-    const tipHtml = (s.age <= 20 && !has(s, "employed") && !has(s, "startup")) ? `<div class="tip">💡 新手提示：每周只有有限的<b>行动格</b>——想清楚把它花在哪。想有收入就去「找工作/兼职」，光按「结束本周」会坐吃山空。</div>` : "";
+    const tipHtml = (s.age <= 23 && !has(s, "employed") && !has(s, "startup")) ? `<div class="tip">💡 新手提示：每周只有有限的<b>行动格</b>——想清楚把它花在哪。想有收入就去「找工作/兼职」，光按「结束本周」会坐吃山空。</div>` : "";
     // 行动格条：本回合还能安排几件事（doc §2.4）
     const slotPips = "▰".repeat(slotsUsed) + "▱".repeat(slotsLeft);
     const allocHtml = `<div class="alloc-h">${slotsTotal > 0
@@ -2705,6 +2729,20 @@
     if (!s._goalDone && C._util.goalDone(s)) { s._goalDone = true; const g = C._util.goalById(s.goal); weekLog.push("🎯 人生目标【" + (g ? g.name : "") + "】达成！这一生，你没白活。"); s.timeline.push({ age: s.age, text: "🎯 达成人生目标：" + (g ? g.name : "") }); add(s, "mood", 12); }
   }
   function renderGoalPick() {
+    if (window.MVP_00_CAREER) {
+      const cards = C.goals.map(g => `<div class="bgcard goalcard" data-goal="${g.id}"><div class="bg-emoji">${g.emoji}</div><div class="bg-name">${g.name} <span class="goal-path">${g.path}</span></div><div class="bg-desc">${g.desc}</div><div class="bg-start">🎯 ${g.target}</div></div>`).join("");
+      app().innerHTML = `<div class="screen"><div class="scene-hero" style="${C.images.styleBg("goalpick", 1200)}"><span class="scene-cap">00 后职场沉浮</span></div><h2>先活过第一段职场</h2><p class="sub">这一版只聚焦一条主线：大三迷茫、毕业求职、第一份工作、通勤房租、试用期、职场荒诞和第一次人生分流。其它人生路线先暂时收起。</p><div class="bggrid">${cards}</div></div>`;
+      document.querySelectorAll(".goalcard[data-goal]").forEach(el => el.onclick = () => {
+        s.goal = el.dataset.goal;
+        const g = C._util.goalById(s.goal);
+        const note = C._util.applyGoalMods ? C._util.applyGoalMods(s) : "";
+        s.timeline.push({ age: s.age, text: "进入主线：" + (g ? g.name : "00 后职场沉浮") });
+        if (note) weekLog.push("🎯 " + note);
+        screen = "play";
+        render();
+      });
+      return;
+    }
     const unl = (s && s.unlocks) || {};
     const cards = C.goals.map(g => {
       const locked = g.locked && !unl[g.locked];
