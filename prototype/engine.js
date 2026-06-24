@@ -2927,6 +2927,10 @@
     document.querySelectorAll("[data-course]").forEach(b => b.onclick = () => { pcStudyDo(b.dataset.course); });
     document.querySelectorAll(".buybtn[data-buy]").forEach(b => b.onclick = () => { const it = C.consumption.find(x => x.id === b.dataset.buy); if (it) { buy(it); render(); } });
     const pg = document.getElementById("pcGamePlay"); if (pg) pg.onclick = () => { pcGameDo(); };
+    // 电脑游戏厅：启动内置小游戏/棋牌 + 对局内交互（共用棋盘/回合面板的绑定）
+    document.querySelectorAll(".pc-gcard[data-mg]").forEach(b => b.onclick = () => startMinigame(b.dataset.mg, "pc"));
+    document.querySelectorAll(".pc-gcard[data-bg]").forEach(b => b.onclick = () => startBoardGame(b.dataset.bg, "pc"));
+    if (activeDev === "pc" && pcApp === "games") { bindMinigamePanel(); bindBoardPanel(); }
   }
 
   /* ============================ 💻 电脑（笔记本 / 台式）============================ */
@@ -3051,15 +3055,20 @@
     </button>`).join("");
     return phoneHeader("📧 邮箱", `${list.length} 封邮件`) + `<div class="mail-list">${rows}</div>`;
   }
-  // —— 游戏厅：放松解压（重复可玩，效用递减）+ 一键进真·小游戏/棋牌 ——
+  // —— 游戏厅：把真·小游戏/棋牌内置进电脑，直接在这儿玩 ——
   function pcGames() {
-    const n = s._pcGameN || 0;
+    if (gameHost === "pc" && mgId && mg) return phoneHeader("🎮 游戏厅", "对局中") + `<div class="pc-gamewrap">${minigamePanelHTML()}</div>`;
+    if (gameHost === "pc" && bgId && bgGame && bgBoard) return phoneHeader("🎮 游戏厅", "对弈中") + `<div class="pc-gamewrap">${boardPanelHTML()}</div>`;
     const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
-    const mood = n >= 6 ? "玩太久了，眼睛发酸，越玩越空。" : n >= 3 ? "再来一把……就一把。" : "酣畅淋漓，压力小了不少。";
-    return phoneHeader("🎮 游戏厅", `已玩 ${n} 局`) + msg
-      + `<div class="rl-stage"><div class="rl-clip">🕹️ ${n ? "GG！又是一局酣战。" : "选个游戏，放松一下。"}</div><div class="rl-mood">${mood}</div></div>`
-      + `<div class="ap-foot"><button class="btn primary" id="pcGamePlay">🎮 来一局（放松）</button><button class="btn" data-screen="mgmenu">🎲 进小游戏厅 →</button></div>`
-      + `<p class="ap-note">打游戏能解压、降压力，但玩多了心情红利递减、人也更累。劳逸结合才走得远。</p>`;
+    const list = (C._util.mgAvailable ? C._util.mgAvailable(s) : []);
+    const boards = (C._util.bgAvailable ? C._util.bgAvailable(s) : []);
+    const bgCards = boards.map(g => `<div class="pc-gcard" data-bg="${g.id}"><span class="pc-gc-emoji">${g.emoji}</span><div class="pc-gc-mid"><b>${g.name} <span class="real-tag">真·对弈</span></b><small>${g.where} · 与${g.opponent}对弈</small></div><span class="pc-gc-go">下 →</span></div>`).join("");
+    const mgCards = list.map(g => `<div class="pc-gcard" data-mg="${g.id}"><span class="pc-gc-emoji">${g.emoji}</span><div class="pc-gc-mid"><b>${g.name}</b><small>${g.where} · 拼${SN[g.statKey] || g.statKey}　${g.stake ? "💸约¥" + g.stake.toLocaleString() : "免费"}</small></div><span class="pc-gc-go">玩 →</span></div>`).join("");
+    const games = (bgCards + mgCards) || `<div class="ph-empty">这个年纪、这个地方，暂时没什么好玩的去处。</div>`;
+    return phoneHeader("🎮 游戏厅", "真·小游戏，在电脑上随便玩") + msg
+      + `<div class="pc-glist">${games}</div>`
+      + `<div class="stk-sec">摸鱼放松</div><div class="ap-foot"><button class="btn primary" id="pcGamePlay">🕹️ 随便玩一会（解压）</button></div>`
+      + `<p class="ap-note">标「真·对弈」的是真棋盘，自己动手下；其余赢了有彩头、输了也解压。打太久心情红利递减、人也更累。</p>`;
   }
   function pcGameDo() {
     s._pcGameN = (s._pcGameN || 0) + 1;
@@ -4006,8 +4015,9 @@
     const stars = pts.map(p => `<circle cx="${p[0] + 0.5}" cy="${p[1] + 0.5}" r="0.11" fill="#6b4423"/>`).join("");
     return `<svg class="xq-svg" viewBox="0 0 ${N} ${N}" preserveAspectRatio="none"><g stroke="#6b4423" stroke-width="0.05" stroke-linecap="round">${s}</g>${stars}</svg>`;
   }
-  function renderBoardGame() {
-    const g = bgGame; if (!g || !bgBoard) { screen = "play"; render(); return; }
+  // 棋牌面板（可内嵌：独立屏 / 电脑游戏厅）
+  function boardPanelHTML() {
+    const g = bgGame; if (!g || !bgBoard) return "";
     const isMove = g.mode === "move";
     const isGo = g.mode === "go";
     const W = g.width || g.size, Ht = g.height || g.size;
@@ -4036,49 +4046,70 @@
     const canUndo = !bgOver && bgUndos < BG_UNDO_MAX && bgHistory.length > 0;
     const undoBtn = bgOver ? "" : `<button class="btn${canUndo ? "" : " dis"}" id="bgundo" ${canUndo ? "" : "disabled"} title="每局最多悔 2 步">↩ 悔棋（剩 ${Math.max(0, BG_UNDO_MAX - bgUndos)}）</button>`;
     const btns = bgOver
-      ? `<button class="btn choice" id="bgagain">再来一局 🔄</button><button class="btn primary choice" id="bgdone">结束，回去生活 →</button>`
+      ? `<button class="btn choice" id="bgagain">再来一局 🔄</button><button class="btn primary choice" id="bgdone">结束 →</button>`
       : (isGo ? `${undoBtn}<button class="btn" id="bgpass">停手 / 终局</button><button class="btn" id="bgresign">认输离桌</button>` : `${undoBtn}<button class="btn" id="bgresign">认输离桌</button>`);
-    app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:${isMove ? 460 : 560}px;margin:4vh auto 0">
+    return `<div class="ev-card" style="max-width:${isMove ? 460 : 560}px;margin:0 auto">
       <div class="ev-tag">${g.emoji} ${g.name} · 对手：${g.opponent}</div>
       ${statusTop}
       <div class="bg-board${isMove ? " xq-board xq-lined" : " go-board xq-lined"}" style="grid-template-columns:repeat(${W},1fr)">${isMove ? xiangqiBoardSVG(W, Ht) : gridBoardSVG(W)}${cells}</div>
-      <div class="ev-choices" style="margin-top:14px">${btns}</div></div></div>`;
+      <div class="ev-choices" style="margin-top:14px">${btns}</div></div>`;
+  }
+  function bindBoardPanel() {
+    const g = bgGame; if (!g) return;
+    const isMove = g.mode === "move", isGo = g.mode === "go";
     if (!bgOver) {
+      const canUndo = bgUndos < BG_UNDO_MAX && bgHistory.length > 0;
       const handler = isMove ? bgMoveClick : isGo ? bgGoMove : bgPlayerMove;
       document.querySelectorAll(".bg-cell").forEach(el => el.onclick = () => handler(parseInt(el.dataset.x, 10), parseInt(el.dataset.y, 10)));
       const rs = document.getElementById("bgresign"); if (rs) rs.onclick = () => { bgFinish("lose"); render(); };
       const ps = document.getElementById("bgpass"); if (ps) ps.onclick = () => bgGoPass();
       const ub = document.getElementById("bgundo"); if (ub && canUndo) ub.onclick = () => bgUndo();
     } else {
-      document.getElementById("bgagain").onclick = () => startBoardGame(bgId);
-      document.getElementById("bgdone").onclick = () => { bgId = null; bgGame = null; bgBoard = null; screen = "play"; render(); };
+      const ag = document.getElementById("bgagain"); if (ag) ag.onclick = () => startBoardGame(bgId, gameHost);
+      const dn = document.getElementById("bgdone"); if (dn) dn.onclick = () => { exitGameHost(); render(); };
     }
   }
-  function renderMinigame() {
-    const g = C._util.mgById(mgId); if (!g) { screen = "play"; render(); return; }
+  function renderBoardGame() {
+    if (!bgGame || !bgBoard) { screen = "play"; render(); return; }
+    app().innerHTML = `<div class="screen">${boardPanelHTML()}</div>`;
+    bindBoardPanel();
+  }
+  // 回合制小游戏面板（可内嵌：独立屏 / 电脑游戏厅）
+  function minigamePanelHTML() {
+    const g = C._util.mgById(mgId); if (!g) return "";
     const need = Math.ceil(g.rounds / 2);
     const scoreLine = `<div class="mg-score">本局 ${g.rounds} 回合制 · 先到 ${need} 胜 —— 你 <b style="color:var(--green)">${mg.wins}</b> : <b style="color:var(--red)">${mg.losses}</b> ${g.opponent}</div>`;
     const logHtml = mg.log.length ? `<div class="mg-log">${mg.log.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
     if (!mg.done) {
       const btns = g.moves.map((m, i) => `<button class="btn choice mg-move" data-i="${i}"><b>${m.label}</b><br><small style="color:var(--dim)">${m.desc}</small></button>`).join("");
-      app().innerHTML = `<div class="screen event"><div class="ev-card">
+      return `<div class="ev-card">
         <div class="ev-tag">${g.emoji} ${g.name} · 对手：${g.opponent}</div>
         <div class="ev-title">${g.emoji} 第 ${mg.round + 1} 回合</div>
         <div class="ev-text">${mg.round === 0 ? g.intro : "该你了——这一手，怎么走？"}　<span style="color:var(--amber2)">（拼的是你的「${SN[g.statKey] || g.statKey}」）</span></div>
         ${scoreLine}${logHtml}
-        <div class="ev-choices">${btns}</div></div></div>`;
+        <div class="ev-choices">${btns}</div></div>`;
+    }
+    const head = mg.outcome === "win" ? "🏆 你赢了！" : mg.outcome === "lose" ? "🤝 你输了" : "🤝 平局";
+    return `<div class="ev-card">
+      <div class="ev-tag">${g.emoji} ${g.name} · 终局 ${mg.wins}:${mg.losses}</div>
+      <div class="ev-title">${head}</div>
+      <div class="ev-text">${mg.result || "玩了一局，尽兴而归。"}</div>
+      ${logHtml}
+      <div class="ev-choices"><button class="btn choice" id="mgagain">再来一局 🔄</button><button class="btn primary choice" id="mgdone">结束 →</button></div></div>`;
+  }
+  function bindMinigamePanel() {
+    if (!mgId || !mg) return;
+    if (!mg.done) {
       document.querySelectorAll(".mg-move").forEach(b => b.onclick = () => mgPlayRound(parseInt(b.dataset.i, 10)));
     } else {
-      const head = mg.outcome === "win" ? "🏆 你赢了！" : mg.outcome === "lose" ? "🤝 你输了" : "🤝 平局";
-      app().innerHTML = `<div class="screen event"><div class="ev-card">
-        <div class="ev-tag">${g.emoji} ${g.name} · 终局 ${mg.wins}:${mg.losses}</div>
-        <div class="ev-title">${head}</div>
-        <div class="ev-text">${mg.result || "玩了一局，尽兴而归。"}</div>
-        ${logHtml}
-        <div class="ev-choices"><button class="btn choice" id="mgagain">再来一局 🔄</button><button class="btn primary choice" id="mgdone">结束，回去生活 →</button></div></div></div>`;
-      document.getElementById("mgagain").onclick = () => startMinigame(mgId);
-      document.getElementById("mgdone").onclick = () => { mgId = null; mg = null; screen = "play"; render(); };
+      const ag = document.getElementById("mgagain"); if (ag) ag.onclick = () => startMinigame(mgId, gameHost);
+      const dn = document.getElementById("mgdone"); if (dn) dn.onclick = () => { exitGameHost(); render(); };
     }
+  }
+  function renderMinigame() {
+    if (!mgId || !C._util.mgById(mgId)) { screen = "play"; render(); return; }
+    app().innerHTML = `<div class="screen event">${minigamePanelHTML()}</div>`;
+    bindMinigamePanel();
   }
 
   let _lastScreen = null;

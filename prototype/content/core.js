@@ -107,7 +107,7 @@
       { id: "major_edu",     name: "📚 师范/文科",   desc: "文史哲师范类，稳但起薪不高、跨行难（教育/体制/传媒）。", realloc: { knowledge: 6, mind: 6, body: -6, strategy: -6 } }
     ] }
   ];
-  const assetTierCash = { poor: 800, worker: 20000, upper: 200000, rich: 4000000 };
+  const assetTierCash = { poor: 2000, worker: 8000, upper: 18000, rich: 45000 };
 
   /* ============================ 三、人生阶段（成年后按周玩） ============================
    * 每阶段：固定每周 AP、专属行动、氛围与"周围人反馈"基调、可触发的环境事件池。
