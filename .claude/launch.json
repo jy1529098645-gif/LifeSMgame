@@ -4,7 +4,7 @@
     {
       "name": "startup-life-sim",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8123", "--directory", "prototype"],
+      "runtimeArgs": ["_nocache_server.py", "8123", "prototype"],
       "port": 8123
     }
   ]

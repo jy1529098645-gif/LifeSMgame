@@ -151,7 +151,7 @@ function facilityAsset(d, f) {
 }
 function facilityDefaultText(s, d, f, a, ok) {
   const n = f.name || "这里";
-  if (f.action === "city_back") return `你走到${n}口，扶梯下方的人流一阵一阵涌出来。站牌、闸机、外卖骑手和赶时间的上班族挤在一起。你看了眼路线，决定先回到城市总览。`;
+  if (f.action === "city_back") return `你走到${n}口，扶梯下方的人流一阵一阵涌出来。站牌、闸机、外卖骑手和赶时间的上班族挤在一起。`;
   if ((d.id === "clinic" || n.indexOf("医院") >= 0 || n.indexOf("门诊") >= 0 || n.indexOf("体检") >= 0) && (s.health || 100) >= 78 && (s.stress || 0) < 50 && !(s.healthChain && s.healthChain.stage > 0)) {
     return `${n}里人群熙熙攘攘，挂号屏一排排滚动。你现在身体还算健康，没必要凑这个热闹。路过时一股强烈的消毒水味儿冲过来，你下意识加快脚步离开。`;
   }

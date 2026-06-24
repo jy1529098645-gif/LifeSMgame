@@ -138,7 +138,47 @@ h2{font-size:26px;margin-bottom:6px}
 .dev-homebtn:hover{background:var(--amber)}
 
 /* 主屏 */
-.ph-home{padding:10px 8px;border-radius:0 0 20px 20px;min-height:100%}
+.ph-home{padding:10px 8px;border-radius:0 0 20px 20px;min-height:100%;display:flex;flex-direction:column}
+/* 底部 Dock */
+.ph-dock{margin-top:auto;display:flex;justify-content:space-around;gap:6px;padding:10px 8px;background:rgba(255,255,255,.12);backdrop-filter:blur(14px);border-radius:22px}
+.ph-dock-app{background:none;border:none;cursor:pointer;padding:0}
+.ph-dock-app:active{transform:scale(.92)}
+.ph-dock-app .ph-ic{width:52px;height:52px}
+.ph-ic-call{background:linear-gradient(160deg,#3ad36a,#16a34a)!important;border-color:#138a3e!important}
+.ph-ic-browser{background:linear-gradient(160deg,#f4f6f9,#cfd8e6)!important;border-color:#b6c2d4!important}
+.ph-ic-sms{background:linear-gradient(160deg,#3ad36a,#16a34a)!important;border-color:#138a3e!important}
+.ph-ic-music{background:linear-gradient(160deg,#ff6a8a,#ff2d55)!important;border-color:#e01e44!important}
+/* 电话 */
+.call-list{display:flex;flex-direction:column}
+.call-row{display:flex;align-items:center;gap:11px;padding:11px 6px;border-bottom:1px solid var(--line);cursor:pointer}
+.call-row:hover{background:rgba(255,255,255,.04)}
+.call-av{width:40px;height:40px;border-radius:50%;background:#1d1d25;display:flex;align-items:center;justify-content:center;font-size:21px;flex:none}
+.call-mid{flex:1;min-width:0}.call-mid b{font-size:14px}.call-mid b.miss{color:var(--red)}.call-mid small{display:block;font-size:11px;color:var(--dim);margin-top:2px}
+.call-go{font-size:18px;color:#16a34a;flex:none}
+/* 浏览器 */
+.br-search{height:34px;border-radius:9px;background:rgba(255,255,255,.07);color:var(--dim);font-size:13px;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+.br-marks{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 8px;margin-bottom:6px}
+.br-mark{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:none;cursor:pointer;color:var(--txt);font-size:12px}
+.br-ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:linear-gradient(160deg,#23232e,#15151c);border:1px solid var(--line)}
+.br-mark:hover .br-ic{border-color:var(--amber)}
+.br-hots{display:flex;flex-direction:column}
+.br-hot{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);background:none;color:var(--txt);text-align:left;cursor:pointer;width:100%;font-size:13px}
+.br-hot:hover{background:rgba(255,255,255,.04)}
+.br-rank{width:18px;text-align:center;color:var(--dim);font-weight:700;flex:none}
+.br-rank.top{color:var(--red)}
+.br-hot-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 音乐 */
+.mu-now{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#3a1c2e,#5a2b3e);border-radius:12px;padding:14px;margin-bottom:12px}
+.mu-now.off{justify-content:center;color:var(--dim);font-size:13px;background:rgba(255,255,255,.04)}
+.mu-disc{font-size:34px;animation:spin 4s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.mu-now-t b{font-size:15px;color:#fff}.mu-now-t small{display:block;font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
+.mu-list{display:flex;flex-direction:column}
+.mu-song{display:flex;align-items:center;gap:11px;padding:10px 6px;border-bottom:1px solid var(--line);background:none;color:var(--txt);text-align:left;cursor:pointer;width:100%}
+.mu-song:hover{background:rgba(255,255,255,.04)}
+.mu-song.on{color:#ff7eb0}
+.mu-pi{font-size:15px;flex:none}
+.mu-nm{font-size:14px}
 /* 壁纸选择 */
 .wall-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px}
 .wall-sw{height:54px;border-radius:10px;border:2px solid transparent;cursor:pointer;position:relative;overflow:hidden;color:#fff}
@@ -536,7 +576,7 @@ h2{font-size:26px;margin-bottom:6px}
 /* 笔记本键盘面（C 面）：键区 + 触控板 */
 .pc-deck{width:108%;max-width:1130px;background:linear-gradient(180deg,#2c2c33,#17171c);border-radius:3px 3px 16px 16px;padding:8px 0 12px;box-shadow:0 10px 22px rgba(0,0,0,.5);position:relative}
 .pc-deck::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:120px;height:5px;border-radius:0 0 7px 7px;background:#0c0c10}
-.pc-keys{height:30px;margin:6px 16px 0;border-radius:5px;background:repeating-linear-gradient(90deg,#1c1c22 0 6.4%,#33333c 6.4% 7.2%);box-shadow:inset 0 0 8px rgba(0,0,0,.6);opacity:.7}
+.pc-keys{height:10px;margin:6px 16px 0;border-radius:5px;background:repeating-linear-gradient(90deg,#1c1c22 0 6.4%,#33333c 6.4% 7.2%);box-shadow:inset 0 0 8px rgba(0,0,0,.6);opacity:.7}
 .pc-pad{width:120px;height:14px;margin:7px auto 0;border-radius:5px;background:#23232a;box-shadow:inset 0 0 0 1px #34343d}
 .pc-home{padding:22px 26px;min-height:100%}
 .pc-widgets{display:flex;gap:12px;margin-bottom:20px}

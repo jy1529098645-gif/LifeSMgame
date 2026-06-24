@@ -2054,11 +2054,10 @@
     + '<path d="M34 64 a16 13 0 0 1 32 0 z" fill="#0bb3b0"/>'
     + '<path d="M50 49 l-4.5 6 4.5 9 4.5 -9 z" fill="#fff"/>'
     + '</svg>';
-  // app 注册表：主屏图标网格按此顺序排列
+  // app 注册表：主屏图标网格按此顺序排列（电话/浏览器/短信/音乐放进底部 Dock，不进网格）
   const PHONE_APPS = [
     { id: "wechat", icon: "💬", svg: WX_ICON, name: "绿泡泡", green: true },
     { id: "boss", icon: "💼", svg: BOSS_ICON, name: "老大直聘", teal: true },
-    { id: "sms", icon: "✉️", name: "短信" },
     { id: "news", icon: "📰", name: "头条" },
     { id: "msg", icon: "🔔", name: "通知" },
     { id: "contacts", icon: "📇", name: "通讯录" },
@@ -2072,6 +2071,13 @@
     { id: "calc", icon: "🧮", name: "计算器" },
     { id: "weather", icon: "⛅", name: "天气" },
     { id: "settings", icon: "⚙️", name: "设置" }
+  ];
+  // 底部 Dock（仿真手机）：电话 / 浏览器 / 短信 / 音乐
+  const DOCK_APPS = [
+    { id: "call", icon: "📞", name: "电话", tile: "call" },
+    { id: "browser", icon: "🧭", name: "浏览器", tile: "browser" },
+    { id: "sms", icon: "✉️", name: "短信", tile: "sms" },
+    { id: "music", icon: "🎵", name: "音乐", tile: "music" }
   ];
   function seasonName() { const w = s.week % 52; return w < 13 ? "春" : w < 26 ? "夏" : w < 39 ? "秋" : "冬"; }
   // 壁纸：手机主屏 / 电脑桌面共用一套（在手机「设置」里换）
@@ -2092,6 +2098,7 @@
     if (wx) b.wechat = wx;
     if (has(s, "starving")) b.msg = 1;
     const su = smsUnread(); if (su) b.sms = su;
+    const missed = Math.min(9, Math.floor((wxContacts().filter(c => !c.group && !c.fam).length) / 4)); if (missed) b.call = missed;
     return b;
   }
   // 顶部 app 标题栏 + 返回主屏
@@ -2107,12 +2114,17 @@
       const bd = badges[a.id] || 0;
       return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : a.teal ? " ph-ic-boss" : ""}">${a.svg || a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
     }).join("");
+    const dock = DOCK_APPS.map(a => {
+      const bd = badges[a.id] || 0;
+      return `<button class="ph-dock-app" data-app="${a.id}" title="${a.name}"><span class="ph-ic ph-ic-${a.tile}">${a.icon}${bd ? `<i class="ph-badge">${bd > 99 ? "99+" : bd}</i>` : ""}</span></button>`;
+    }).join("");
     return `<div class="ph-home" style="background:${wallCss()}">
       <div class="ph-widgets">
         <div class="ph-w ph-w-clock"><div class="ph-clock">${phoneClock()}</div><div class="ph-date">${s.year}年${seasonName()} · 周${["日","一","二","三","四","五","六"][s.week % 7]}</div></div>
         <div class="ph-w ph-w-worth"><small>当前身价</small><b>¥${nw.toLocaleString()}</b><span>${s.age}岁 · ${C.CLASS_NAMES[classTier(s)]}</span></div>
       </div>
       <div class="ph-grid">${icons}</div>
+      <div class="ph-dock">${dock}</div>
     </div>`;
   }
   // —— 头条（保留原新闻流 + 深扒机制）——
@@ -2858,6 +2870,61 @@
       </button>`).join("");
     return phoneHeader("✉️ 短信", `${(s._sms || []).length} 条 · ${smsUnread()} 未读`) + `<div class="sms-list">${rows || '<div class="ph-empty">还没有短信。</div>'}</div>`;
   }
+  /* ============================ 📞 电话 / 🧭 浏览器 / 🎵 音乐（Dock）============================ */
+  // 电话：最近通话（家人/关键角色/社交圈），可拨打
+  function appCall() {
+    const cs = wxContacts().filter(c => !c.group).slice(0, 9);
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    const tlabel = c => ["昨天", "刚刚", "周一", "上午 10:24", "前天", "周三"][wxSeed(c.name) % 6];
+    const rows = cs.map((c, i) => {
+      const missed = !c.fam && i % 4 === 1;
+      return `<div class="call-row" data-callto="${c.pid}"><span class="call-av">${c.av || wxFace(c.fav, c.star)}</span>
+        <span class="call-mid"><b class="${missed ? "miss" : ""}">${c.name}</b><small>${missed ? "📵 未接来电" : "📱 手机"} · ${tlabel(c)}</small></span>
+        <span class="call-go">📞</span></div>`;
+    }).join("");
+    return phoneHeader("📞 电话", "最近通话") + msg + `<div class="call-list">${rows || '<div class="ph-empty">还没有通话记录。</div>'}</div>`
+      + `<p class="ap-note">给家人朋友打个电话，聊聊近况——比打字更暖，关系也更近一点。</p>`;
+  }
+  function phoneCallDo(pid) {
+    const p = wxPeer(pid); if (!p) return;
+    add(s, "mood", 1);
+    if (p.fam) famAdjust(p.famKey, 1); else if (!p.group) wxFav(p, 1);
+    s._phoneMsg = `📞 你和 ${p.name} 通了会儿电话，聊了几句近况，心里暖了点。`;
+    s.timeline.push({ age: s.age, text: `给 ${p.name} 打了个电话。` });
+    render();
+  }
+  // 浏览器：搜索条 + 书签（跳各 app）+ 今日热搜（复用新闻标题）
+  function appBrowser() {
+    const marks = [["💼", "招聘", "app", "boss"], ["🛒", "购物", "screen", "shop"], ["📈", "财经", "app", "market"], ["🎬", "视频", "app", "reels"], ["📰", "头条", "app", "news"], ["🎮", "游戏", "screen", "mgmenu"]];
+    const grid = marks.map(([ic, nm, kind, to]) => `<button class="br-mark" ${kind === "screen" ? `data-screen="${to}"` : `data-app="${to}"`}><span class="br-ic">${ic}</span><span>${nm}</span></button>`).join("");
+    if (!s.news || !s.news.length) s.news = buildFeed(s, true);
+    const hot = (s.news || []).slice(0, 6).map((n, i) => `<button class="br-hot" data-app="news"><span class="br-rank ${i < 3 ? "top" : ""}">${i + 1}</span><span class="br-hot-t">${n.headline}</span></button>`).join("");
+    return phoneHeader("🧭 浏览器", "上网冲浪")
+      + `<div class="br-search">🔍 搜索或输入网址</div>`
+      + `<div class="br-marks">${grid}</div>`
+      + `<div class="stk-sec">🔥 今日热搜</div><div class="br-hots">${hot || '<div class="ph-empty">暂无热搜。</div>'}</div>`;
+  }
+  // 音乐：原创虚构歌单，点歌播放放松（每首仅标题，无歌词）
+  const MUSIC_LISTS = [
+    { pl: "打工人 BGM", songs: ["《加班到天明》", "《周一恐惧症》", "《摸鱼小确幸》", "《通勤进行曲》"] },
+    { pl: "深夜 emo", songs: ["《一个人的城市》", "《晚风与你》", "《失眠交响曲》", "《凌晨三点》"] },
+    { pl: "元气满满", songs: ["《冲鸭打工人》", "《阳光普照》", "《再来亿遍》", "《元气循环》"] }
+  ];
+  function appMusic() {
+    const cur = s._musicNow;
+    const lists = MUSIC_LISTS.map(g => `<div class="stk-sec">🎧 ${g.pl}</div>` + g.songs.map(sg => {
+      const playing = cur === sg;
+      return `<button class="mu-song${playing ? " on" : ""}" data-music="${sg}"><span class="mu-pi">${playing ? "⏸️" : "▶️"}</span><span class="mu-nm">${sg}</span></button>`;
+    }).join("")).join("");
+    const np = cur ? `<div class="mu-now"><div class="mu-disc">💿</div><div class="mu-now-t"><b>${cur}</b><small>正在播放 · 荒诞音乐</small></div></div>` : `<div class="mu-now off">🎵 选一首，放松一下</div>`;
+    return phoneHeader("🎵 音乐", "随便听听") + np + `<div class="mu-list">${lists}</div>`;
+  }
+  function phoneMusicDo(song) {
+    if (s._musicNow === song) { s._musicNow = null; render(); return; }
+    s._musicNow = song; s._musicN = (s._musicN || 0) + 1;
+    add(s, "mood", s._musicN <= 4 ? 2 : 1); add(s, "stress", -1);
+    render();
+  }
   // —— 通讯录：聚合家人/关键角色/社交圈，点联系人直接进绿泡泡聊天（仿真手机通讯录）——
   function appContacts() {
     const cs = wxContacts();
@@ -3017,7 +3084,7 @@
   // app 路由：把当前 app 渲染成手机屏幕里的内容
   function phoneScreenBody() {
     if (phoneApp === "home") return phoneHome();
-    const m = { wechat: appWechat, boss: appBoss, sms: appSms, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, notes: appNotes, calc: appCalc, weather: appWeather, settings: appSettings };
+    const m = { wechat: appWechat, boss: appBoss, sms: appSms, call: appCall, browser: appBrowser, music: appMusic, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, notes: appNotes, calc: appCalc, weather: appWeather, settings: appSettings };
     return (m[phoneApp] || phoneHome)();
   }
   function renderPhone() {
@@ -3113,6 +3180,9 @@
     const smsBack = document.getElementById("smsBack"); if (smsBack) smsBack.onclick = () => { phoneSms.open = null; render(); };
     // 通讯录：点联系人直接进绿泡泡聊天
     document.querySelectorAll("[data-ctopen]").forEach(b => b.onclick = () => { openDeviceApp("wechat"); phoneWx.peer = b.dataset.ctopen; render(); });
+    // 电话：拨打 / 音乐：播放
+    document.querySelectorAll("[data-callto]").forEach(b => b.onclick = () => { phoneCallDo(b.dataset.callto); });
+    document.querySelectorAll("[data-music]").forEach(b => b.onclick = () => { phoneMusicDo(b.dataset.music); });
     // 理财买卖/区间/图表
     bindMarket();
     // 电脑：搞钱工作台 / 学习充电站 / 网购 / 游戏厅
