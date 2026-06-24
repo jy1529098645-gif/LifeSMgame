@@ -40,6 +40,7 @@
   let phoneWx = { tab: "chats", peer: null };   // 微信（绿泡泡）：当前子页 chats/moments/me + 正在聊的对象 pid
   let phoneBoss = { job: null };                // 老大直聘：当前正在沟通的岗位 id（null=岗位列表）
   let phoneSms = { open: null };                // 短信：当前打开的会话 id（null=短信列表）
+  let pcBrz = { tabs: [{ site: "home" }], active: 0 };   // 电脑浏览器：标签页 + 当前页
   let pcApp = "home";                           // 电脑（笔记本/台式）当前打开的 app
   let activeDev = "phone";                       // 当前正在操作的设备：phone / pc（决定 app 内跳转改哪个状态）
   // 开局随身物品：手机人人都有；电脑等设备「勾选+少量花钱」带上，贵的从开局家底里扣
@@ -2054,6 +2055,14 @@
     + '<path d="M34 64 a16 13 0 0 1 32 0 z" fill="#0bb3b0"/>'
     + '<path d="M50 49 l-4.5 6 4.5 9 4.5 -9 z" fill="#fff"/>'
     + '</svg>';
+  // 「穷途熊熊」股市软件图标：一只白熊脸（深色底由 .ph-ic-bear 提供）
+  const BEAR_ICON = '<svg class="appsvg" viewBox="0 0 100 100" aria-hidden="true">'
+    + '<circle cx="29" cy="31" r="12" fill="#fff"/><circle cx="71" cy="31" r="12" fill="#fff"/>'
+    + '<circle cx="50" cy="55" r="30" fill="#fff"/>'
+    + '<circle cx="40" cy="49" r="3.6" fill="#1a1a1a"/><circle cx="60" cy="49" r="3.6" fill="#1a1a1a"/>'
+    + '<ellipse cx="50" cy="66" rx="13" ry="9.5" fill="#e9d7c3"/>'
+    + '<ellipse cx="50" cy="61" rx="4.2" ry="3.2" fill="#1a1a1a"/>'
+    + '</svg>';
   // app 注册表：主屏图标网格按此顺序排列（电话/浏览器/短信/音乐放进底部 Dock，不进网格）
   const PHONE_APPS = [
     { id: "wechat", icon: "💬", svg: WX_ICON, name: "绿泡泡", green: true },
@@ -2062,7 +2071,7 @@
     { id: "msg", icon: "🔔", name: "通知" },
     { id: "contacts", icon: "📇", name: "通讯录" },
     { id: "wallet", icon: "💰", name: "钱包" },
-    { id: "market", icon: "📈", name: "理财" },
+    { id: "market", icon: "🐻", svg: BEAR_ICON, name: "穷途熊熊", bear: true },
     { id: "stocks", icon: "📊", name: "自选股" },
     { id: "calendar", icon: "📅", name: "日历" },
     { id: "album", icon: "🖼️", name: "相册" },
@@ -2112,7 +2121,7 @@
     const nw = Math.round(netWorth(s));
     const icons = PHONE_APPS.map(a => {
       const bd = badges[a.id] || 0;
-      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : a.teal ? " ph-ic-boss" : ""}">${a.svg || a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
+      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : a.teal ? " ph-ic-boss" : a.bear ? " ph-ic-bear" : ""}">${a.svg || a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
     }).join("");
     const dock = DOCK_APPS.map(a => {
       const bd = badges[a.id] || 0;
@@ -2973,7 +2982,7 @@
   }
   // —— 理财：完整交易（手机版）。大屏更顺手的版本在「电脑」里 ——
   function appMarket() {
-    return phoneHeader("📈 理财 · 交易", "K线随人生生长 · 新闻→下周盘面")
+    return phoneHeader("🐻 穷途熊熊", "炒股软件 · K线随人生生长 · 新闻→下周盘面")
       + marketPanelHTML(false);
   }
   // —— 日历：当下时点 + 目标 + 最近大事 ——
@@ -3179,6 +3188,13 @@
     // 电话：拨打 / 音乐：播放
     document.querySelectorAll("[data-callto]").forEach(b => b.onclick = () => { phoneCallDo(b.dataset.callto); });
     document.querySelectorAll("[data-music]").forEach(b => b.onclick = () => { phoneMusicDo(b.dataset.music); });
+    // 电脑浏览器：标签页 + 书签
+    document.querySelectorAll("[data-bropen]").forEach(b => b.onclick = (e) => { e.stopPropagation(); brOpen(b.dataset.bropen); });
+    document.querySelectorAll(".brz-tab[data-brtab]").forEach(b => b.onclick = () => { pcBrz.active = parseInt(b.dataset.brtab, 10); render(); });
+    document.querySelectorAll("[data-brclose]").forEach(b => b.onclick = (e) => { e.stopPropagation(); brCloseTab(parseInt(b.dataset.brclose, 10)); });
+    const brNew = document.getElementById("brNew"); if (brNew) brNew.onclick = () => brNewTab();
+    const brHomeBtn = document.getElementById("brHomeBtn"); if (brHomeBtn) brHomeBtn.onclick = () => { pcBrz.tabs[pcBrz.active] = { site: "home" }; render(); };
+    const brReload = document.getElementById("brReload"); if (brReload) brReload.onclick = () => render();
     // 理财买卖/区间/图表
     bindMarket();
     // 电脑：搞钱工作台 / 学习充电站 / 网购 / 游戏厅
@@ -3391,9 +3407,43 @@
         : `<div class="wd-empty"><div class="wd-empty-ic">💬</div><div>选择一个会话开始聊天</div><small>绿泡泡 电脑版</small></div>`;
     return `<div class="wd-wx">${pcWxRail(tab, unread)}${mid}<div class="wd-right">${right}</div></div>`;
   }
+  /* —— 🧭 浏览器·电脑端：真·多标签页浏览器（站点=既是手机 app、也是网页的那些）—— */
+  const BR_SITES = {
+    home: { title: "新标签页", url: "qpd://start", icon: "🏠" },
+    stocks: { title: "穷途熊熊", url: "qiongtu.com", icon: "🐻", render: () => marketPanelHTML(true) },
+    boss: { title: "老大直聘", url: "laoda-zhipin.com", icon: "💼", render: appBoss },
+    news: { title: "今日头条", url: "toutiao-news.com", icon: "📰", render: appNews },
+    shop: { title: "网购商城", url: "wangou-mall.com", icon: "🛒", render: () => `<div class="shop">${shopGroupsHTML()}</div>` },
+    reels: { title: "短视频", url: "duanshipin.tv", icon: "🎬", render: appReels },
+    mail: { title: "邮箱", url: "mail.qpd.com", icon: "📧", render: pcMail }
+  };
+  const BR_NAV = ["stocks", "boss", "news", "shop", "reels", "mail"];   // 起始页书签
+  function brHome() {
+    const grid = BR_NAV.map(id => { const st = BR_SITES[id]; return `<button class="brz-site" data-bropen="${id}"><span class="brz-site-ic">${st.icon}</span><span>${st.title}</span></button>`; }).join("");
+    if (!s.news || !s.news.length) s.news = buildFeed(s, true);
+    const hot = (s.news || []).slice(0, 5).map((n, i) => `<button class="br-hot" data-bropen="news"><span class="br-rank ${i < 3 ? "top" : ""}">${i + 1}</span><span class="br-hot-t">${n.headline}</span></button>`).join("");
+    return `<div class="brz-home">
+      <div class="brz-logo">🧭 穷途浏览器</div>
+      <div class="brz-bigsearch">🔍 搜索网页 或 输入网址</div>
+      <div class="brz-sites">${grid}</div>
+      <div class="stk-sec">🔥 今日热搜</div><div class="br-hots">${hot}</div></div>`;
+  }
+  function pcBrowserDesktop() {
+    if (!pcBrz.tabs || !pcBrz.tabs.length) pcBrz = { tabs: [{ site: "home" }], active: 0 };
+    if (pcBrz.active >= pcBrz.tabs.length) pcBrz.active = pcBrz.tabs.length - 1;
+    const cur = pcBrz.tabs[pcBrz.active]; const site = BR_SITES[cur.site] || BR_SITES.home;
+    const strip = pcBrz.tabs.map((t, i) => { const st = BR_SITES[t.site] || BR_SITES.home; return `<div class="brz-tab${i === pcBrz.active ? " on" : ""}" data-brtab="${i}"><span class="brz-fav">${st.icon}</span><span class="brz-tt">${st.title}</span>${pcBrz.tabs.length > 1 ? `<button class="brz-x" data-brclose="${i}">×</button>` : ""}</div>`; }).join("");
+    const addr = `<div class="brz-addr"><button class="brz-nav" id="brHomeBtn" title="主页">🏠</button><button class="brz-nav" id="brReload" title="刷新">⟳</button><div class="brz-url">🔒 ${site.url}</div></div>`;
+    const content = cur.site === "home" ? brHome() : (site.render ? site.render() : `<div class="ph-empty">页面空白。</div>`);
+    return `<div class="brz"><div class="brz-tabs">${strip}<button class="brz-new" id="brNew" title="新标签页">＋</button></div>${addr}<div class="brz-body">${content}</div></div>`;
+  }
+  // 浏览器交互：开/切/关标签页
+  function brOpen(siteId) { const cur = pcBrz.tabs[pcBrz.active]; if (cur && cur.site === "home") cur.site = siteId; else { pcBrz.tabs.push({ site: siteId }); pcBrz.active = pcBrz.tabs.length - 1; } render(); }
+  function brNewTab() { pcBrz.tabs.push({ site: "home" }); pcBrz.active = pcBrz.tabs.length - 1; render(); }
+  function brCloseTab(i) { pcBrz.tabs.splice(i, 1); if (!pcBrz.tabs.length) pcBrz.tabs = [{ site: "home" }]; if (pcBrz.active >= pcBrz.tabs.length) pcBrz.active = pcBrz.tabs.length - 1; render(); }
   function pcScreenBody() {
     if (pcApp === "home") return pcHome();
-    const m = { trade: pcTrade, work: pcWork, data: pcData, study: pcStudy, shop: pcShop, mail: pcMail, games: pcGames, assistant: pcAssistant, browser: appNews, wechat: pcWechat };
+    const m = { trade: pcTrade, work: pcWork, data: pcData, study: pcStudy, shop: pcShop, mail: pcMail, games: pcGames, assistant: pcAssistant, browser: pcBrowserDesktop, wechat: pcWechat };
     return (m[pcApp] || pcHome)();
   }
   function renderPc() {
@@ -3418,7 +3468,7 @@
         <span class="pc-mb-r"><span class="pc-mb-stat">💰¥${Math.round(s.cash || 0).toLocaleString()}　❤️${Math.round(s.health)}</span>📶 <span class="pc-batt"><i style="width:${Math.max(10, 100 - s.age)}%"></i></span> ${phoneClock()}　<button class="pc-power" id="pcClose" title="关机回到生活">⏻</button></span>
       </div>`;
     const dock = `<div class="pc-dock">${PC_APPS.map(a => `<button class="pc-dockapp ${pcApp === a.id ? "on" : ""}" data-app="${a.id}" title="${a.name}"><span class="pc-dock-ic${a.green ? " ph-ic-wx" : ""}">${a.svg || a.icon}</span><i class="pc-dock-dot" style="${pcApp === a.id ? "" : "opacity:0"}"></i></button>`).join("")}</div>`;
-    const screenArea = `<div class="pc-screen-area">${menubar}<div class="pc-body ${onHome ? "is-home" : ""}${pcApp === "wechat" ? " pc-flush" : ""}">${pcScreenBody()}</div>${dock}</div>`;
+    const screenArea = `<div class="pc-screen-area">${menubar}<div class="pc-body ${onHome ? "is-home" : ""}${(pcApp === "wechat" || pcApp === "browser") ? " pc-flush" : ""}">${pcScreenBody()}</div>${dock}</div>`;
     const lidOrMon = kind === "desktop"
       ? `<div class="pcdev desktop"><div class="pc-bezel"><div class="pc-cam"></div>${screenArea}</div></div><div class="pc-neck"></div><div class="pc-base"></div>`
       : `<div class="pcdev laptop"><div class="pc-lid"><div class="pc-cam"></div>${screenArea}</div></div><div class="pc-deck"><div class="pc-keys"></div><div class="pc-pad"></div></div>`;

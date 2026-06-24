@@ -148,6 +148,33 @@ h2{font-size:26px;margin-bottom:6px}
 .ph-ic-browser{background:linear-gradient(160deg,#f4f6f9,#cfd8e6)!important;border-color:#b6c2d4!important}
 .ph-ic-sms{background:linear-gradient(160deg,#3ad36a,#16a34a)!important;border-color:#138a3e!important}
 .ph-ic-music{background:linear-gradient(160deg,#ff6a8a,#ff2d55)!important;border-color:#e01e44!important}
+.ph-ic-bear{background:linear-gradient(160deg,#2f3b2c,#15171a)!important;border-color:#0f1110!important}
+/* 🧭 电脑浏览器（多标签页） */
+.brz{display:flex;flex-direction:column;height:100%;min-height:440px;background:#1a1a20}
+.brz-tabs{display:flex;align-items:flex-end;gap:2px;padding:6px 6px 0;background:#101014;overflow-x:auto}
+.brz-tab{display:flex;align-items:center;gap:6px;max-width:170px;padding:7px 10px;background:#26262d;color:#cfd2d6;border-radius:8px 8px 0 0;font-size:12px;cursor:pointer;flex:none;border:1px solid #000;border-bottom:none}
+.brz-tab.on{background:#1f1f26}
+.brz-fav{flex:none}
+.brz-tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.brz-x{background:none;border:none;color:#888;font-size:14px;cursor:pointer;line-height:1;flex:none;border-radius:4px}
+.brz-x:hover{background:#444;color:#fff}
+.brz-new{background:none;border:none;color:#aaa;font-size:18px;cursor:pointer;padding:4px 9px;flex:none}
+.brz-new:hover{color:#fff}
+.brz-addr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#1f1f26;border-bottom:1px solid #000}
+.brz-nav{background:none;border:none;color:#cfd2d6;font-size:15px;cursor:pointer;width:28px;height:28px;border-radius:6px}
+.brz-nav:hover{background:#33333c}
+.brz-url{flex:1;height:30px;border-radius:15px;background:#0e0e12;color:#9aa0a8;font-size:12px;display:flex;align-items:center;padding:0 14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brz-body{flex:1;overflow-y:auto;background:#0e1217;padding:14px 18px}
+/* 浏览器起始页 */
+.brz-home{display:flex;flex-direction:column;align-items:center;padding:24px 16px}
+.brz-logo{font-size:24px;font-weight:800;color:#eef0f2;margin-bottom:18px}
+.brz-bigsearch{width:100%;max-width:560px;height:44px;border-radius:22px;background:#1f1f26;border:1px solid #2a2a34;color:#777;font-size:14px;display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+.brz-sites{display:grid;grid-template-columns:repeat(6,1fr);gap:16px;width:100%;max-width:600px;margin-bottom:20px}
+.brz-site{display:flex;flex-direction:column;align-items:center;gap:7px;background:none;border:none;cursor:pointer;color:var(--txt);font-size:12px}
+.brz-site-ic{width:50px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;background:linear-gradient(160deg,#23232e,#15151c);border:1px solid var(--line)}
+.brz-site:hover .brz-site-ic{border-color:var(--amber);transform:translateY(-3px)}
+.brz-home .br-hots{width:100%;max-width:600px}
+@media(max-width:760px){.brz-sites{grid-template-columns:repeat(4,1fr)}}
 /* 电话 */
 .call-list{display:flex;flex-direction:column}
 .call-row{display:flex;align-items:center;gap:11px;padding:11px 6px;border-bottom:1px solid var(--line);cursor:pointer}
