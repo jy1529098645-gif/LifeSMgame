@@ -123,6 +123,20 @@
     }));
   }
 
+  // 7) Rewrite the legacy goal pick side effect. The old "打工封顶" note makes
+  // the route feel like an executive fantasy; this MVP should start from rent,
+  // commuting, internship anxiety and probation pressure.
+  if (typeof GOAL_MODS !== "undefined" && GOAL_MODS.corp) {
+    GOAL_MODS.corp.note = "【00后职场沉浮】你从大三开始面对毕业、找工作、房租、通勤和试用期。目标不是立刻封顶，而是先在城市里活下来，攒出第一段履历和人脉。";
+    GOAL_MODS.corp.onPick = (s) => {
+      if (typeof flag === "function") flag(s, "goal_career_00");
+      if (typeof add === "function") {
+        add(s, "stress", 4);
+        add(s, "cash", -800);
+      }
+    };
+  }
+
   console.log("[MVP] 00s career line pruning applied", {
     cohorts: typeof cohorts !== "undefined" && cohorts.length,
     goals: typeof GOALS !== "undefined" && GOALS.length,

@@ -718,3 +718,131 @@ h2{font-size:26px;margin-bottom:6px}
 .cm-dist.sel{z-index:7}
 
 .tracks-h .td-desc{display:block;font-weight:400;font-size:11px;color:var(--dim);margin-top:2px}
+
+/* MVP city-first visual pass: make the city the board, not a sticker menu. */
+.screen.play{
+  max-width:min(1680px,98vw);
+}
+.play-cols{
+  grid-template-columns:minmax(680px,1.72fr) minmax(330px,.78fr);
+  gap:14px;
+}
+.play-main{
+  padding:14px;
+  background:linear-gradient(180deg,rgba(13,18,27,.96),rgba(10,12,18,.96));
+}
+.play-main-h{
+  font-size:13px;
+  color:#d7e7ff;
+  margin-bottom:10px;
+  letter-spacing:.4px;
+}
+.citymap{
+  position:relative;
+  padding:12px;
+  border-radius:8px;
+  border:1px solid rgba(123,163,218,.26);
+  background:
+    linear-gradient(180deg,rgba(9,15,25,.88),rgba(7,9,14,.95)),
+    radial-gradient(900px 360px at 48% 12%,rgba(76,125,190,.20),transparent 65%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.03),0 18px 50px rgba(0,0,0,.26);
+}
+.citymap-h{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  color:#d9e8ff;
+  font-size:13px;
+  margin:0 0 10px;
+}
+.citymap-h::after{
+  content:"点击区域安排本周行动";
+  color:var(--dim);
+  font-size:11px;
+  font-weight:500;
+  letter-spacing:0;
+}
+.citymap-grid{
+  height:430px;
+  border-radius:8px;
+  border:1px solid rgba(123,163,218,.18);
+  background:#0b101a;
+  box-shadow:inset 0 0 60px rgba(0,0,0,.35);
+}
+.cm-svg{
+  opacity:1;
+  filter:saturate(1.08) contrast(1.06);
+}
+.cm-dist{
+  min-width:72px;
+  padding:7px 8px 6px;
+  border-radius:8px;
+  background:rgba(13,17,25,.78);
+  border:1px solid rgba(170,190,220,.24);
+  box-shadow:0 8px 18px rgba(0,0,0,.30);
+}
+.cm-dist .cm-ico{
+  font-size:21px;
+  line-height:1.05;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.45));
+}
+.cm-dist .cm-name{
+  max-width:88px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:#cfdaea;
+  font-size:10px;
+}
+.cm-dist:hover{
+  background:rgba(28,35,50,.92);
+  border-color:#e1b066;
+  transform:translate(-50%,-50%) scale(1.08);
+}
+.cm-dist.sel{
+  border-color:#f0a73c;
+  background:rgba(57,39,18,.92);
+  box-shadow:0 0 0 1px rgba(240,167,60,.55),0 0 24px rgba(240,167,60,.38);
+}
+.cm-dist.rec:not(.sel){
+  border-color:#7ba7ff;
+  box-shadow:0 0 18px rgba(91,140,255,.24);
+}
+.cm-dist.visited{
+  opacity:.62;
+}
+.cm-n{
+  font-family:ui-monospace,Consolas,monospace;
+}
+.mainstage-banner{
+  border-radius:8px;
+}
+.tracks-h{
+  border-top:0;
+  margin-top:12px;
+  padding:10px 12px;
+  border-radius:8px;
+  background:rgba(255,255,255,.035);
+}
+.tracks{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+}
+.track{
+  border-radius:8px;
+  min-height:106px;
+}
+.track .tk-desc{
+  line-height:1.45;
+}
+@media(max-width:1100px){
+  .play-cols{grid-template-columns:1fr}
+  .citymap-grid{height:360px}
+}
+@media(max-width:720px){
+  .tracks{grid-template-columns:1fr}
+  .citymap-grid{height:300px}
+  .cm-dist{min-width:42px;padding:6px}
+  .cm-dist .cm-name{display:none}
+}

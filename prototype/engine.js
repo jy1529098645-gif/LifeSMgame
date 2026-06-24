@@ -370,7 +370,7 @@
       C._util.rememberFact(st, { id: "origin", once: true, type: "origin", text: `出身：${d.cohort.name}，${d.picks.slice(0, 2).join("、")}。`, tags: ["origin"], intensity: 2 });
       if (st._openMajor) { C._util.rememberFact(st, { id: "major", once: true, type: "major", text: `大学读「${st._openMajor.name}」——它将决定哪些门为你敞开。`, tags: ["major", st.major], intensity: 2 }); if (C._util.recordBeat) C._util.recordBeat(st, "pick_major"); delete st._openMajor; }
     }
-    if (C._util.pickMainArc) C._util.pickMainArc(st);       // 依出身/地区/求学/目标，挑一条人生核心剧本
+    if (!window.MVP_00_CAREER && C._util.pickMainArc) C._util.pickMainArc(st);       // 依出身/地区/求学/目标，挑一条人生核心剧本
     // 传承：上一世留下的家底 + 血脉特质（封顶，不滚雪球）。在出身/难度倍率之后注入。
     let lg = null; if (C._util.applyLegacy) { try { lg = C._util.applyLegacy(st); } catch (e) { } }
     st._intro = true;                 // 开场「老祖宗的话」
@@ -1066,9 +1066,9 @@
       <div class="bars">${C.STAT_KEYS.map(statBar).join("")}</div>
       <div class="world-row">🌍 物价 ×${(w.priceIndex || 1).toFixed(2)}　📊 就业景气 ${Math.round(w.jobMarket || 0)}　🌪️ 风口热度 ${Math.round(w.windHeat || 0)}　🎲 运势 ${moTxt}</div>
       ${(() => { const ps = C._util.profileSummary ? C._util.profileSummary(s) : ""; return ps ? `<div class="profile-line" title="社会画像：解释你为什么在某些场合顺、某些场合难">🪪 ${ps}</div>` : ""; })()}
-      ${(() => { const inf = C._util.influenceSummary ? C._util.influenceSummary(s) : ""; const arc = (C._util.mainArcOf && C._util.mainArcOf(s)); const arcTxt = arc ? `📖 ${arc.name}${s.mainArc ? `·第${(s.mainArc.act || 0) + 1}幕` : ""}` : ""; return (inf || arcTxt) ? `<div class="arc-line">${arcTxt}${inf ? `${arcTxt ? "　" : ""}🏛️ 影响力：${inf}` : ""}</div>` : ""; })()}
+      ${(() => { if (window.MVP_00_CAREER) return ""; const inf = C._util.influenceSummary ? C._util.influenceSummary(s) : ""; const arc = (C._util.mainArcOf && C._util.mainArcOf(s)); const arcTxt = arc ? `📖 ${arc.name}${s.mainArc ? `·第${(s.mainArc.act || 0) + 1}幕` : ""}` : ""; return (inf || arcTxt) ? `<div class="arc-line">${arcTxt}${inf ? `${arcTxt ? "　" : ""}🏛️ 影响力：${inf}` : ""}</div>` : ""; })()}
       ${(() => { if (!s.cast) return ""; const crisis = Object.keys(s.cast).map(k => s.cast[k]).filter(c => c.crisis); if (!crisis.length) return ""; const labels = { debt: "陷入债务", illness: "家中有人病了", startup_invite: "想拉你合伙", layoff: "被裁了", reunite: "想和你复合" }; return `<div class="cast-line">👥 ${crisis.slice(0, 2).map(c => `${c.name}(${c.role})${labels[c.crisis] || "有事找你"}`).join("　")}</div>`; })()}
-      ${(() => { if (!C._util.founderReadiness) return ""; if (has(s, "startup_done") || (s.startup && s.startup.fulltime)) return ""; const r = C._util.founderReadiness(s); const v = C._util.readinessVerdict ? C._util.readinessVerdict(s) : ""; const col = r >= 70 ? "var(--green)" : r >= 40 ? "var(--amber)" : "var(--dim)"; return `<div class="founder-line"><div class="fl-bar-row"><span class="fl-lbl" title="离职创业/跳槽/单干/仲裁……翻身的本钱">💪 翻身底牌</span><span class="fl-bar"><i style="width:${r}%;background:${col}"></i></span><span class="fl-v">${r}</span></div>${v ? `<div class="fl-verdict">${v}</div>` : ""}</div>`; })()}
+      ${(() => { if (window.MVP_00_CAREER) return ""; if (!C._util.founderReadiness) return ""; if (has(s, "startup_done") || (s.startup && s.startup.fulltime)) return ""; const r = C._util.founderReadiness(s); const v = C._util.readinessVerdict ? C._util.readinessVerdict(s) : ""; const col = r >= 70 ? "var(--green)" : r >= 40 ? "var(--amber)" : "var(--dim)"; return `<div class="founder-line"><div class="fl-bar-row"><span class="fl-lbl" title="离职创业/跳槽/单干/仲裁……翻身的本钱">💪 翻身底牌</span><span class="fl-bar"><i style="width:${r}%;background:${col}"></i></span><span class="fl-v">${r}</span></div>${v ? `<div class="fl-verdict">${v}</div>` : ""}</div>`; })()}
       ${goalBarHTML()}
       <div class="ail-row">${ailmentText()}</div></div>`;
   }
@@ -1473,6 +1473,10 @@
     if (s.study && s.study.active) return renderStudy();   // 留学周推进模式接管界面
     if (s.startup && s.startup.fulltime) return renderVenture();   // 全职创业经营模式接管界面
     // 进入大阶段时的「明确选择」优先弹出
+    if (window.MVP_00_CAREER && s._pendingDecision) {
+      s._pendingDecision = null;
+      if (s.stageId) flag(s, "dec_" + s.stageId);
+    }
     if (s._pendingDecision) { const ev = C.events.find(x => x.id === s._pendingDecision); s._pendingDecision = null; if (ev) { flag(s, "dec_" + s.stageId); enterEvent(ev); screen = "event"; return renderEvent(); } }
     // 跨多年的承诺（如留学）：接管界面，按年推进
     if (s.commitment) return renderCommitment();
@@ -1480,11 +1484,11 @@
     // 给生活留白、避免主线接连霸屏（治「主线过度强制」）。两条线也不会同一周连珠炮。
     const spineReady = (s.week - (s._lastSpineWk || -999)) >= 8;
     // 核心剧本（main-arc）优先于目标命运线（destiny）
-    if (spineReady && C._util.nextMainArcChapter) {
+    if (!window.MVP_00_CAREER && spineReady && C._util.nextMainArcChapter) {
       const ach = C._util.nextMainArcChapter(s);
       if (ach) { const ev = C.events.find(x => x.id === ach); if (ev) { flag(s, "arcdone_" + ach); s._lastSpineWk = s.week; enterEvent(ev); screen = "event"; return renderEvent(); } }
     }
-    if (spineReady && C._util.nextDestinyChapter) {
+    if (!window.MVP_00_CAREER && spineReady && C._util.nextDestinyChapter) {
       const dch = C._util.nextDestinyChapter(s);
       if (dch) { const ev = C.events.find(x => x.id === dch); if (ev) { flag(s, "dstdone_" + dch); s._lastSpineWk = s.week; enterEvent(ev); screen = "event"; return renderEvent(); } }
     }
@@ -2737,6 +2741,7 @@
     if (!s.goal) return "";
     const g = C._util.goalById(s.goal); if (!g) return "";
     const pct = C._util.goalProgress(s);
+    if (window.MVP_00_CAREER) return `<div class="goal-row mvp-goal-row"><span class="goal-lbl">00后职场沉浮</span><span class="goal-bar"><i style="width:${pct}%"></i></span><span class="goal-pct">${pct}%</span><span class="ms-cnt">第${Math.floor(s.week / 4) + 1}月</span></div>`;
     const ds = C._util.destinyStatus ? C._util.destinyStatus(s) : null;
     const dstChip = (ds && !ds.finished && ds.act) ? `<span class="dst-chip" title="${ds.motif}">📖 命运·${ds.act} ${ds.idx}/${ds.total}</span>`
                   : (ds && ds.finished) ? `<span class="dst-chip dst-done">📖 命运已写就 ${ds.total}/${ds.total}</span>` : "";
