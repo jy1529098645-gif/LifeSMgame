@@ -32,6 +32,10 @@
   }
   let mktRange = 52;                            // 理财页 K 线显示窗口（周）：26/52/156/0=全部
   let mktChartType = "candle";                  // 理财页图表类型：candle=蜡烛图 / line=折线图
+  // 📱 手机：把它做成一台真手机——主屏 + 多个能真用的 app（信息/通讯录/钱包/自选股/日历/相册/短视频/计算器/天气/设置）
+  let phoneApp = "home";                        // 当前打开的 app：home=主屏
+  let phoneCalc = { cur: "0", acc: null, op: null, fresh: true };  // 计算器状态
+  let phoneReels = { n: 0, txt: "" };           // 短视频「摸鱼」状态：刷过几个
   // 难度档：影响开局家底、生活成本、死亡率（收入侧靠生活成本反向体现）
   const DIFFS = {
     "休闲": { cashMul: 2.0, costMul: 0.65, deathMul: 0.7, emoji: "🛋️", label: "家底厚、花销省、命更硬——专心看剧情" },
@@ -2081,37 +2085,305 @@
     };
   }
 
-  // 沉浸大屏：花一晚上深扒新闻。★不替玩家说破风口★，只让更多同向新闻浮出，自己悟。
+  /* ============================ 📱 手机：一台真能用的手机 ============================ */
+  // app 注册表：主屏图标网格按此顺序排列
+  const PHONE_APPS = [
+    { id: "news", icon: "📰", name: "头条" },
+    { id: "msg", icon: "💬", name: "信息" },
+    { id: "contacts", icon: "📇", name: "通讯录" },
+    { id: "wallet", icon: "💰", name: "钱包" },
+    { id: "stocks", icon: "📈", name: "自选股" },
+    { id: "calendar", icon: "📅", name: "日历" },
+    { id: "album", icon: "🖼️", name: "相册" },
+    { id: "reels", icon: "🎬", name: "短视频" },
+    { id: "calc", icon: "🧮", name: "计算器" },
+    { id: "weather", icon: "⛅", name: "天气" },
+    { id: "settings", icon: "⚙️", name: "设置" }
+  ];
+  function seasonName() { const w = s.week % 52; return w < 13 ? "春" : w < 26 ? "夏" : w < 39 ? "秋" : "冬"; }
+  // 各 app 的红点角标（信息=危机/系统提醒数）
+  function phoneBadges() {
+    const b = {};
+    let msg = 0;
+    if (s.cast) msg += Object.keys(s.cast).filter(k => s.cast[k] && s.cast[k].crisis).length;
+    if (has(s, "starving")) msg += 1;
+    if (msg) b.msg = msg;
+    return b;
+  }
+  // 顶部 app 标题栏 + 返回主屏
+  function phoneHeader(title, sub) {
+    return `<div class="ap-head"><button class="ap-back" id="phBack">‹ 主屏</button>
+      <div class="ap-title">${title}${sub ? `<small>${sub}</small>` : ""}</div></div>`;
+  }
+  // —— 主屏：时钟挂件 + 身价挂件 + 图标网格 ——
+  function phoneHome() {
+    const badges = phoneBadges();
+    const nw = Math.round(netWorth(s));
+    const icons = PHONE_APPS.map(a => {
+      const bd = badges[a.id] || 0;
+      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic">${a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
+    }).join("");
+    return `<div class="ph-home">
+      <div class="ph-widgets">
+        <div class="ph-w ph-w-clock"><div class="ph-clock">${phoneClock()}</div><div class="ph-date">${s.year}年${seasonName()} · 周${["日","一","二","三","四","五","六"][s.week % 7]}</div></div>
+        <div class="ph-w ph-w-worth"><small>当前身价</small><b>¥${nw.toLocaleString()}</b><span>${s.age}岁 · ${C.CLASS_NAMES[classTier(s)]}</span></div>
+      </div>
+      <div class="ph-grid">${icons}</div>
+    </div>`;
+  }
+  // —— 头条（保留原新闻流 + 深扒机制）——
+  function appNews() {
+    if (!s.news || !s.news.length) s.news = buildFeed(s, true);
+    const cards = s.news.map(newsCard).join("");
+    return phoneHeader("📰 今日头条", "风口藏在字缝里")
+      + trendStrip()
+      + `<div class="phone-feed">${cards}</div>`
+      + `<div class="ap-foot"><button class="btn primary" id="dig">🌙 熬夜深扒，多翻几页</button></div>`
+      + `<p class="ap-note">没人会直接告诉你答案。但翻得够多，好几条看似无关的新闻，其实都在反复念叨同一件事。</p>`;
+  }
+  // —— 信息：把人生剧本里的人 + 系统通知做成聊天列表 ——
+  function phoneThreads() {
+    const out = [];
+    if (s.cast) Object.keys(s.cast).forEach(k => {
+      const c = s.cast[k]; if (!c || !c.name) return;
+      if (c.crisis) out.push({ id: "cast_" + k, av: "🎭", who: c.name, role: c.role, time: "刚刚", text: (CAST_CRISIS_LABEL[c.crisis] || "有急事找你") + "……在吗？", castev: c.crisis, urgent: true });
+    });
+    if (has(s, "starving")) out.push({ id: "warn", av: "🆘", who: "生存警报", role: "系统", time: "现在", text: "你已资不抵债、坐吃山空，再不想办法就要断炊了。", to: "wallet", urgent: true });
+    const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null;
+    if (mb) out.push({ id: "bank", av: "🏦", who: "招银通知", role: "账单", time: "本月", text: `本月各项账单合计约 ¥${mb.total.toLocaleString()}，记得留足余额。`, to: "wallet" });
+    if (s.market && s.market.hold) {
+      const held = Object.keys(s.market.hold).filter(id => s.market.hold[id] > 0);
+      if (held.length) out.push({ id: "stk", av: "📈", who: "自选股助手", role: "行情", time: "今日", text: `你持有 ${held.length} 只股票，最新市值约 ¥${Math.round(C._util.stockValue(s)).toLocaleString()}。点开看今日涨跌。`, to: "stocks" });
+    }
+    if (s.knownSignals) {
+      const hot = Object.keys(s.knownSignals).filter(id => (s.knownSignals[id].confidence || 0) >= 50 && SIGNAL_LABEL[id]);
+      if (hot.length) out.push({ id: "sig", av: "📡", who: "风口雷达", role: "情报", time: "近期", text: `你嗅到的方向：${hot.slice(0, 3).map(id => SIGNAL_LABEL[id]).join("、")}。读懂趋势，押对赛道。`, to: "news" });
+    }
+    // 关系最好的两位 NPC 主动问候（点开去社交圈走动）
+    (s.social || []).slice().sort((a, b) => (b.attitude || 0) - (a.attitude || 0)).slice(0, 2).forEach((n, i) => {
+      if ((n.attitude || 0) < 60) return;
+      out.push({ id: "soc_" + i, av: "🙂", who: n.name, role: n.role, time: "今天", text: pick(["最近怎么样？有空一起坐坐。", "好久没联系了，挺想你的。", "下次约个饭呗，我请。"]), to: "social" });
+    });
+    return out;
+  }
+  function appMessages() {
+    const th = phoneThreads();
+    const rows = th.length ? th.map(t => `<button class="msg-row${t.urgent ? " urgent" : ""}" ${t.castev ? `data-castev="${t.castev}"` : ""} ${t.to ? (["social"].includes(t.to) ? `data-screen="${t.to}"` : `data-app="${t.to}"`) : ""}>
+        <span class="msg-av">${t.av}</span>
+        <span class="msg-mid"><span class="msg-top"><b>${t.who}</b><small>${t.time}</small></span><span class="msg-prev">${t.text}</span></span>
+        <span class="msg-go">${t.castev ? "回应›" : "查看›"}</span>
+      </button>`).join("") : `<div class="ph-empty">📭 暂无新消息，岁月静好。</div>`;
+    return phoneHeader("💬 信息", `${th.length} 条会话`) + `<div class="msg-list">${rows}</div>`;
+  }
+  // —— 通讯录：关键角色 + 社交圈，按亲疏排，点开去走动 ——
+  function appContacts() {
+    const list = [];
+    if (s.cast) Object.keys(s.cast).forEach(k => { const c = s.cast[k]; if (c && c.name) list.push({ name: c.name, role: c.role, av: "🎭", v: Math.round(c.trust || 50), vl: "信任", star: true }); });
+    (s.social || []).slice().sort((a, b) => (b.attitude || 0) - (a.attitude || 0)).slice(0, 14).forEach(n => list.push({ name: n.name, role: n.role, av: n.attitude >= 70 ? "😊" : n.attitude >= 40 ? "🙂" : "😒", v: Math.round(n.attitude || 0), vl: "态度" }));
+    const rows = list.map(p => `<div class="ct-row" data-screen="social"><span class="ct-av">${p.av}</span><span class="ct-mid"><b>${p.star ? "⭐ " : ""}${p.name}</b><small>${p.role}</small></span><span class="ct-v">${p.vl} ${p.v}</span></div>`).join("");
+    return phoneHeader("📇 通讯录", `共 ${list.length} 位联系人`)
+      + `<div class="ct-list">${rows || '<div class="ph-empty">还没存下谁的号码。</div>'}</div>`
+      + `<div class="ap-foot"><button class="btn primary" data-screen="social">打开社交圈，主动走动 →</button></div>`;
+  }
+  // —— 钱包：身价拆解 + 月账单 + 给联系人转账（真扣钱、真涨信任）——
+  function appWallet() {
+    const cash = Math.round(s.cash || 0), assets = Math.round(s.assets || 0);
+    const pv = Math.round(C._util.stockValue ? C._util.stockValue(s) : 0);
+    const nw = Math.round(netWorth(s));
+    const mb = C._util.monthlyBill ? C._util.monthlyBill(s) : null;
+    const runway = mb && mb.total > 0 ? Math.floor((cash + assets) / mb.total) : null;
+    const give = (s.cast ? Object.keys(s.cast).map(k => s.cast[k]).filter(c => c && c.name) : []).slice(0, 4).map(c => {
+      const can = s.cash >= 2000;
+      return `<button class="wl-give ${can ? "" : "off"}" data-give="${c.id}" ${can ? "" : "disabled"}>🧧 给 ${c.name} 转 ¥2,000</button>`;
+    }).join("");
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    return phoneHeader("💰 钱包", `余额 ¥${cash.toLocaleString()}`)
+      + `<div class="wl-card"><small>总身价</small><b>¥${nw.toLocaleString()}</b></div>
+      <div class="wl-rows">
+        <div class="wl-r"><span>💵 现金</span><b>¥${cash.toLocaleString()}</b></div>
+        <div class="wl-r"><span>🏠 资产</span><b>¥${assets.toLocaleString()}</b></div>
+        <div class="wl-r"><span>📈 持仓市值</span><b>¥${pv.toLocaleString()}</b></div>
+        ${mb ? `<div class="wl-r"><span>🧾 每月账单</span><b style="color:var(--red)">¥${mb.total.toLocaleString()}</b></div>` : ""}
+        ${runway != null ? `<div class="wl-r"><span>⏳ 坐吃山空可撑</span><b>${runway >= 99 ? "无忧" : runway + " 个月"}</b></div>` : ""}
+      </div>
+      ${msg}
+      ${give ? `<div class="wl-sec">🧧 给重要的人转账（攒交情）</div><div class="wl-gives">${give}</div>` : ""}
+      <div class="ap-foot"><button class="btn" data-screen="shop">🛒 去消费</button><button class="btn" data-screen="market">📈 去理财</button></div>`;
+  }
+  // —— 自选股：持仓 + 大盘速览，一键去交易 ——
+  function appStocks() {
+    const m = s.market;
+    if (!m) return phoneHeader("📈 自选股", "") + '<div class="ph-empty">行情尚未开盘。</div>';
+    const pv = C._util.stockValue(s);
+    const stkRow = st => { const chg = C._util.stockChange(s, st.id); const cls = chg > 0.05 ? "up" : chg < -0.05 ? "down" : "flat"; const hot = st.sector && st.sector === s.eraWind; const h = m.hold[st.id] || 0; return `<div class="stk-row"><span class="stk-nm">${st.emoji} ${st.name}${hot ? " 🔥" : ""}</span><span class="stk-px">¥${m.prices[st.id].toFixed(2)}</span><span class="stk-chg ${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%</span>${h ? `<span class="stk-hold">${h}股</span>` : ""}</div>`; };
+    const held = C.stocks.filter(st => (m.hold[st.id] || 0) > 0).map(stkRow).join("");
+    const watch = C.stocks.slice(0, 6).map(stkRow).join("");
+    return phoneHeader("📈 自选股", `持仓市值 ¥${Math.round(pv).toLocaleString()}`)
+      + (held ? `<div class="stk-sec">我的持仓</div>${held}` : '<div class="ph-empty">还没有持仓。</div>')
+      + `<div class="stk-sec">大盘速览</div>${watch}`
+      + `<div class="ap-foot"><button class="btn primary" data-screen="market">打开理财，去交易 →</button></div>`;
+  }
+  // —— 日历：当下时点 + 目标 + 最近大事 ——
+  function appCalendar() {
+    const g = s.goal ? C._util.goalById(s.goal) : null;
+    const wToBill = (4 - (s.week % 4)) % 4 || 4;
+    const recent = (s.timeline || []).slice(-6).reverse().map(t => `<div class="cal-ev"><span class="cal-age">${t.age}岁</span><span>${t.text}</span></div>`).join("");
+    return phoneHeader("📅 日历", `${s.year}年 · 第${s.week % 52 + 1}周`)
+      + `<div class="cal-today"><div class="cal-big">${s.age}<small>岁</small></div><div class="cal-sub">${s.year}年${seasonName()}天 · 人生第 ${s.week + 1} 周</div></div>`
+      + (g ? `<div class="cal-goal">🎯 人生目标：<b>${g.name}</b>${s._goalDone ? " ✅ 已达成" : ""}</div>` : "")
+      + `<div class="cal-bill">🧾 距下次月度结算（发薪 / 扣账单）：还有 <b>${wToBill}</b> 周</div>`
+      + `<div class="stk-sec">最近发生</div>${recent || '<div class="ph-empty">人生刚刚开始。</div>'}`;
+  }
+  // —— 相册：把高强度记忆/人生片段做成相片墙 ——
+  function appAlbum() {
+    let pics = (s.memories || []).filter(m => m && m.text).sort((a, b) => (b.intensity || 0) - (a.intensity || 0)).slice(0, 12).map(m => m.text);
+    if (!pics.length) pics = (s.timeline || []).slice(-12).reverse().map(t => `${t.age}岁 · ${t.text}`);
+    const tones = ["🌅", "🎉", "🌧️", "🌃", "🏞️", "🎂", "✈️", "🏆", "🍂", "🌊", "🎓", "💼"];
+    const grid = pics.length ? pics.map((p, i) => `<div class="al-pic"><span class="al-emoji">${tones[i % tones.length]}</span><span class="al-cap">${p}</span></div>`).join("") : '<div class="ph-empty">相册还空着。去经历点什么吧。</div>';
+    return phoneHeader("🖼️ 相册", `${pics.length} 段回忆`) + `<div class="al-grid">${grid}</div>`;
+  }
+  // —— 短视频：真·摸鱼。每刷一个 +心情，但刷多了上头 → 越来越焦虑、耗时间感 ——
+  const REELS_POOL = [
+    "🐱 一只橘猫从冰箱里偷出整根火腿，叼着跑路。", "🍳 30秒教你做出米其林摆盘的蛋炒饭。", "💃 全网都在跳的新舞，第三个动作劝退。",
+    "🤑 “普通人翻身只需三招”——结果在卖课。", "🏠 月薪三千如何把出租屋装成北欧风。", "😂 老板开会睡着，被自己的鼾声惊醒。",
+    "🚗 一脚油门，十万块的车变成废铁。", "📈 “这只票明天必涨停”——评论区已骂翻。", "🐶 狗子第一次见到雪，原地懵了五秒。",
+    "🍜 凌晨三点的城中村，一碗面治愈打工人。", "🎮 高手十连绝杀，弹幕刷满“？？？”。", "👶 萌娃金句：“爸爸的头发去旅行了。”"
+  ];
+  function appReels() {
+    const n = phoneReels.n;
+    const cur = phoneReels.txt || "👇 点下面的按钮，开始刷。";
+    const mood = n >= 8 ? "刷了这么久，心里空落落的，明明什么也没记住。" : n >= 4 ? "再看一个就睡……你已经这么想了好几次。" : "嗯，挺解压的。";
+    return phoneHeader("🎬 短视频", `已刷 ${n} 个`)
+      + `<div class="rl-stage"><div class="rl-clip">${cur}</div><div class="rl-mood">${mood}</div></div>`
+      + `<div class="ap-foot"><button class="btn primary" id="rlNext">👆 再刷一个</button></div>`
+      + `<p class="ap-note">刷视频确实能放松，可时间就这么没了——刷太多，心情的快乐会越来越淡，人也越来越累。</p>`;
+  }
+  // —— 天气：随年代/季节/世界运势调味 ——
+  function appWeather() {
+    const w = s.world || {};
+    const mo = Math.round(w.momentum || 0);
+    const sea = seasonName();
+    const ic = sea === "春" ? "🌦️" : sea === "夏" ? "☀️" : sea === "秋" ? "🍂" : "❄️";
+    const temp = sea === "春" ? 18 : sea === "夏" ? 32 : sea === "秋" ? 16 : 3;
+    const air = (w.priceIndex || 1) >= 1.5 ? "重度（物价爆表）" : (w.priceIndex || 1) >= 1.2 ? "中度" : "优";
+    const luck = mo > 25 ? "☀️ 运势：顺风顺水，宜出手" : mo < -25 ? "⛈️ 运势：霉运缠身，宜蛰伏" : "⛅ 运势：平稳";
+    return phoneHeader("⛅ 天气", `${s.city ? C._util.cityFull(s.city) : "本地"}`)
+      + `<div class="wt-main"><div class="wt-ic">${ic}</div><div class="wt-t">${temp}°</div><div class="wt-d">${s.year}年${sea}季</div></div>
+      <div class="wl-rows">
+        <div class="wl-r"><span>🌫️ 空气</span><b>${air}</b></div>
+        <div class="wl-r"><span>📊 就业景气</span><b>${Math.round(w.jobMarket || 0)}</b></div>
+        <div class="wl-r"><span>🌪️ 风口热度</span><b>${Math.round(w.windHeat || 0)}</b></div>
+        <div class="wl-r"><span>🎲 时代运势</span><b>${luck}</b></div>
+      </div>`;
+  }
+  // —— 设置：本人档案 + 关于本机 ——
+  function appSettings() {
+    const bp = s.birthplace ? s.birthplace.path : "—";
+    return phoneHeader("⚙️ 设置", "本人档案")
+      + `<div class="wl-rows">
+        <div class="wl-r"><span>📛 机主</span><b>${s.playerName || "无名之人"}</b></div>
+        <div class="wl-r"><span>🎂 年龄</span><b>${s.age} 岁（${s.year}年）</b></div>
+        <div class="wl-r"><span>🏷️ 出身</span><b>${s.cohortName || "—"}</b></div>
+        <div class="wl-r"><span>🧭 阶级</span><b>${C.CLASS_NAMES[classTier(s)]}</b></div>
+        <div class="wl-r"><span>📍 籍贯</span><b>${bp}</b></div>
+        <div class="wl-r"><span>🏠 定居</span><b>${s.city ? C._util.cityFull(s.city) : "—"}</b></div>
+        <div class="wl-r"><span>⚙️ 难度</span><b>${DIFFS[gameDiff] ? DIFFS[gameDiff].emoji + " " + gameDiff : gameDiff}</b></div>
+      </div>
+      <div class="wl-sec">关于本机</div>
+      <div class="ph-about">荒诞人生 OS · 一台陪你过完这辈子的手机。<br>电量 87%，但你的人生电量还剩 ${Math.max(0, 100 - s.age)}%。</div>`;
+  }
+  // —— 计算器：真能算 ——
+  function calcDisp() { return phoneCalc.cur.length > 12 ? Number(phoneCalc.cur).toPrecision(8) : phoneCalc.cur; }
+  function calcInput(k) {
+    const c = phoneCalc;
+    if (/[0-9]/.test(k)) { c.cur = (c.fresh || c.cur === "0") ? k : c.cur + k; c.fresh = false; return; }
+    if (k === ".") { if (c.fresh) { c.cur = "0."; c.fresh = false; } else if (c.cur.indexOf(".") < 0) c.cur += "."; return; }
+    if (k === "C") { phoneCalc = { cur: "0", acc: null, op: null, fresh: true }; return; }
+    if (k === "±") { c.cur = String(-parseFloat(c.cur)); return; }
+    if (k === "%") { c.cur = String(parseFloat(c.cur) / 100); return; }
+    if (k === "=") { if (c.op != null && c.acc != null) { c.cur = String(calcEval(c.acc, parseFloat(c.cur), c.op)); c.op = null; c.acc = null; c.fresh = true; } return; }
+    // 运算符
+    if (c.op != null && !c.fresh) { c.acc = calcEval(c.acc, parseFloat(c.cur), c.op); c.cur = String(c.acc); }
+    else c.acc = parseFloat(c.cur);
+    c.op = k; c.fresh = true;
+  }
+  function calcEval(a, b, op) { const r = op === "+" ? a + b : op === "-" ? a - b : op === "×" ? a * b : op === "÷" ? (b === 0 ? 0 : a / b) : b; return Math.round(r * 1e8) / 1e8; }
+  function appCalc() {
+    const keys = ["C", "±", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "-", "1", "2", "3", "+", "0", ".", "="];
+    const btns = keys.map(k => { const op = "÷×-+=".indexOf(k) >= 0; const fn = "C±%".indexOf(k) >= 0; const wide = k === "0"; return `<button class="cl-k${op ? " op" : ""}${fn ? " fn" : ""}${wide ? " wide" : ""}" data-k="${k}">${k}</button>`; }).join("");
+    return phoneHeader("🧮 计算器", phoneCalc.op ? "计算中" : "")
+      + `<div class="cl-disp">${calcDisp()}</div><div class="cl-pad">${btns}</div>`;
+  }
+  // app 路由：把当前 app 渲染成手机屏幕里的内容
+  function phoneScreenBody() {
+    if (phoneApp === "home") return phoneHome();
+    const m = { news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, calc: appCalc, weather: appWeather, settings: appSettings };
+    return (m[phoneApp] || phoneHome)();
+  }
   function renderPhone() {
-    const feed = buildFeed(s, true);
+    const onHome = phoneApp === "home";
     app().innerHTML = `<div class="screen">${navBar("phone")}
       <div class="play-cols">
         <section class="play-main">
           <div class="phonepage">
-            <div class="phone-deck">${phoneFeed(feed, true)}</div>
-            <div class="phone-actions">
-              <button class="btn primary" id="dig">🌙 熬夜深扒，多翻几页</button>
-              <button class="btn" id="closep">放下手机 →</button>
+            <div class="dev ${onHome ? "dev-home-bg" : ""}">
+              <div class="dev-notch"></div>
+              <div class="dev-status"><span>${phoneClock()}</span><span class="ds-mid">📱 荒诞人生 OS</span><span>📶 🔋87</span></div>
+              <div class="dev-screen ${onHome ? "is-home" : ""}">${phoneScreenBody()}</div>
+              <div class="dev-bar"><button class="dev-homebtn" id="phHomeBtn" title="回到主屏"></button></div>
             </div>
-            <p class="sub" style="text-align:center">没人会直接告诉你答案。但翻得够多，你会发现——好几条看似无关的新闻，其实都在反复念叨同一件事。</p>
+            <div class="phone-actions"><button class="btn" id="closep">放下手机 →</button></div>
           </div>
         </section>
         <aside class="play-side">${dashboard()}
-          <div class="scene-hero" style="${C.images.styleBg("phone", 1200)}"><span class="scene-cap">资讯 · 风口藏在字缝里</span></div>
+          <div class="scene-hero" style="${C.images.styleBg("phone", 1200)}"><span class="scene-cap">手机 · 你口袋里的整个世界</span></div>
         </aside>
       </div></div>`;
-    document.getElementById("dig").onclick = () => {
+    bindNav();
+    document.getElementById("closep").onclick = () => { screen = "play"; render(); };
+    const home = document.getElementById("phHomeBtn"); if (home) home.onclick = () => { phoneApp = "home"; s._phoneMsg = null; render(); };
+    const back = document.getElementById("phBack"); if (back) back.onclick = () => { phoneApp = "home"; s._phoneMsg = null; render(); };
+    // 打开 app
+    document.querySelectorAll(".ph-app[data-app]").forEach(b => b.onclick = () => { phoneApp = b.dataset.app; s._phoneMsg = null; render(); });
+    // app 内跳到另一个 app
+    document.querySelectorAll("[data-app]:not(.ph-app)").forEach(b => b.onclick = () => { phoneApp = b.dataset.app; s._phoneMsg = null; render(); });
+    // 跳到顶层屏幕（社交圈/消费/理财）
+    document.querySelectorAll("[data-screen]").forEach(b => b.onclick = () => { screen = b.dataset.screen; weekLog = []; render(); });
+    // 信息：回应关键角色危机 → 触发对应事件
+    document.querySelectorAll(".msg-row[data-castev]").forEach(b => b.onclick = () => {
+      const ev = b.dataset.castev;
+      const id = ev === "startup_invite" ? "ev_cast_invite" : ev === "reunite" ? "ev_cast_reunite" : "ev_cast_help";
+      const e = C.events.find(x => x.id === id);
+      if (e) { try { if (!e.cond || e.cond(s)) { enterEvent(e); screen = "event"; render(); return; } } catch (x) { } }
+    });
+    // 头条：深扒
+    const dig = document.getElementById("dig"); if (dig) dig.onclick = () => {
       add(s, "insight", 2); add(s, "mood", -2); flag(s, "wind_hint");
-      // 不点破风口：刷新出更密集的信号让玩家自己拼图
       s.news = buildFeed(s, true);
-      // 深扒挖到的信号（含更早期的苗头）同样形成下一周的盘面催化——埋伏的回报
       if (C._util.applyNewsToMarket) C._util.applyNewsToMarket(s, s.news);
       if (C._util.applyNewsSignals) C._util.applyNewsSignals(s);
       weekLog = ["📱 你又翻了几十页。零碎的消息在脑子里慢慢拼成一张模糊的图——风往哪吹，你心里隐隐有了数，但谁也不敢打包票。"];
       render();
     };
-    document.getElementById("closep").onclick = () => { screen = "play"; render(); };
-    bindNav();
+    // 钱包：转账给联系人（真扣钱、真涨信任）
+    document.querySelectorAll(".wl-give[data-give]").forEach(b => b.onclick = () => {
+      const c = s.cast && s.cast[b.dataset.give]; if (!c || s.cash < 2000) return;
+      add(s, "cash", -2000); add(s, "mood", 2); add(s, "reputation", 1);
+      c.trust = Math.min(100, (c.trust || 50) + 6); c.pressure = Math.max(0, (c.pressure || 30) - 8);
+      s._phoneMsg = `🧧 你给 ${c.name} 转了 ¥2,000。对方很领情——信任 +6，ta 肩上的担子也轻了些。钱花在人情上，关键时刻才有人接得住你。`;
+      s.timeline.push({ age: s.age, text: `用手机给 ${c.name} 转了 ¥2,000。` });
+      render();
+    });
+    // 短视频：刷一个
+    const rl = document.getElementById("rlNext"); if (rl) rl.onclick = () => {
+      phoneReels.n++;
+      phoneReels.txt = REELS_POOL[(phoneReels.n - 1) % REELS_POOL.length];
+      const gain = phoneReels.n <= 3 ? 2 : phoneReels.n <= 7 ? 1 : 0;
+      add(s, "mood", gain); if (phoneReels.n >= 6) add(s, "stress", 1);
+      render();
+    };
+    // 计算器：按键
+    document.querySelectorAll(".cl-k[data-k]").forEach(b => b.onclick = () => { calcInput(b.dataset.k); render(); });
   }
 
   // —— 把一段叙事文本切成「逐句浮现」的片段（按句末标点/换行断句，保留句内 HTML）——
@@ -2283,6 +2555,7 @@
       if (b.id === "reincarnate") return;   // 重开按钮单独处理（带确认）
       const k = b.dataset.nav; weekLog = []; s._buyMsg = null; s._mktMsg = null; s._castMsg = null;
       s._pendingAct = null;             // 切换到别的页 = 放弃当前挂起的换城市/找乐子，不计时间
+      if (k === "phone") { phoneApp = "home"; s._phoneMsg = null; }   // 每次点开手机都回到主屏
       screen = k;
       render();
     });
