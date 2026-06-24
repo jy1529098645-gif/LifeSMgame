@@ -7,7 +7,7 @@ const outDir = path.join(__dirname, "assets", "img", "city");
 fs.mkdirSync(outDir, { recursive: true });
 
 const districts = [
-  { id: "campus", name: "川大望江校园", theme: "campus", palette: ["#dfe4d4", "#a9b88c", "#607948"], facilities: ["校门", "自习室", "校招宣讲厅", "食堂", "地铁站"] },
+  { id: "campus", name: "川大望江校园", theme: "campus", palette: ["#dfe4d4", "#a9b88c", "#607948"], facilities: ["教学楼", "自习室", "校招宣讲厅", "食堂", "宿舍区"] },
   { id: "talent_market", name: "人才服务中心", theme: "civic", palette: ["#dfe3e5", "#b9b5a5", "#6c7480"], facilities: ["招聘大厅", "简历打印店", "面试等候区", "楼下咖啡", "地铁站"] },
   { id: "office_cbd", name: "高新区写字楼", theme: "cbd", palette: ["#dce5e8", "#b9c6cf", "#5d7184"], facilities: ["公司大堂", "开放工位", "会议室", "楼下咖啡", "地铁站"] },
   { id: "tech_park", name: "天府软件园", theme: "parkbiz", palette: ["#d9e3df", "#a8c0ba", "#4f7c80"], facilities: ["外包楼", "项目会议室", "创业咖啡", "园区食堂", "地铁站"] },

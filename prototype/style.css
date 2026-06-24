@@ -424,27 +424,53 @@ h2{font-size:26px;margin-bottom:6px}
 .gear-buy{text-align:right;flex:none}
 .gear-price{font-size:14px;color:var(--amber2);font-weight:700}
 .gear-check{font-size:18px;color:var(--amber);margin-top:4px;min-height:20px}
+.campus-dash{border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:10px;padding:12px;margin-bottom:12px}
+.campus-dash .cdh{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:800;color:var(--txt);margin-bottom:8px}
+.campus-dash .cdh span{font-size:12px;color:var(--dim);font-weight:600}
+.campus-dash .cdbar{height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:10px}
+.campus-dash .cdbar i{display:block;height:100%;background:linear-gradient(90deg,var(--amber),var(--green));border-radius:inherit}
+.campus-dash .cdgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--dim)}
+.campus-dash .cdgrid span{border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:6px;background:rgba(0,0,0,.12)}
+.campus-dash .cdgrid b{color:var(--amber2);font-size:13px}
+.campus-dash .cdtip{font-size:12px;color:var(--dim);line-height:1.55;margin-top:9px}
 
-/* 💻 电脑（笔记本 / 台式）——宽屏正确比例，居中铺满 */
-.pc-stage{display:flex;flex-direction:column;align-items:center}
-.pcdev{width:100%;max-width:1000px;background:#0a0a0e;border:8px solid #1a1a20;border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.6);overflow:hidden}
-.pcdev.laptop{border-width:10px 10px 0;border-color:#23232a}
-.pcdev.desktop{border-width:12px;border-color:#1a1a20;border-radius:12px}
-/* 笔记本底座（C 面）+ 台式底座 */
-.pc-deck{width:118%;max-width:1180px;height:16px;background:linear-gradient(180deg,#2a2a31,#15151a);border-radius:0 0 14px 14px;box-shadow:0 6px 14px rgba(0,0,0,.45);position:relative}
-.pc-deck::after{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:90px;height:6px;border-radius:0 0 8px 8px;background:#0c0c10}
-.pc-stand{width:90px;height:34px;background:linear-gradient(180deg,#22222a,#15151a)}
-.pc-foot{width:200px;height:12px;background:#1a1a20;border-radius:6px}
-.pc-statusline{margin-top:10px;font-size:12px;color:var(--dim)}
-.pc-topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#15151c;border-bottom:1px solid var(--line)}
-.pc-dots{display:flex;gap:6px}.pc-dots i{width:11px;height:11px;border-radius:50%;background:#3a3a46}
-.pc-dots i:nth-child(1){background:#ff5f57}.pc-dots i:nth-child(2){background:#febc2e}.pc-dots i:nth-child(3){background:#28c840}
-.pc-wtitle{flex:1;text-align:center;font-size:12px;color:var(--dim)}
-.pc-close{background:none;border:none;color:var(--dim);font-size:14px;cursor:pointer}.pc-close:hover{color:var(--red)}
-.pc-body{padding:20px 26px;aspect-ratio:16/10;max-height:72vh;overflow-y:auto;background:radial-gradient(120% 90% at 50% 0%,#1a1d2a 0%,#0c0d12 60%)}
-.pcdev.desktop .pc-body{aspect-ratio:16/9}
-.pc-unavail{text-align:center;color:var(--dim);font-size:14px;line-height:1.8;padding:80px 20px}
-.pc-home{padding:4px}
+/* 💻 电脑（笔记本 / 台式）——拟物机身 + macOS 风菜单栏/程序坞 */
+.pc-stage{display:flex;flex-direction:column;align-items:center;padding-top:4px}
+.pcdev{width:100%;max-width:1040px}
+/* 笔记本：合金屏盖 + 摄像头 */
+.pcdev.laptop .pc-lid{background:linear-gradient(180deg,#26262d,#191920);border-radius:16px 16px 4px 4px;padding:14px 12px 12px;box-shadow:0 16px 44px rgba(0,0,0,.55),inset 0 0 0 1px #3a3a44}
+.pc-cam{width:6px;height:6px;border-radius:50%;background:#0c0c10;margin:0 auto 7px;box-shadow:inset 0 0 0 1px #44454d,0 0 3px rgba(120,180,255,.4)}
+/* 台式：显示器边框 + 颈 + 底座 */
+.pcdev.desktop .pc-bezel{background:linear-gradient(180deg,#1d1d24,#141419);border-radius:14px;padding:16px 16px 22px;box-shadow:0 18px 50px rgba(0,0,0,.6),inset 0 0 0 1px #34343d}
+.pc-neck{width:64px;height:30px;background:linear-gradient(180deg,#26262d,#16161b);margin-top:-2px}
+.pc-base{width:240px;height:14px;border-radius:0 0 10px 10px;background:linear-gradient(180deg,#2a2a31,#15151a);box-shadow:0 8px 16px rgba(0,0,0,.5)}
+/* 屏幕区：菜单栏 + 内容 + 程序坞，按机型保持 16:10 / 16:9 */
+.pc-screen-area{aspect-ratio:16/10;max-height:74vh;display:flex;flex-direction:column;overflow:hidden;border-radius:6px;background:#0c0d12;box-shadow:inset 0 0 0 2px #000}
+.pcdev.desktop .pc-screen-area{aspect-ratio:16/9}
+.pc-menubar{flex:none;height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:12px;color:#dfe2e6;background:rgba(20,22,28,.85);backdrop-filter:blur(8px);border-bottom:1px solid #000}
+.pc-mb-l b{font-weight:600}.pc-mb-app{color:#aab0b8;margin-left:2px}
+.pc-mb-r{display:flex;align-items:center;gap:8px;color:#aab0b8}
+.pc-mb-stat{color:#8a9099}
+.pc-batt{display:inline-block;width:22px;height:11px;border:1px solid #8a9099;border-radius:3px;position:relative;padding:1px}
+.pc-batt::after{content:"";position:absolute;right:-3px;top:3px;width:2px;height:4px;background:#8a9099;border-radius:0 1px 1px 0}
+.pc-batt i{display:block;height:100%;background:#5fd38b;border-radius:1px}
+.pc-power{background:none;border:none;color:#aab0b8;font-size:13px;cursor:pointer}.pc-power:hover{color:var(--red)}
+.pc-body{flex:1;min-height:0;padding:18px 24px;overflow-y:auto;background:radial-gradient(120% 90% at 50% 0%,#1a1d2a 0%,#0c0d12 60%)}
+.pc-body.is-home{padding:0}
+/* 程序坞 */
+.pc-dock{flex:none;display:flex;justify-content:center;gap:8px;padding:6px 10px;background:rgba(20,22,28,.8);backdrop-filter:blur(10px);border-top:1px solid #000}
+.pc-dockapp{position:relative;background:none;border:none;cursor:pointer;padding:0;transition:.12s}
+.pc-dockapp:hover{transform:translateY(-5px) scale(1.08)}
+.pc-dock-ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:19px;background:linear-gradient(160deg,#2a2a35,#181820);border:1px solid #3a3a44}
+.pc-dock-dot{position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:#cfd2d6}
+.pc-statusline{margin-top:12px;font-size:12px;color:var(--dim)}
+.pc-unavail{text-align:center;color:var(--dim);font-size:14px;line-height:1.8;padding:60px 20px}
+/* 笔记本键盘面（C 面）：键区 + 触控板 */
+.pc-deck{width:108%;max-width:1130px;background:linear-gradient(180deg,#2c2c33,#17171c);border-radius:3px 3px 16px 16px;padding:8px 0 12px;box-shadow:0 10px 22px rgba(0,0,0,.5);position:relative}
+.pc-deck::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:120px;height:5px;border-radius:0 0 7px 7px;background:#0c0c10}
+.pc-keys{height:30px;margin:6px 16px 0;border-radius:5px;background:repeating-linear-gradient(90deg,#1c1c22 0 6.4%,#33333c 6.4% 7.2%);box-shadow:inset 0 0 8px rgba(0,0,0,.6);opacity:.7}
+.pc-pad{width:120px;height:14px;margin:7px auto 0;border-radius:5px;background:#23232a;box-shadow:inset 0 0 0 1px #34343d}
+.pc-home{padding:22px 26px;min-height:100%}
 .pc-widgets{display:flex;gap:12px;margin-bottom:20px}
 .pc-w{flex:1;border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:rgba(255,255,255,.04)}
 .pc-w small{font-size:11px;color:var(--dim);display:block}
@@ -1237,6 +1263,7 @@ h2{font-size:26px;margin-bottom:6px}
   inset:0;
   overflow:hidden;
   border-radius:8px;
+  pointer-events:none;
 }
 .cm-photo img{
   width:100%;
@@ -1528,6 +1555,7 @@ h2{font-size:26px;margin-bottom:6px}
   border:0;
   background:transparent;
   cursor:pointer;
+  pointer-events:auto;
 }
 .screen.play .cm-dist-label .cm-name{
   display:block;
@@ -1653,6 +1681,7 @@ h2{font-size:26px;margin-bottom:6px}
   position:absolute;
   inset:0;
   z-index:5;
+  pointer-events:none;
 }
 .screen.play .cm-facility{
   position:absolute;
@@ -1666,6 +1695,7 @@ h2{font-size:26px;margin-bottom:6px}
   color:#f5ead2;
   box-shadow:0 8px 22px rgba(0,0,0,.30),0 0 0 1px rgba(0,0,0,.28);
   cursor:pointer;
+  pointer-events:auto;
   transition:.14s;
 }
 .screen.play .cm-facility:hover{

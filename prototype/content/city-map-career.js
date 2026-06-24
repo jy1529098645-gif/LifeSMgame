@@ -12,12 +12,12 @@
 // 成都·区域表：总览只显示可点击地名标签；点击后放大到同一角度的区域图，再显示真实设施点。
 // x/y 是地名标签位置；facilities 是区域放大图上的可点击设施。
 const CITY_DISTRICTS = [
-  { id: "campus", name: "川大望江校园", icon: "🎓", x: 18, y: 24, w: 27, h: 22, shape: "8% 24%, 18% 10%, 36% 14%, 43% 31%, 33% 46%, 14% 43%", zoomX: 18, zoomY: 24, desc: "校园、宿舍、自习室和毕业前的焦虑。", actions: ["study", "prep_interview", "parttime", "rest", "browse"], facilities: [
-    { name: "校门", icon: "🏫", x: 24, y: 23, action: "browse" },
-    { name: "自习室", icon: "📖", x: 38, y: 34, action: "study" },
-    { name: "校招宣讲厅", icon: "📣", x: 58, y: 42, action: "prep_interview" },
-    { name: "食堂", icon: "🍚", x: 34, y: 64, action: "cheap_meal" },
-    { name: "地铁站", icon: "🚇", x: 70, y: 72, action: "city_back" }
+  { id: "campus", name: "川大望江校园", icon: "🎓", x: 18, y: 24, w: 27, h: 22, shape: "8% 24%, 18% 10%, 36% 14%, 43% 31%, 33% 46%, 14% 43%", zoomX: 18, zoomY: 24, desc: "校园、宿舍、自习室和毕业前的焦虑。", actions: ["campus_lecture", "campus_cram", "campus_intern", "campus_club", "campus_rest"], facilities: [
+    { name: "教学楼", icon: "🏫", x: 24, y: 23, action: "campus_lecture" },
+    { name: "自习室", icon: "📖", x: 38, y: 34, action: "campus_cram" },
+    { name: "校招宣讲厅", icon: "📣", x: 58, y: 42, action: "campus_intern" },
+    { name: "食堂", icon: "🍚", x: 34, y: 64, action: "campus_club" },
+    { name: "宿舍区", icon: "🛏️", x: 70, y: 72, action: "campus_rest" }
   ] },
   { id: "talent_market", name: "人才服务中心", icon: "📨", x: 50, y: 82, w: 25, h: 17, shape: "39% 76%, 54% 72%, 68% 80%, 64% 94%, 45% 95%, 36% 87%", zoomX: 50, zoomY: 84, desc: "招聘大厅、打印店、面试等候区，求职者在这里排队碰运气。", actions: ["jobhunt", "prep_interview", "print_resume", "browse"], facilities: [
     { name: "招聘大厅", icon: "📨", x: 34, y: 33, action: "jobhunt" },
@@ -133,6 +133,23 @@ function _cpi(s) { return (s.world && s.world.priceIndex) || 1; }
 function _cityCostMul(s) { return s.city ? (s.city.cost || 1) : 1; }
 if (typeof actions !== "undefined") {
   const _addCityAction = (a) => { if (!actions.find(x => x.id === a.id)) actions.push(a); };
+  const _campus = (s) => s && s.campus && s.campus.active !== false ? s.campus : null;
+  const _markCampus = (s, id) => { const cp = _campus(s); if (!cp) return null; cp._weekActs = cp._weekActs || {}; cp._weekActs[id.replace("campus_", "")] = true; return cp; };
+  _addCityAction({ id: "campus_lecture", name: "去教学楼上课", emoji: "🏫", hours: 12, slotCost: 1, anyStage: true, require: s => !!_campus(s),
+    desc: "点名、课堂提问、小组作业。它不刺激，但能稳住毕业底线。", preview: "绩点+ 学分底线稳住 压力小增",
+    resolve: s => { const cp = _markCampus(s, "campus_lecture"); if (!cp) return { log: "教学楼今天和你没什么关系。" }; cp.gpa = Math.min(100, cp.gpa + 4); cp.readiness = Math.min(100, cp.readiness + 1); add(s, "knowledge", 0.7); add(s, "stress", 2); return { log: "你在教学楼坐满了几节课。老师讲到行业案例时顺口提了一句真实公司的坑，你记了下来。大三的课不总有用，但今天至少没白来。" }; } });
+  _addCityAction({ id: "campus_cram", name: "泡自习室赶进度", emoji: "📖", hours: 14, slotCost: 1, anyStage: true, require: s => !!_campus(s),
+    desc: "刷题、改作品集、补专业短板。有效，也很折磨。", preview: "绩点++ 求职准备+ 健康- 压力+",
+    resolve: s => { const cp = _markCampus(s, "campus_cram"); if (!cp) return { log: "自习室里人很多，但你还没进入校园期。" }; cp.gpa = Math.min(100, cp.gpa + 6); cp.readiness = Math.min(100, cp.readiness + 4); add(s, "knowledge", 1.2); add(s, "health", -1); add(s, "stress", 4); return { log: "你在自习室坐到闭馆，电脑风扇和键盘声混成一片。绩点和作品集都往前挪了一截，腰也像被椅子重新塑形。" }; } });
+  _addCityAction({ id: "campus_intern", name: "跑校招/投实习", emoji: "📣", hours: 12, slotCost: 1, anyStage: true, require: s => !!_campus(s),
+    desc: "宣讲会、实习群、内推二维码。最早的职场压力，从这里开始。", preview: "求职准备++ 可能拿到实习/内推",
+    resolve: s => { const cp = _markCampus(s, "campus_intern"); if (!cp) return { log: "校招宣讲厅还没到开放的时候。" }; cp.readiness = Math.min(100, cp.readiness + 9); cp.internship = (cp.internship || 0) + 1; flag(s, "campus_intern_tried"); if (typeof recordBeat === "function") recordBeat(s, "first_intern"); if (Math.random() < 0.28) { flag(s, "got_referral"); add(s, "network", 2); return { log: "你挤进校招宣讲厅，扫码、投递、听 HR 把「成长空间」说成了谜语。散场时一个学长愿意帮你内推，至少这趟没白挤。" }; } add(s, "stress", 3); return { log: "你听完一场宣讲，投了几份实习。PPT 上写着年轻人无限可能，岗位要求却写着熟练掌握一切。你把荒诞记在心里，继续投。" }; } });
+  _addCityAction({ id: "campus_club", name: "食堂/社团局", emoji: "🍚", hours: 8, slotCost: 1, anyStage: true, require: s => !!_campus(s),
+    desc: "和室友、同学、社团朋友吃饭聊天。关系不是面板，是一次次互动攒出来的。", preview: "校园人脉+ 心情+ 小额花费",
+    resolve: s => { const cp = _markCampus(s, "campus_club"); if (!cp) return { log: "食堂照常热闹，但你现在不是这条线。" }; const c = Math.round(25 + Math.random() * 35); add(s, "cash", -c); add(s, "mood", 4); add(s, "network", 1); cp.social = Math.min(100, cp.social + 7); if (typeof recordBeat === "function" && cp.social >= 30) recordBeat(s, "first_network"); return { log: `你在食堂花 ¥${c} 吃了顿饭，听同学吐槽实习、考研和家里催促。有人随口提到一个内推群，你加了进去。关系网不是凭空显示出来的，是这样一点点蹭出来的。` }; } });
+  _addCityAction({ id: "campus_rest", name: "回宿舍回血", emoji: "🛏️", hours: 8, slotCost: 1, anyStage: true, require: s => !!_campus(s),
+    desc: "睡觉、打游戏、洗衣服、和室友闲聊。能回血，但躺太久会被毕业季追上。", preview: "健康+ 压力- 过度会拖慢准备",
+    resolve: s => { const cp = _markCampus(s, "campus_rest"); if (!cp) return { log: "宿舍门禁刷不开，你已经离开校园生活了。" }; add(s, "health", 4); add(s, "stress", -6); add(s, "mood", 3); cp.burnout = Math.max(0, (cp.burnout || 0) - 1); return { log: "你回宿舍补了一觉，醒来时天已经暗了。室友在打游戏，楼道里有人背面试自我介绍。休息让你缓过来，但毕业季不会因此暂停。" }; } });
   _addCityAction({ id: "prep_interview", name: "准备面试", emoji: "🪞", hours: 6, slotCost: 1, anyStage: true,
     desc: "改简历、背项目、练自我介绍。不是变强很多，但至少不至于一开口就露怯。", preview: "🧠学识+　✨形象+　😣压力+",
     resolve: s => { add(s, "knowledge", 1); add(s, "charm", 0.8); add(s, "stress", 2); flag(s, "interview_prepped"); if (typeof rememberFact === "function" && rnd(0.25)) rememberFact(s, { type: "jobhunt", text: "认真准备过一次面试，终于能把自己的经历讲顺。", tags: ["jobhunt"], intensity: 1 }); return { log: "你对着镜子把自我介绍练到舌头打结，又把简历里每个项目都编成能讲三分钟的故事。成年人的体面，有时候就是提前把慌张藏好。" }; } });

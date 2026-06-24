@@ -31,7 +31,7 @@
     </g><g transform="translate(360 156)" class="marker">
     <path d="M0 -22 C24 -22 40 -7 40 13 C40 43 0 64 0 64 C0 64 -40 43 -40 13 C-40 -7 -24 -22 0 -22Z" fill="#ffd66b" stroke="#5a533f" stroke-width="3"/>
     <circle cx="0" cy="12" r="13" fill="#fff7cf"/>
-    <text x="0" y="92" text-anchor="middle" font-size="25" font-weight="800" fill="#2f312d" paint-order="stroke" stroke="#fff5da" stroke-width="5">校门</text>
+    <text x="0" y="92" text-anchor="middle" font-size="25" font-weight="800" fill="#2f312d" paint-order="stroke" stroke="#fff5da" stroke-width="5">教学楼</text>
   </g><g transform="translate(610 245)" filter="url(#softShadow)">
       <ellipse cx="0" cy="28" rx="92" ry="34" fill="#263238" opacity=".16"/>
       <rect x="-54" y="-58" width="108" height="96" rx="6" fill="#f6f1de" opacity=".98"/>
@@ -67,11 +67,11 @@
   </g><g transform="translate(955 441)" class="marker">
     <path d="M0 -22 C24 -22 40 -7 40 13 C40 43 0 64 0 64 C0 64 -40 43 -40 13 C-40 -7 -24 -22 0 -22Z" fill="#f4ead1" stroke="#5a533f" stroke-width="3"/>
     <circle cx="0" cy="12" r="13" fill="#b8c9d0"/>
-    <text x="0" y="92" text-anchor="middle" font-size="21" font-weight="800" fill="#2f312d" paint-order="stroke" stroke="#fff5da" stroke-width="5">地铁站</text>
+    <text x="0" y="92" text-anchor="middle" font-size="21" font-weight="800" fill="#2f312d" paint-order="stroke" stroke="#fff5da" stroke-width="5">宿舍区</text>
   </g>
 <g>
   <rect x="44" y="38" width="430" height="86" rx="12" fill="#fff8e7" opacity=".86"/>
-  <text x="68" y="82" font-size="34" fill="#263238" font-weight="800">校门</text>
+  <text x="68" y="82" font-size="34" fill="#263238" font-weight="800">教学楼</text>
   <text x="70" y="110" font-size="18" fill="#627073">川大望江校园 · 设施放大图</text>
 </g>
 <g opacity=".42" filter="url(#blur)">

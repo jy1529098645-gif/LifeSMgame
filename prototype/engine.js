@@ -401,7 +401,8 @@
     // 传承：上一世留下的家底 + 血脉特质（封顶，不滚雪球）。在出身/难度倍率之后注入。
     let lg = null; if (C._util.applyLegacy) { try { lg = C._util.applyLegacy(st); } catch (e) { } }
     st._intro = startMode !== "society";                 // 开场「老祖宗的话」；毕业未就业入口直接进城市图，便于测试社会线
-    st._cityDistrict = startMode === "society" ? "talent_market" : "campus";
+    st._cityDistrict = null;
+    st._cityStartHint = startMode === "society" ? "talent_market" : "campus";
     st._cityFacility = null;
     st.eraWind = C.windAt(st.year);
     st.hours = stageOf(st.age).weeklyHours;
@@ -429,7 +430,7 @@
     };
     s.education = s.education || {};
     s.education.degree = "本科在读";
-    s._cityDistrict = "campus";
+    s._cityDistrict = null;
     s._cityFacility = null;
     weekLog = [`🎓 大三下学期开始了。${majorName}的课表、校招宣讲、实习群和宿舍里的泡面味，一起压了过来。`];
     if (C._util.recordBeat) C._util.recordBeat(s, "pick_major");
@@ -501,7 +502,7 @@
     if (cp.social >= 35 && C._util.recordBeat) C._util.recordBeat(s, "first_network");
     add(s, "knowledge", Math.max(1, Math.round((cp.gpa || 60) / 25)));
     add(s, "network", Math.max(0, Math.round((cp.social || 0) / 18)));
-    s._cityDistrict = "talent_market";
+    s._cityDistrict = null;
     s._cityFacility = null;
     const txt = `本科毕业了。绩点 ${Math.round(cp.gpa || 60)}，求职准备 ${Math.round(cp.readiness || 0)}，校园人脉 ${Math.round(cp.social || 0)}。校园的门在身后合上，成都人才服务中心在前面等你。`;
     s.timeline.push({ age: s.age, text: txt });

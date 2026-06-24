@@ -26,7 +26,12 @@ const ACTION_EVENT_BIAS = {
   jobhunt:          ["ev_jh_"],   // 00后求职荒诞：已读不回/AI筛/免费方案/群面/同学晒offer/假HR
   prep_interview:   ["ev_jh_weird_question", "ev_jh_group_interview"],
   ask_senior:       ["ev_jh_classmate_offer", "ev_cn_invite_chess"],
-  rest:             ["ev_hc_"]
+  rest:             ["ev_hc_"],
+  campus_lecture:   ["ev_campus_final_exam", "ev_campus_major_win", "ev_campus_parents_call"],
+  campus_cram:      ["ev_campus_final_exam", "ev_campus_major_win", "ev_campus_library_crush"],
+  campus_intern:    ["ev_campus_intern_grind", "ev_campus_offer_flood", "ev_campus_alumni_talk", "ev_campus_scam_trap"],
+  campus_club:      ["ev_campus_offer_flood", "ev_campus_dorm_warmth", "ev_campus_crossroad", "ev_campus_alumni_talk"],
+  campus_rest:      ["ev_campus_dorm_warmth", "ev_campus_doomscroll", "ev_campus_escape"]
 };
 
 function _routerEligible(s, e) {
@@ -82,6 +87,7 @@ function buildWeeklyReflection(s, ctx) {
   if (!did.length) return null;
   let line = null;
   if (had(["work", "overtime_perf"])) { if (typeof add === "function") { add(s, "stress", 1); } line = "📋 这一周在公司和地铁之间来回。没什么大事，但绩效记录稳了一点，疲惫也攒了一点。"; }
+  else if (had(["campus_lecture", "campus_cram", "campus_intern", "campus_club", "campus_rest"])) { line = "🎓 大三的一周过去了。课表、宿舍、宣讲会和食堂闲聊把毕业前的焦虑磨成了一点点真实经验。"; }
   else if (had(["study", "prep_interview", "learn_industry", "ask_senior"])) { line = "📖 平静的一周，你把时间花在了让自己更值钱的事上——回报看不见，却在悄悄累积。"; }
   else if (had(["jobhunt"])) { line = "📨 又投了一圈简历。没有回音的日子有点磨人，但海投本就是个概率游戏，再等等。"; }
   else if (had(["leisure", "exercise", "rest"])) { if (typeof add === "function") { add(s, "stress", -1); } line = "🍵 难得松快的一周，把自己交还给生活。压力卸了一点，明天才有力气继续。"; }
@@ -101,7 +107,7 @@ function _chainActive(s, e) {
   return true;
 }
 function _moduleTag(m) {
-  const map = { career: "work", venture: "venture", startup: "startup", world: "world", relation: "network", health: "health", love: "family", family: "family" };
+  const map = { career: "work", campus: "campus", venture: "venture", startup: "startup", world: "world", relation: "network", health: "health", love: "family", family: "family" };
   return map[m] || m;
 }
 function _pickOne(arr) {

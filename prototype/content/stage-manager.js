@@ -106,7 +106,8 @@ function mainStageOf(s) {
     return tenure < 26 ? "first_job" : "work_grind";   // ≈ 半年内算「初入职场」
   }
   // ⑤ 无业：在校 vs 求职。读书中或很年轻且没投过简历 → 大三探索；否则求职期
-  if (s.study && s.study.active) return "college_junior";
+  if ((s.study && s.study.active) || (s.campus && s.campus.active !== false)) return "college_junior";
+  if (_hasFlag(s, "graduated_unemployed") || _hasFlag(s, "campus_done") || _hasFlag(s, "campus_skipped")) return "job_search";
   const everLooked = _hasFlag(s, "ever_jobhunt") || hasBeat(s, "first_resume") || (s.age || 18) >= 23;
   if (everLooked) return "job_search";
   return "college_junior";
