@@ -383,7 +383,6 @@ EVENTS.push(
         else if (has(s, "bg_youth_hustle_teen")) bits.push("早早尝过倒腾小生意的甜头");
         if (has(s, "fallen")) bits.push("又撞上家道中落，尝尽世态炎凉");
         else if (has(s, "nouveau_riche")) bits.push("家里又突然暴富，给了你底气");
-        else if (has(s, "can_abroad") && has(s, "bg_adult_abroad_family")) bits.push("家里还为你铺好了出国的路");
         var recap = bits.length ? bits.join("、") + "——" : "";
         var tail = poor
           ? "如今刚成年，别人的青春像旷野，你的更像窄桥：家底薄、试错贵，接下来每一步都得算着走。"
@@ -401,35 +400,9 @@ EVENTS.push(
         var hustler = has(s, "bg_youth_hustle_teen") || has(s, "bg_youth_rebel") || s.stats.strategy >= 42;
         var sporty = has(s, "bg_teen_jock") || s.stats.body >= 42;
         var social = has(s, "bg_teen_social") || has(s, "bg_youth_love") || s.stats.charm >= 42;
-        var canPaidAbroad = has(s, "can_abroad") && s.age <= 24;
         if (academic) ch.push({
           label: has(s, "bg_youth_grind") || has(s, "bg_teen_topper") ? "延续做题优势，冲更高学历" : "把学术当跳板，继续深造",
           effect: (s) => { add(s, "knowledge", 3); add(s, "insight", 2); add(s, "stress", 4); bumpMomentum(s, 8); flag(s, "path_grad"); return "这条路不是谁都适合，但你的底子够。你把接下来几年押给自习室、实验室和一场又一场考试。慢是慢，门槛也高，可它确实能把你送到更远的地方。"; }
-        });
-        if (canPaidAbroad) ch.push({
-          label: "按家庭规划出国留学",
-          next: (s) => ({
-            text: () => "这条路不是凭空出现的：家里供得起，材料也准备得动。一张机票能换一段截然不同的人生，但也会烧掉几年青春和一大笔钱。",
-            choices: [
-              { label: "走，去看看更大的世界", effect: (s) => { flag(s, "_start_abroad"); flag(s, "path_abroad"); return "你递交申请、准备签证、收拾行李。不是每个人都有这张入场券，你清楚这一点，也知道接下来的几年不能白白浪费。"; } },
-              { label: "暂时不走，先在国内试一试", effect: (s) => { add(s, "insight", 2); add(s, "mood", -1); return "你没有立刻接过家里铺好的路。机会还在，但你想先确认：这到底是你的选择，还是别人替你写好的剧本。"; } }
-            ]
-          })
-        });
-        if (!canPaidAbroad && academic && s.age <= 23) ch.push({
-          label: "搏奖学金/交换项目出国",
-          next: (s) => ({
-            text: () => "家里供不起全额留学，但你的成绩还算拿得出手。奖学金、交换项目、联合培养，都是窄门：能出去，但要卷得很狠，也未必成功。",
-            choices: [
-              { label: "赌一把，冲全奖或交换", effect: (s) => {
-                  add(s, "stress", 10); add(s, "knowledge", 4); add(s, "insight", 2);
-                  var p = 0.28 + s.stats.knowledge / 220 + s.stats.insight / 350;
-                  if (rnd(p)) { flag(s, "can_abroad"); flag(s, "_start_abroad"); flag(s, "path_scholarship_abroad"); add(s, "reputation", 4); return "你把文书、成绩、推荐信一项项磨到极致，终于拿到一条窄窄的出路。不是家里铺的，是你自己硬卷出来的。接下来几年，你将远渡重洋。"; }
-                  add(s, "mood", -8); add(s, "insight", 3); return "你拼了很久，还是差了一点。邮箱里的拒信很冷，但它没有白来：你摸清了规则，也知道单靠梦想付不起学费。路没断，只是要换一种走法。";
-                } },
-              { label: "不赌这条窄门，先保住眼前", effect: (s) => { add(s, "strategy", 2); add(s, "stress", -2); return "你把留学梦先收起来。不是不想走，是知道这条路对你来说太贵、太窄。现实一点，也是一种成熟。"; } }
-            ]
-          })
         });
         if (poor || has(s, "fallen")) ch.push({
           label: has(s, "fallen") ? "先把家道中落的窟窿补上" : "先赚钱，把自己和家里撑起来",

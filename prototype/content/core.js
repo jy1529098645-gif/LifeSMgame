@@ -91,7 +91,7 @@
     { id: "adult", title: "成年定型（17 岁那年）", note: "决定你的资产与阶级起点（叠加在成长属性之上）", options: [
       { id: "ordinary", name: "普通人家", desc: "没什么背景，一切靠自己。", assetTier: "worker", realloc: {} },
       { id: "nouveau", name: "突然暴发户", desc: "17 岁那年家里拆迁/中标，一夜暴富。钱多了底气足了，但根基浅、易飘。", tradeoff: true, assetTier: "rich", realloc: { charm: 6, mind: 6, strategy: -6, insight: -6 }, flags: ["nouveau_riche"] },
-      { id: "abroad_family", name: "供得起留学", desc: "家境殷实，给你铺了出国的路（解锁留学行动）。", assetTier: "upper", realloc: { insight: 6, charm: 6, body: -6, strategy: -6 }, flags: ["can_abroad"] },
+      { id: "well_off", name: "殷实人家", desc: "家境优渥，父母或是体面的生意人，或是高知，从没让你为钱发过愁。", assetTier: "upper", realloc: { insight: 6, charm: 6, body: -6, strategy: -6 } },
       { id: "fallen", name: "家道中落", desc: "曾经的小康，因变故一夜返贫。看透了世态炎凉，却也丢了底气与体面。", tradeoff: true, assetTier: "poor", realloc: { mind: 9, strategy: 6, charm: -9, body: -6 }, flags: ["fallen"] }
     ] },
     /* —— 大框架改造·批次2：大学专业 —— 你在读大三，选的专业将决定哪些岗位向你敞开（doc §2.3）。
@@ -117,7 +117,7 @@
   const lifeStages = [
     { id: "youth", name: "青年", min: 18, max: 24, weeklyHours: 64,
       climate: "刚踏入社会，一切都是新的。试错成本低，但谁都能对你指手画脚。",
-      actions: ["jobhunt", "work", "quit", "study", "parttime", "date", "socialize", "exercise", "browse", "abroad", "sidehustle", "relocate", "travel", "rest"] },
+      actions: ["jobhunt", "work", "quit", "study", "parttime", "date", "socialize", "exercise", "browse", "sidehustle", "relocate", "travel", "rest"] },
     { id: "hustle", name: "打拼", min: 25, max: 34, weeklyHours: 64,
       climate: "同龄人开始分化。房贷、婚恋、35 岁的影子都在远处招手。",
       actions: ["work", "quit", "jobhunt", "sidehustle", "startup", "socialize", "date", "invest", "exercise", "browse", "relocate", "travel", "rest"] },
@@ -239,8 +239,6 @@
       resolve: (s) => { add(s, "health", has(s, "starving") ? 0 : 5); add(s, "stress", -12); add(s, "body", 1); return { log: has(s, "starving") ? "你逼自己出了身汗，可饿着肚子，怎么练也补不回亏空的身体——汗水带走了点烦躁，却带不来力气。" : "你逼着自己出了几身透汗。肌肉酸胀，脑子却前所未有地清醒，那点积压的烦躁，被汗水冲走了大半。" }; } },
     { id: "browse", name: "刷手机看新闻", emoji: "📱", hours: 4, desc: "翻完一整屏新闻和热搜，泡论坛。想看清时代的风往哪吹，就得自己读、自己悟。",
       resolve: (s) => { add(s, "insight", 1); flag(s, "read_news"); return { phone: true }; } },
-    { id: "abroad", name: "出国留学", emoji: "🛫", hours: 4, desc: "一场长达数年的远行。这不是一周的事——它会占掉你人生的好几年。",
-      require: (s) => has(s, "can_abroad") && !has(s, "abroad_done") && !s.commitment, resolve: (s) => ({ commit: "abroad" }) },
     { id: "rest", name: "躺平休息", emoji: "🛋️", hours: 12, desc: "什么都不干，把自己交还给沙发。回血，回心情。", hint: "❤️健康+3　🙂心情+4　😣压力-10",
       resolve: (s) => { add(s, "health", has(s, "starving") ? 0 : 3); add(s, "mood", 4); add(s, "stress", -10); return { log: has(s, "starving") ? "你瘫在沙发上，可空荡荡的肚子和见底的银行卡，让这份「躺平」一点也不踏实——歇得了心，养不回身子。" : "你把一切都推开，窗帘一拉睡到自然醒，外卖配着剧，手机刷到没电。世界照样转，但这一周，只属于你自己。" }; } },
     { id: "parenting", name: "鸡娃育儿", emoji: "🍼", hours: 16, anyStage: true, desc: "陪伴、辅导孩子。烧钱烧精力，却也亲手决定着下一代的起点。",
@@ -459,22 +457,7 @@
 
   const events = [];
 
-  /* ============================ 留学等「跨多年」承诺 ============================
-   * commitment：一次抉择占去人生好几年，引擎按年推进、逐年叙事，结束触发收尾事件。
-   */
-  const commitments = {
-    abroad: {
-      id: "abroad", label: "海外留学", years: 4, endEvent: "ev_haigui",
-      blurbs: [
-        "异国的第一年。语言、文化、孤独，每一样都比想象中难。你在出租屋里，第一次学会了给自己做饭。",
-        "你慢慢适应了。课业繁重，你一边赶 due，一边在中餐馆后厨打工攒生活费，咖啡续了一杯又一杯。",
-        "你开始融入。社团、实习、几个交心的朋友——视野被一点点撑开。回头看，故乡已经很远。",
-        "最后一年。论文、答辩、找工作的焦虑一起砸下来。毕业典礼那天，你忽然不知道，该往哪里走。"
-      ],
-      perYear: (s) => { add(s, "knowledge", 4); add(s, "insight", 4); add(s, "network", 3); add(s, "charm", 2); add(s, "cash", -80000); add(s, "health", -2); },
-      end: (s) => { flag(s, "abroad_done"); return "几年弹指而过。你带着一纸文凭、一身见识，和一屁股或有或无的债，站在了人生的新路口。"; }
-    }
-  };
+  const commitments = {};   // 留学/跨年承诺子系统已移除
 
   /* 每个大阶段进入时触发的「明确选择」事件 */
   const stageDecisions = { youth: "ev_dec_youth", hustle: "ev_dec_hustle", midlife: "ev_dec_midlife", senior: "ev_dec_senior" };

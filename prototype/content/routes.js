@@ -26,7 +26,6 @@ function registerRoute(goalId, def) { ROUTES[goalId] = def || {}; }
 // 别名：挑战模式/变体目标没有专属路线时，回退到同路径的基础路线，让它们也有任务引导。
 const ROUTE_ALIAS = {
   sc_rags: "freedom", sc_phoenix: "freedom", sc_clean: "corp", sc_ascetic: "official",
-  acad_dynasty: "acad", acad_humble: "acad"
 };
 function routeOf(s) {
   if (!s || !s.goal) return null;

@@ -65,7 +65,7 @@
   // 3) Hide actions that pull the player into unrelated systems.
   if (typeof actions !== "undefined" && Array.isArray(actions)) {
     const blockedActions = new Set([
-      "startup", "invest", "abroad", "travel", "parenting", "family",
+      "startup", "invest", "travel", "parenting", "family",
       "grandkids", "hobby", "date", "relocate"
     ]);
     replaceWith(actions, actions.filter(a => a && !blockedActions.has(a.id)));

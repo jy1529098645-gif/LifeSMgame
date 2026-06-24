@@ -192,9 +192,6 @@ CONSUMPTION.push(
   { id: "kid_international_school", name: "国际学校学费", emoji: "🏫", kind: "子女投入", price: 180000, assetRate: 0, mood: 8, social: 7, repeatable: true,
     desc: "双语环境、海外课程、家长会上的车钥匙声。教育选择，也是一种阶层表达。", network: 3, stats: { insight: 1 },
     custom: (s) => { if (has(s, "has_kid")) socialBoostRole(s, "孩子", 12); socialShift(s, 2); add(s, "stress", 6); } },
-  { id: "kid_study_abroad_fund", name: "子女留学基金", emoji: "✈️", kind: "子女投入", price: 300000, assetRate: 0.1, mood: 9, social: 6, repeatable: true,
-    desc: "给未来先存一张远方的船票。钱躺进去，你心里也踏实一点。", stats: { insight: 2 },
-    custom: (s) => { if (has(s, "has_kid")) socialBoostRole(s, "孩子", 15); add(s, "reputation", 2); flag(s, "kid_abroad_fund"); } },
 
   /* ===================== 父母照护 ===================== */
   { id: "parent_checkup_plus", name: "父母深度体检", emoji: "🧾", kind: "父母照护", price: 18000, assetRate: 0, mood: 8, social: 0, health: 1, repeatable: true,

@@ -42,20 +42,6 @@ const GOALS = [
     desc: "钱多钱少无所谓，趁活着把脚印留在尽可能多的地方。",
     progress: (s) => Math.min(100, Math.round((s.placesSeen || 0) / 6 * 100)),
     done: (s) => (s.placesSeen || 0) >= 6 },
-  { id: "acad", name: "学术封神", emoji: "🔬", path: "学术", target: "登顶学界：诺奖 / 图灵 / 菲尔兹 / 院士",
-    desc: "板凳要坐十年冷。这一生不图金山银山，只为在某门学问上，把人类的认知往前推一寸——哪怕只有一寸。",
-    progress: (s) => {
-      if (has(s, "laureate") || has(s, "academician")) return 100;
-      let p = 0;
-      if (has(s, "edu_bachelor") || has(s, "abroad_done")) p = Math.max(p, 14);
-      if (has(s, "edu_master")) p = Math.max(p, 28);
-      if (has(s, "phd_done") || has(s, "edu_phd")) p = Math.max(p, 48);
-      p = Math.max(p, ({ "博后": 56, "讲师": 66, "副教授": 80, "教授": 90 }[s.acadRank]) || 0);
-      if (has(s, "acad_breakthrough")) p = Math.max(p, 84);
-      if (has(s, "acad_nominated")) p = Math.max(p, 93);
-      return p;
-    },
-    done: (s) => has(s, "laureate") || has(s, "academician") },
   { id: "family", name: "儿孙满堂", emoji: "👨‍👩‍👧", path: "家庭", target: "成家、有娃、晚年幸福",
     desc: "事业是一时的，热腾腾的一家人才是一辈子的。",
     // 「成家」可能因晚年离婚/丧偶而失去 married 标记，但「有娃」是组过家庭的铁证；
@@ -88,9 +74,7 @@ const MILESTONES = [
   { id: "kid", name: "为人父母", emoji: "👶", check: (s) => has(s, "has_kid") },
   { id: "boss", name: "自己当老板", emoji: "🚀", check: (s) => has(s, "startup") },
   { id: "shore", name: "考公上岸", emoji: "🏛️", check: (s) => has(s, "civil_servant") },
-  { id: "abroad", name: "走出国门", emoji: "✈️", check: (s) => has(s, "abroad_done") || has(s, "traveled") },
-  { id: "phd_done", name: "戴上博士帽", emoji: "🎓", check: (s) => has(s, "phd_done") },
-  { id: "laureate", name: "摘得学界桂冠", emoji: "🏅", check: (s) => has(s, "laureate") || has(s, "academician") },
+  { id: "abroad", name: "走遍四方", emoji: "✈️", check: (s) => has(s, "traveled") },
   { id: "half_million", name: "身价五十万", emoji: "💴", check: (s) => _realNW(s) >= 500000 },
   { id: "million", name: "身价百万", emoji: "💎", check: (s) => _realNW(s) >= 1000000 },
   { id: "five_million", name: "身价五百万", emoji: "💠", check: (s) => _realNW(s) >= 5000000 },
@@ -154,9 +138,7 @@ const GOAL_MODS = {
   family:   { bias: ["love", "relation", "family"], biasP: 0.45, cashMul: 1.0,
               note: "【儿孙满堂】情感与家庭的牵绊会更密集——催婚、育儿、姻亲、聚散，处处是功课。",
               onPick: (s) => { flag(s, "goal_family"); } },
-  acad:     { bias: ["degree", "study"],         biasP: 0.5, cashMul: 0.9,
-              note: "【学术封神】求学、治学、冲顶的命运线会贯穿一生；清贫是底色，但高学历也会替你叩开意想不到的商业大门。",
-              onPick: (s) => { flag(s, "goal_acad"); flag(s, "can_abroad"); add(s, "knowledge", 4); add(s, "insight", 2); } }
+
 };
 function goalMods(s) { return s && s.goal ? GOAL_MODS[s.goal] || null : null; }
 // 选定目标后施加难度旋钮（开局本金倍率 + 主题化起手），返回给玩家看的提示文案

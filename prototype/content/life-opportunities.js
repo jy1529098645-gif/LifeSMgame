@@ -3,7 +3,7 @@
  * content/life-opportunities.js —— 人生机会卡（职场沉浮·逆天改命方案 §11）
  * 机会不只创业：从「打工人荒诞人生」的经历里，长出多条出口——
  *   startup（创业）/ job_switch（跳槽）/ lawsuit（仲裁拿赔偿）/ side_to_main（副业转正）/
- *   hometown（返乡）/ study（读研留学）/ career_change（转行）/ low_desire（躺平）。
+ *   hometown（返乡）/ career_change（转行）/ low_desire（躺平）。
  * 创业只是 type==="startup" 的一种。每张卡：type/title/source/cost/risk/potential/hook/apply。
  *
  * 暴露：generateLifeOpportunities(s), lifeOppApply(s, card), LIFE_OPP_TYPE_NAME
@@ -41,10 +41,6 @@ const LIFE_OPP_RULES = [
     test: s => (s.stress > 65) || ((s.cash || 0) < 0) || _lo_has(s, "born_poor") || (s.birthplace && /县|镇|乡|农村/.test(s.birthplace.path || "")),
     source: "大城市熬不动了 / 老家的根", risk: "低", potential: "★（安稳，但天花板看得见）",
     cost: s => 0, hook: "大城市的房租、加班、孤独，一样样把你磨薄了。回老家考个编、或接家里那摊事——天花板低，但日子能喘口气。" },
-  { type: "study", id: "grad_school", title: "辞职深造，换条赛道",
-    test: s => (s.stats && s.stats.knowledge >= 55) || _lo_has(s, "can_abroad"),
-    source: "还算能打的学习底子", risk: "中", potential: "★★★（学历跃迁，重开一局）",
-    cost: s => Math.round(80000 * _lo_pi(s)), hook: "打工几年，你越发觉得学历和赛道卡着你。辞职去读个研/出国读书，用几年时间换一个更高的起点。" },
   { type: "career_change", id: "switch_track", title: "转行，去做真正想做的事",
     test: s => (s.mood < 45 && s.stress > 55) || _lo_mem(s, "grudge"),
     source: "对眼下这行的厌倦", risk: "中高", potential: "★★（归零重练，但可能更快乐）",
@@ -116,15 +112,6 @@ function lifeOppApply(s, card) {
       if (typeof notify === "function") notify(s, { kind: "world", title: "回到了老家", body: "天花板低了，但日子终于能喘口气。" });
       return `你退掉了大城市的出租屋，拖着行李箱回了老家。考了个编、或接了家里的小生意。父母脸上的笑藏不住，你心里却五味杂陈。大城市的星辰大海，到底没能留下你——但小城的烟火气，也是踏踏实实的人生。`;
     }
-    case "study": {
-      // 深造：进入留学/读研子循环（复用 commitment）
-      add(s, "cash", -card.initialCost);
-      s.job = null; delete s.flags.employed;
-      flag(s, "studying_again");
-      if (s.flags) s.flags._start_abroad = true;   // 触发引擎的留学子循环
-      add(s, "mood", 5);
-      return `你辞了职，把这些年攒下的钱砸向一纸更高的文凭。重新当学生的滋味，既兴奋又惶恐。用几年时间，换一个更高的起点和一条不一样的路——这场豪赌，赌的是自己。`;
-    }
     case "career_change": {
       add(s, "cash", -card.initialCost);
       flag(s, "career_changed");
@@ -147,7 +134,7 @@ function lifeOppApply(s, card) {
 }
 
 /* —— 人生分岔：职场沉浮到一定程度，命运摊开多条出口（方案 §12.2「逆天改命」）。
- * 创业、跳槽、仲裁、副业转正、返乡、读研、躺平——你这段荒诞人生，长出不同的出口。 —— */
+ * 创业、跳槽、仲裁、副业转正、返乡、躺平——你这段荒诞人生，长出不同的出口。 —— */
 function _lifeStageOK(s) {
   const stg = (typeof mainStageId === "function") ? mainStageId(s) : null;
   return stg === "work_grind" || stg === "opportunity_build" || stg === "resign_or_stay";

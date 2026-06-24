@@ -8,7 +8,7 @@
  * 每个选项：{ id, name, desc, realloc, flags? }
  *   realloc 六维【净零】重分配（+总=−总），总属性恒为 180，区别只在你点在哪。
  *   六维：body 体魄 / mind 心智 / knowledge 学识 / strategy 谋略 / charm 魅力 / insight 洞察
- *   flags 可注入特殊种子：can_abroad(留学) / nouveau_riche(暴富) / fallen(家道中落)
+ *   flags 可注入特殊种子：nouveau_riche(暴富) / fallen(家道中落)
  *     / startup_seed_trade(生意苗子) / startup_seed_agri(土货生意)
  * 引擎按 draft.birthplace.provinceId 取本省选项，拼到对应步骤(childhood/youth)。
  * ===================================================================== */
@@ -103,7 +103,7 @@ var REGION_CREATION = {
   },
   xianggang: { // 香江埠 金融港/国际/摩天楼
     childhood: [{ id: "rc_hk_subdivided", name: "劏房与中环之间", desc: "香江埠的繁华与逼仄你都见过——一街之隔，是两个世界。", realloc: { insight: 9, strategy: 6, charm: 3, body: -6, mind: -6, knowledge: -6 } }],
-    youth: [{ id: "rc_hk_finance", name: "中环金融城实习", desc: "你在投行实习，见过最快的钱，也见过最卷的人。", realloc: { strategy: 9, knowledge: 6, charm: 3, body: -6, mind: -6, insight: -6 }, flags: ["can_abroad"] }]
+    youth: [{ id: "rc_hk_finance", name: "中环金融城实习", desc: "你在投行实习，见过最快的钱，也见过最卷的人。", realloc: { strategy: 9, knowledge: 6, charm: 3, body: -6, mind: -6, insight: -6 } }]
   },
   chongqing: { // 巴渝都 山城/火锅/码头
     childhood: [{ id: "rc_cq_hills", name: "爬坡上坎的山城娃", desc: "巴渝的棒棒、缆车与火锅，磨出你一身韧劲和爽利。", realloc: { body: 9, charm: 6, insight: 3, knowledge: -6, mind: -6, strategy: -6 } }],

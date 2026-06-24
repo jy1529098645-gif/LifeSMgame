@@ -68,58 +68,29 @@
   // 父母会按月打来生活费托住你——这就是「前半年没钱家里会打过来」。
   // 兜多久(weeks)/给多宽(factor) 由出身决定，贴合中国家庭「供到毕业、啃老有度」的现实；
   // 打钱额度按当月实际账单 total 计，自动随年代/通胀缩放（符合年份水平）。
+  // ★所有兜底一律 ≤ 半年(26 周)★。越普通的工薪家庭兜得越足(满半年)；
+  // 越殷实越讲「分寸」，而暴发户/金汤匙家底虽厚，却早早要孩子独立(见独立剧情)。
   const FAMILY_NET = {
-    poor:   { weeks: 16, factor: 1.0 },   // 寒门：父母东拼西凑，约 4 个月就到顶
-    worker: { weeks: 26, factor: 1.2 },   // 工薪：典型「供到上岸」，约半年
-    upper:  { weeks: 52, factor: 1.6 },   // 殷实/留学家庭：兜约一年，给得宽裕
-    rich:   { weeks: 78, factor: 2.2 }    // 暴发户/富裕：啃老能啃一年半
+    poor:   { weeks: 18, factor: 1.0 },   // 寒门：父母东拼西凑，能兜小半年
+    worker: { weeks: 26, factor: 1.2 },   // 工薪：最典型的「供到上岸」，满半年(封顶)
+    upper:  { weeks: 22, factor: 1.5 },   // 殷实家境：给得宽裕，但也讲分寸
+    rich:   { weeks: 13, factor: 1.8 }    // 暴发户：家底厚，却早早要你独立(约 3 个月)
   };
   function familyNetFor(assetTier, st, difficulty) {
     const base = FAMILY_NET[assetTier] || FAMILY_NET.worker;
     let weeks = base.weeks, factor = base.factor;
-    if (has(st, "silver_spoon")) { weeks = 130; factor = 3.0; }              // 金汤匙：兜两年半、出手阔绰
-    else if (has(st, "born_poor")) { weeks = 8; factor = 0.9; }              // 苦命人：家里几乎指望不上
-    if (has(st, "fallen")) weeks = Math.round(weeks * 0.55);                 // 家道中落：兜底也短了
-    const dm = difficulty === "休闲" ? 1.5 : difficulty === "硬核" ? 0.4 : 1;  // 硬核老手早早断奶
-    weeks = Math.max(0, Math.round(weeks * dm));
-    return { until: weeks, factor: factor, weeks: weeks };
+    // 「讲独立」的富裕背景：给得阔绰却只兜一阵，期满父母正式「断奶」(独立剧情)
+    const independent = has(st, "silver_spoon") || has(st, "nouveau_riche") || assetTier === "rich";
+    if (has(st, "silver_spoon")) { weeks = 13; factor = 2.0; }               // 金汤匙：出手阔绰，但只兜约 3 个月
+    else if (has(st, "born_poor")) { weeks = 10; factor = 0.9; }             // 苦命人：家里几乎指望不上
+    if (has(st, "fallen")) weeks = Math.round(weeks * 0.7);                  // 家道中落：兜底也短了
+    const dm = difficulty === "休闲" ? 1.25 : difficulty === "硬核" ? 0.5 : 1; // 硬核老手早早断奶
+    weeks = Math.round(weeks * dm);
+    weeks = Math.max(0, Math.min(26, weeks));                               // 封顶半年：任何出身/难度都不超过 26 周
+    return { until: weeks, factor: factor, weeks: weeks, independent: independent };
   }
   let gameDiff = "标准";                        // 当前选定难度（标题页可改）
-  // 留学周推进的行动表（参考《留学模拟器》：学业/打工/语言/思乡/旅行）。run(st,s) 即时结算，返回中文日志
   const _cl = (v) => Math.max(0, Math.min(100, v));
-  // 学位进阶链：本科 → 硕士 → 博士 →（毕业后）学术职业。研究型阶段(research)看论文/导师，本科看绩点/学分。
-  const DEGREE_LEVELS = {
-    "本科": { next: "硕士", years: 4, gradCredits: 60, emoji: "🎓", research: false },
-    "硕士": { next: "博士", years: 3, gradCredits: 40, emoji: "📘", research: true, needPapers: 35 },
-    "博士": { next: null,  years: 4, gradCredits: 24, emoji: "🔬", research: true, needPapers: 62 }
-  };
-  const STUDY_ACTIONS = [
-    { id: "lecture", name: "上课 · 刷绩点", emoji: "📚", hours: 18, hint: "📈绩点+ 🎓学分+", desc: "按时上课、记笔记、跟教授混脸熟。绩点是留学的命根子。",
-      run: (st, s) => { st.gpa = _cl(st.gpa + 3); st.credits = _cl(st.credits + 2.4); st.lang = _cl(st.lang + 1); return "你坐在前排认真听讲，绩点稳住了，学分也往前挪了一格。"; } },
-    { id: "cram", name: "泡图书馆赶 due", emoji: "☕", hours: 16, hint: "📈绩点++ 😣压力+ ❤️健康-", desc: "通宵赶论文、刷题、磨 presentation。爆肝，但绩点蹭蹭涨。",
-      run: (st, s) => { st.gpa = _cl(st.gpa + 5); st.credits = _cl(st.credits + 1.6); add(s, "stress", 6); add(s, "health", -2); add(s, "knowledge", 1); return "咖啡续到第三杯，图书馆闭馆才走。东西学进去了，黑眼圈也挂上了。"; } },
-    { id: "ptjob", name: "打工攒生活费", emoji: "🍜", hours: 16, hint: "💰进账 📈绩点略- 🗣️语言+", desc: "中餐馆后厨、代购、发传单、当助教。钱是自己挣的，腰也是自己累弯的。",
-      run: (st, s) => { const m = Math.round(1200 + st.lang * 9 + Math.random() * 800); add(s, "cash", m); st.lang = _cl(st.lang + 1.5); st.gpa = _cl(st.gpa - 1); add(s, "health", -2); st._worked = (st._worked || 0) + 1; if (st._worked >= 6) flag(s, "study_worked_hard"); return `你颠了一周勺 / 接了一周代购单，攒下 ¥${m.toLocaleString()}。累，但每一分都踏实。`; } },
-    { id: "langx", name: "练语言 · 融入", emoji: "🗣️", hours: 10, hint: "🗣️语言++ 🤝融入+ 🏠思乡-", desc: "语言交换、社团活动、和 local 唠嗑。脸皮厚一点，世界就宽一点。",
-      run: (st, s) => { st.lang = _cl(st.lang + 4); st.social = _cl(st.social + 4); add(s, "charm", 1); st.homesick = _cl(st.homesick - 2); return "你硬着头皮开口，磕磕绊绊地聊。语言和圈子，都在一次次尴尬里长出来。"; } },
-    { id: "explore", name: "周边旅行 · 探索", emoji: "🗺️", hours: 12, hint: "🙂心情++ 🏠思乡-- 💸花钱", desc: "趁假期看看这个陌生的国度。花钱，但治愈。",
-      run: (st, s) => { const cost = Math.round(2000 + Math.random() * 3000); add(s, "cash", -cost); add(s, "mood", 8); add(s, "insight", 1); st.homesick = _cl(st.homesick - 9); return "你背上包把课本丢一边，看了不一样的风景。异乡也有了几分可爱。"; } },
-    { id: "callhome", name: "视频通话 · 解思乡", emoji: "📞", hours: 4, hint: "🏠思乡-- 🙂心情+", desc: "和爸妈、老友视频。报喜不报忧，挂了电话还是会红眼眶。",
-      run: (st, s) => { st.homesick = _cl(st.homesick - 13); add(s, "mood", 4); return "屏幕那头是熟悉的乡音和唠叨。你笑着说一切都好，挂了电话，房间忽然很安静。"; } },
-    { id: "campuslove", name: "校园恋爱 · 约会", emoji: "❤️", hours: 8, hint: "🤝融入+ 🙂心情+ 🏠思乡-", desc: "异国的心动，可能是孤独的解药，也可能是新的烦恼。",
-      run: (st, s) => { st.social = _cl(st.social + 5); add(s, "mood", 6); st.homesick = _cl(st.homesick - 5); if (rnd(0.25)) flag(s, "abroad_romance"); return "图书馆偶遇、社团搭话、深夜食堂的那盏灯——异乡的心动，来得猝不及防。"; } },
-    { id: "srest", name: "休息 · 自我调节", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力- 🏠思乡-", desc: "睡到自然醒、做顿家乡菜、追剧。给紧绷的神经松松绑。",
-      run: (st, s) => { add(s, "health", 4); add(s, "stress", -8); st.homesick = _cl(st.homesick - 3); add(s, "mood", 2); return "你给自己放了个假，煮了碗面追了部剧。留学不只是赶 due，也得好好活着。"; } },
-    { id: "visa", name: "学期注册 · 续签证", emoji: "🛂", hours: 6, hint: "🛂 维持合法学籍（每学期初必办）", desc: "跑学生处、移民局、银行盖章。枯燥的手续，却是你合法身份的命脉。",
-      run: (st, s) => { st.visaOk = st.weeksDone; add(s, "stress", 2); return "你排了半天队、盖了一摞章，学籍和签证总算续上了。手续繁琐，但身份踏实。"; } },
-    // —— 以下三项仅研究型阶段（硕士/博士）可做：科研产出与导师关系是毕业的命根子 ——
-    { id: "research", name: "泡实验室 · 推进课题", emoji: "🔬", hours: 20, hint: "📄论文+ 🧑‍🏫导师+ 😣压力+ ❤️健康-", desc: "跑数据、调实验、改了又改的方案。坐得住冷板凳，才熬得出成果。", avail: (st) => st.level && st.level !== "本科",
-      run: (st, s) => { st.papers = _cl((st.papers || 0) + 3); st.advisor = _cl((st.advisor || 50) + 2); st.gpa = _cl(st.gpa + 1); add(s, "knowledge", 1); add(s, "stress", 5); add(s, "health", -1); return "实验跑了一整周，数据终于有了点眉目。论文的拼图，又凑上一块。"; } },
-    { id: "paper", name: "写论文 · 投稿冲刺", emoji: "📄", hours: 18, hint: "📄论文++（中稿/被拒看运气） 😣压力++", desc: "改到第八版的 introduction、被审稿人按在地上摩擦。学术圈的硬通货，就是它。", avail: (st) => st.level && st.level !== "本科",
-      run: (st, s) => { add(s, "knowledge", 1); add(s, "stress", 6); const p = 0.4 + (st.advisor || 50) / 400 + (st.papers || 0) / 500 + (typeof luckBias === "function" ? luckBias(s) : 0); if (rnd(p)) { st.papers = _cl((st.papers || 0) + 9); st.advisor = _cl((st.advisor || 50) + 4); add(s, "reputation", 2); add(s, "mood", 7); return "邮箱里躺着一封 Accepted——审稿人那句「has merit」，你反复读了五遍。熬的夜，值了。"; } st.papers = _cl((st.papers || 0) + 2); add(s, "mood", -6); add(s, "stress", 4); return "Reject。三位审稿人把你的稿子批得体无完肤。你深吸一口气，存好意见，改完再投——学术就是这么一次次磨出来的。"; } },
-    { id: "meetadvisor", name: "见导师 · 组会汇报", emoji: "🧑‍🏫", hours: 6, hint: "🧑‍🏫导师++ 📄论文+ 🗣️语言+", desc: "汇报进度、聊聊方向、混个脸熟。导师的一句话，可能省你半年弯路。", avail: (st) => st.level && st.level !== "本科",
-      run: (st, s) => { st.advisor = _cl((st.advisor || 50) + 6); st.papers = _cl((st.papers || 0) + 1); st.lang = _cl(st.lang + 1); add(s, "stress", 2); st.advisorAnger = 0; return "组会上你把进展讲清楚，导师点了点头，还顺手指了条新路子。师生这层关系，得常走动才暖。"; } }
-  ];
   // 创业「全职经营」模式的周行动表（产品/用户/团队/融资/降本/顾自己）
   const VENTURE_ACTIONS = [
     { id: "vproduct", name: "打磨产品 · 写代码", emoji: "💻", hours: 18, hint: "🛠️产品++ 😣压力+", desc: "迭代功能、修 bug、抠体验。产品是 1，其它都是后面的 0。",
@@ -135,23 +106,6 @@
     { id: "vself", name: "喘口气 · 顾自己", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力-", desc: "创始人也是人。给自己放半天假，别把命搭进去。",
       run: (su, s) => { add(s, "health", 4); add(s, "stress", -10); add(s, "mood", 3); return "你难得关掉电脑睡了个好觉。公司垮了还能再来，人垮了就什么都没了。"; } }
   ];
-  // 大三「校园周」行动表：宿舍/课堂/实习/社团之间分配一周精力。决定你毕业季站在什么样的起跑线上。
-  const CAMPUS_ACTIONS = [
-    { id: "lecture", name: "上课 · 刷绩点", emoji: "📚", hours: 16, hint: "📈绩点+ 🎓学识+", desc: "早八照常去、坐前排、记笔记、跟着老师的进度走。绩点是保研、求职、出国都绕不开的硬通货。",
-      run: (cp, s) => { cp.gpa = _cl(cp.gpa + 3); add(s, "knowledge", 1); cp.attendW = (cp.attendW || 0) + 1; return "你按掉第三遍闹钟，趿拉着拖鞋冲进教室。课听进去了，绩点稳稳往前挪了一格。"; } },
-    { id: "cram", name: "泡图书馆 · 赶due备考", emoji: "☕", hours: 16, hint: "📈绩点++ 😣压力+ ❤️健康-", desc: "占座、刷题、通宵改report。爆肝，但绩点和实打实的本事一起涨。", repeatWeek: false,
-      run: (cp, s) => { cp.gpa = _cl(cp.gpa + 5); add(s, "knowledge", 1); add(s, "stress", 6); add(s, "health", -2); cp.attendW = (cp.attendW || 0) + 1; return "图书馆闭馆音乐响起你才合上电脑。东西啃进脑子里了，黑眼圈也挂上了。"; } },
-    { id: "intern", name: "投实习 · 跑大厂", emoji: "💼", hours: 16, hint: "🧰实习经验++ 💰补贴 📈绩点略-", desc: "改简历、海投、挤地铁去面试、在工位上当「免费劳动力」。大三的实习，是你毕业时唯一拿得出手的筹码。",
-      run: (cp, s) => { cp.intern = _cl(cp.intern + 7); const m = Math.round(800 + Math.random() * 1200); add(s, "cash", m); add(s, "network", 1); cp.gpa = _cl(cp.gpa - 1); add(s, "strategy", 1); cp.internW = (cp.internW || 0) + 1; if (cp.internW >= 4) flag(s, "had_internship"); return `你挤了一周地铁去实习，打杂、跑腿、也偷师，攒下经验和 ¥${m.toLocaleString()} 补贴。简历上，终于有了一行不空的「经历」。`; } },
-    { id: "club", name: "社团 · 室友局", emoji: "🍻", hours: 10, hint: "🤝人脉++ 🙂心情+ 😎魅力+", desc: "社团活动、楼下烧烤、打一整晚的团、帮室友带早饭。大学的人脉和回忆，都是这么处出来的。",
-      run: (cp, s) => { cp.social = _cl(cp.social + 6); add(s, "mood", 6); add(s, "charm", 1); add(s, "network", 1); return "宿舍的灯亮到后半夜，外卖盒堆了一桌。这帮人以后散落天南海北，但此刻你们还挤在六平米里笑。"; } },
-    { id: "love", name: "校园恋爱 · 心动", emoji: "❤️", hours: 8, hint: "🙂心情++ 🤝人脉+", desc: "图书馆偶遇、食堂蹭饭、操场散步到熄灯。青春里那点不计成本的心动。",
-      run: (cp, s) => { cp.social = _cl(cp.social + 3); add(s, "mood", 7); if (!cp.love && rnd(0.55)) { cp.love = true; flag(s, "campus_romance"); s.timeline.push({ age: s.age, text: "大三这年，你在校园里遇见了一个让你心跳漏拍的人。" }); return "操场的路灯下，话题莫名其妙就聊不完了。心动来得猝不及防——你好像，谈恋爱了。"; } return cp.love ? "和TA又压了一次马路、吃了食堂二楼的糖醋里脊。平淡，却踏实地甜。" : "鼓了半天勇气还是没递出那杯奶茶。没关系，青春的喜欢，本就笨拙。"; } },
-    { id: "parttime", name: "兼职 · 接单赚生活费", emoji: "🛵", hours: 12, hint: "💰进账 😣压力+", desc: "家教、跑腿、剪视频接私活。爸妈给的生活费之外，自己也能挣出点底气。",
-      run: (cp, s) => { const m = Math.round(700 + cp.social * 6 + Math.random() * 600); add(s, "cash", m); add(s, "stress", 3); return `你接了几单家教/跑腿/剪辑，攒下 ¥${m.toLocaleString()}。第一次花自己挣的钱，心里有种说不出的踏实。`; } },
-    { id: "rest", name: "躺平 · 打游戏睡懒觉", emoji: "🛋️", hours: 8, hint: "❤️健康+ 😣压力- 🙂心情+", desc: "翘掉没人点名的课、睡到中午、开黑到天亮。大学的容错，正在于此。",
-      run: (cp, s) => { add(s, "health", 4); add(s, "stress", -8); add(s, "mood", 3); return "你把闹钟全关了，睡到日上三竿，再躺床上刷一下午手机。难得的、不用对谁负责的一天。"; } }
-  ];
   let weekLog = [];       // 本周行动产生的日志
 
   /* ---------- 阶段 ---------- */
@@ -160,7 +114,7 @@
   /* ---------- 创建：骑砍式成长经历，净零重分配 + 归一保证总属性恒等 ---------- */
   function startDraft(cohort) {
     const stats = {}; C.STAT_KEYS.forEach(k => stats[k] = C.BASE_STAT);
-    draft = { cohort, birthYear: cohort.year, gender: "男", orientation: "异", playerName: "", stepIndex: 0, stats, picks: [], assetTier: "worker", flags: [], difficulty: gameDiff };
+    draft = { cohort, birthYear: cohort.year, gender: "男", orientation: "异", playerName: "", stepIndex: 0, stats, picks: [], assetTier: "worker", flags: [], difficulty: gameDiff, startMode: "campus" };
   }
   function defaultPlayerName(gender) {
     const a = gender === "女" ? ["林小满", "许知夏", "周南乔", "陈念念"] : ["林一舟", "许星河", "周嘉树", "陈远山"];
@@ -307,7 +261,7 @@
       adult: [
         { id: "region_coast_trade_family", name: "沿海外贸家庭", desc: `家里不算豪门，但有人做过货代、工厂、档口或跨境小生意。你成年时拿到的不只是钱，还有一串真假难辨的客户名片。`, assetTier: "upper", realloc: { strategy: 9, charm: 6, knowledge: -6, mind: -6 }, flags: ["regional_coast_trade_family", "startup_seed_trade"], pred: geoIsCoastal },
         { id: "region_coast_factory_debt", name: "订单砸手里", desc: `家里曾接过一笔大单，结果尾款拖欠、库存压仓。你成年时背着一点债，也背着对生意风险的早熟。`, assetTier: "worker", realloc: { strategy: 9, mind: 6, charm: -6, body: -6 }, flags: ["regional_coast_factory_debt", "fallen"], pred: geoIsCoastal },
-        { id: "region_coast_returnee_path", name: "侨乡留学路", desc: `亲戚朋友散在海外，家里咬牙给你铺出一条留学或交换的路。饭桌上常说：出去看看，别只守着这一片海。`, assetTier: "upper", realloc: { knowledge: 6, charm: 6, strategy: -6, body: -6 }, flags: ["can_abroad", "regional_coast_returnee_path"], match: ["侨乡", "海港", "商埠", "富庶"] },
+        { id: "region_coast_returnee_path", name: "侨乡闯荡路", desc: `亲戚朋友散在各地经商办厂，家里咬牙也要给你铺一条出去闯的路。饭桌上常说：出去看看，别只守着这一片海。`, assetTier: "upper", realloc: { knowledge: 6, charm: 6, strategy: -6, body: -6 }, flags: ["regional_coast_returnee_path"], match: ["侨乡", "海港", "商埠", "富庶"] },
         { id: "region_inland_county_bet", name: "全家供你进城", desc: `成年那年，家里把积蓄、亲戚借款和期待都塞进你的行李箱。你不是一个人进城，是带着一整个家的赌注。`, assetTier: "poor", realloc: { mind: 9, knowledge: 6, charm: -6, body: -6 }, flags: ["regional_inland_county_bet"], pred: geoIsInland },
         { id: "region_inland_relocation_comp", name: "搬迁补偿款", desc: `老村搬迁、棚改或采空区安置，让家里突然多了一笔钱。它不够让你躺平，却足够让你第一次敢想创业。`, assetTier: "upper", realloc: { strategy: 6, mind: 6, insight: -6, knowledge: -6 }, flags: ["nouveau_riche", "regional_inland_relocation_comp"], pred: geoIsInland },
         { id: "region_inland_old_unit", name: "老单位余荫", desc: `父母在厂矿、林场、油田或事业单位耗了半辈子。资源不大，但熟人多、规矩多，你成年时已经懂得求人办事的重量。`, assetTier: "worker", realloc: { insight: 9, strategy: 6, charm: 3, knowledge: -6, body: -6, mind: -6 }, flags: ["regional_inland_old_unit"], pred: geoIsInland }
@@ -384,11 +338,13 @@
 
   function newState(d) {
     const stats = normalizeStats(Object.assign({}, d.stats));
+    const startMode = d.startMode || "campus";
     const st = {
       cohort: d.cohort.id, cohortName: d.cohort.name, birthYear: d.birthYear, bg: d.picks.join(" · "),
       playerName: (d.playerName && d.playerName.trim()) || defaultPlayerName(d.gender),
       gender: d.gender || "男", orientation: d.orientation || "异", civilRank: 0, partnerGender: null,
-      week: 0, startAge: 21, age: 21, year: d.birthYear + 21, stageId: "youth",
+      week: startMode === "society" ? 52 : 0, startAge: startMode === "society" ? 22 : 21, age: startMode === "society" ? 22 : 21, year: d.birthYear + (startMode === "society" ? 22 : 21), stageId: "youth",
+      startMode,
       stats: stats, network: 10, reputation: 0,
       cash: C.assetTierCash[d.assetTier] || 20000, assets: 0,
       health: 70 + Math.round((stats.body - 30) * 0.4), mood: 60, stress: 10, overdraft: 0,
@@ -428,7 +384,8 @@
     // ★批次2：从捏人 flag 解析大学专业 → s.major（求职门槛用）+ 框定「大三在校」起点
     const mf = d.flags.find(f => f.indexOf("bg_major_major_") === 0);
     if (mf) st.major = mf.replace("bg_major_major_", "");
-    st.education = { degree: "本科在读", major: st.major || null, school: (d.birthplace && d.birthplace.school) || null };
+    st.education = { degree: startMode === "society" ? "本科" : "本科在读", major: st.major || null, school: (d.birthplace && d.birthplace.school) || null };
+    if (startMode === "society") { flag(st, "edu_bachelor"); flag(st, "campus_skipped"); flag(st, "graduated_unemployed"); }
     if (st.major && C._util.majorById) { const mj = C._util.majorById(st.major); if (mj && C._util.rememberFact) { /* 记忆延迟到 ensureRuntime 之后写 */ st._openMajor = mj; } }
     if (d.legacyChild) { st.legacyParentName = (d.legacyChild.parentName || (C._util.loadMeta().legacy || {}).fromName || "上一代"); st.legacyChild = d.legacyChild; }
     C._util.initSocial(st);           // 生成社交圈
@@ -443,16 +400,112 @@
     if (!window.MVP_00_CAREER && C._util.pickMainArc) C._util.pickMainArc(st);       // 依出身/地区/求学/目标，挑一条人生核心剧本
     // 传承：上一世留下的家底 + 血脉特质（封顶，不滚雪球）。在出身/难度倍率之后注入。
     let lg = null; if (C._util.applyLegacy) { try { lg = C._util.applyLegacy(st); } catch (e) { } }
-    st._intro = true;                 // 开场「老祖宗的话」
+    st._intro = startMode !== "society";                 // 开场「老祖宗的话」；毕业未就业入口直接进城市图，便于测试社会线
+    st._cityDistrict = startMode === "society" ? "talent_market" : "campus";
+    st._cityFacility = null;
     st.eraWind = C.windAt(st.year);
-    st.hours = stageOf(21).weeklyHours;
+    st.hours = stageOf(st.age).weeklyHours;
     rollWeekPlan(st);                 // 初始化第一周的天气与排程
     refreshNews(st);
     const bpTxt = d.birthplace ? `生于${d.birthplace.path}。${(d.birthplace.origin && d.birthplace.origin.note) || ""} ` : "";
     const lgTxt = lg ? `家族传承：${lg.note}${lg.cash ? `（继承家底 ¥${lg.cash.toLocaleString()}）` : ""} ` : "";
     const lineTxt = d.legacyChild ? `你是上一代的孩子「${d.legacyChild.name}」，在${st.legacyParentName || "上一代"}的人生余波里成年。` : "";
-    st.timeline.push({ age: 21, text: `${st.year} 年，${st.playerName}读到了大三（${d.cohort.name}·${st.gender}·${st.major && C._util.majorName ? C._util.majorName(st) : "在校生"}）。${bpTxt}${lgTxt}${lineTxt}成长轨迹：${d.picks.join("、")}。21 岁，毕业的影子已经压上来——故事从这里开始。` });
+    if (startMode === "society") {
+      st.timeline.push({ age: 22, text: `${st.year} 年，${st.playerName}本科毕业，却还没有找到工作（${d.cohort.name}·${st.gender}·${st.major && C._util.majorName ? C._util.majorName(st) : "应届生"}）。${bpTxt}${lgTxt}${lineTxt}成长轨迹：${d.picks.join("、")}。你拖着箱子来到成都，第一站是人才服务中心——故事从社会入口开始。` });
+    } else {
+      st.timeline.push({ age: 21, text: `${st.year} 年，${st.playerName}读到了大三（${d.cohort.name}·${st.gender}·${st.major && C._util.majorName ? C._util.majorName(st) : "在校生"}）。${bpTxt}${lgTxt}${lineTxt}成长轨迹：${d.picks.join("、")}。21 岁，毕业的影子已经压上来——故事从这里开始。` });
+    }
     return st;
+  }
+
+  /* ---------- 本地大三：城市地图里的校园期 ---------- */
+  function startCampus() {
+    if (!s) return;
+    const majorName = s.major && C._util.majorName ? C._util.majorName(s) : "本专业";
+    s._intro = false;
+    s.campus = {
+      active: true, totalWeeks: 16, weeksDone: 0, gpa: 60, readiness: 18, social: 18,
+      absences: 0, internship: 0, burnout: 0, _weekActs: {}
+    };
+    s.education = s.education || {};
+    s.education.degree = "本科在读";
+    s._cityDistrict = "campus";
+    s._cityFacility = null;
+    weekLog = [`🎓 大三下学期开始了。${majorName}的课表、校招宣讲、实习群和宿舍里的泡面味，一起压了过来。`];
+    if (C._util.recordBeat) C._util.recordBeat(s, "pick_major");
+    s.timeline.push({ age: s.age, text: `大三下学期开始，你决定先在校园里把毕业前的几个月过明白。` });
+    screen = "play"; render();
+  }
+  function campusDash() {
+    if (!s || !s.campus) return "";
+    const cp = s.campus;
+    const pct = Math.min(100, Math.round(cp.weeksDone / cp.totalWeeks * 100));
+    return `<div class="campus-dash">
+      <div class="cdh">🎓 大三下学期 <span>${cp.weeksDone}/${cp.totalWeeks} 周</span></div>
+      <div class="cdbar"><i style="width:${pct}%"></i></div>
+      <div class="cdgrid"><span>绩点 <b>${Math.round(cp.gpa)}</b></span><span>求职准备 <b>${Math.round(cp.readiness)}</b></span><span>校园人脉 <b>${Math.round(cp.social)}</b></span><span>旷课 <b>${cp.absences || 0}</b></span></div>
+      <div class="cdtip">每周至少做一件和课业/实习相关的事。只躺平会换来学术警告，认真准备会让毕业后的求职少挨打。</div>
+    </div>`;
+  }
+  function campusTick() {
+    const cp = s && s.campus;
+    if (!cp) { endWeek(); return true; }
+    const did = cp._weekActs || {};
+    if (!did.lecture && !did.cram && !did.intern) {
+      cp.absences = (cp.absences || 0) + 1;
+      cp.gpa = _cl(cp.gpa - 5);
+      add(s, "stress", 4); add(s, "mood", -4);
+      weekLog.push(`🚷 这一周你没碰课业也没推进实习。辅导员在群里点名，绩点往下掉了一截（累计旷课/摆烂 ${cp.absences} 次）。`);
+      if (cp.absences === 3) weekLog.push("⚠️ 学院发来学业预警：再这么混，毕业季会先被教务处按住。");
+    } else {
+      cp.gpa = _cl(cp.gpa + 0.5);
+    }
+    cp.weeksDone++;
+    s.week++;
+    const na = s.startAge + Math.floor(s.week / 52);
+    s.age = na; s.year = s.birthYear + s.age; s.eraWind = C.windAt(s.year);
+    applyWeekWeather(s);
+    if (s.week % 4 === 0) {
+      const cost = Math.round(1400 * ((s.world && s.world.priceIndex) || 1) * ((DIFFS[s.difficulty] || DIFFS["标准"]).costMul));
+      add(s, "cash", -cost);
+      weekLog.push(`💸 生活费、餐费、打印费和杂七杂八的开销走掉 ¥${cost.toLocaleString()}。学校里时间便宜，但生活从不免费。`);
+    }
+    const campusLastActions = s._weekActs ? Object.keys(s._weekActs) : [];
+    if (campusLastActions.length) s._lastPlan = campusLastActions;
+    cp._weekActs = {};
+    s._weekActs = {};
+    s._actCount = {};
+    s.hours = stageOf(s.age).weeklyHours;
+    rollWeekPlan(s);
+    refreshNews(s);
+    if (cp.weeksDone >= cp.totalWeeks || cp.readiness >= 72 || has(s, "campus_ready_to_graduate")) {
+      campusGraduate();
+      return false;
+    }
+    const ctx = { lastActions: campusLastActions };
+    const routed = C._util.pickWeeklyEvent ? C._util.pickWeeklyEvent(s, ctx) : null;
+    const amb = routed || drawAmbient();
+    if (amb) { enterEvent(amb); screen = "event"; return false; }
+    if (C._util.buildWeeklyReflection) { const refl = C._util.buildWeeklyReflection(s, ctx); if (refl) weekLog.push(refl); }
+    return true;
+  }
+  function campusGraduate() {
+    const cp = s.campus || {};
+    s.campus = null;
+    flag(s, "edu_bachelor"); flag(s, "campus_done"); flag(s, "graduated_unemployed");
+    s.education = s.education || {};
+    s.education.degree = "本科";
+    s.age = Math.max(s.age || 22, 22);
+    s.year = s.birthYear + s.age;
+    if (cp.internship >= 2 && C._util.recordBeat) C._util.recordBeat(s, "first_intern");
+    if (cp.social >= 35 && C._util.recordBeat) C._util.recordBeat(s, "first_network");
+    add(s, "knowledge", Math.max(1, Math.round((cp.gpa || 60) / 25)));
+    add(s, "network", Math.max(0, Math.round((cp.social || 0) / 18)));
+    s._cityDistrict = "talent_market";
+    s._cityFacility = null;
+    const txt = `本科毕业了。绩点 ${Math.round(cp.gpa || 60)}，求职准备 ${Math.round(cp.readiness || 0)}，校园人脉 ${Math.round(cp.social || 0)}。校园的门在身后合上，成都人才服务中心在前面等你。`;
+    s.timeline.push({ age: s.age, text: txt });
+    weekLog = [`🎓 ${txt}`];
   }
 
   /* ---------- 手机新闻流：风口藏在多条同向新闻里，玩家自己嗅 ---------- */
@@ -656,26 +709,26 @@
           add(s, "health", -(youthNet ? Math.min(8, 1 + m) : Math.min(15, 2 + m * 2)));
           add(s, "mood", -Math.min(12, 3 + m)); add(s, "stress", 7);
           if (s.cash < -50000) s.cash = -50000;
-          // 断奶时刻：保护期刚过、头一回真饿肚子，给一记明确的人生节点
+          // 断奶时刻：保护期一过、头一回真饿肚子，给一记明确的人生节点（半年后家里不再兜底）
           if (fn && fn.until > 0 && !has(s, "family_net_ended")) {
             flag(s, "family_net_ended");
             s.timeline.push({ age: s.age, text: `这回再难，你也没好意思再向家里伸手——爸妈年纪大了，能贴补的早都贴补过了。打这儿起，日子得自己撑起来。` });
           }
-          // ★应急兜底★：年轻人断炊满 2 个月，回老家应急一次（约 3 年冷却）——避免「20 出头贫病而死」
-          if (youthNet && m >= 2 && (s.week - (s._lastBailout || -99999)) >= 156) {
-            s._lastBailout = s.week;
-            const aid = Math.max(3000, Math.round(total * 2 - s.cash));   // 补到约能再撑两个月
-            add(s, "cash", aid);
-            s._brokeMonths = 0; delete s.flags.starving;
-            add(s, "health", 10); add(s, "mood", -4); add(s, "reputation", -2);
-            s.timeline.push({ age: s.age, text: `实在撑不下去，你灰头土脸地回了趟老家。父母没多责备，往你卡里打了 ¥${aid.toLocaleString()}，又把后备箱塞满了米面腊肉。啃老的滋味不好受，但日子总得先过下去——歇口气，再出来拼。` });
-          }
+          // 注：半年保护期一过，家里不再有任何兜底——撑不撑得住，全看自己。
         }
       } else if (has(s, "starving")) {
         delete s.flags.starving; s._brokeMonths = 0;
         s.timeline.push({ age: s.age, text: "缓过一口气：账上终于有了钱，不用再挨饿。" });
       } else if (s.cash < 0) {
         add(s, "mood", s.cash < -30000 ? -2 : -1);
+      }
+      // 暴发户/金汤匙：保护期一过，父母主动把你「断奶」并叮嘱独立——单独剧情，杜绝长期/无限兜底
+      {
+        const fnX = s._familyNet;
+        if (fnX && fnX.independent && fnX.until > 0 && s.week > fnX.until && !has(s, "family_net_ended")) {
+          flag(s, "family_net_ended");
+          s.timeline.push({ age: s.age, text: `家里把你叫回去吃了顿饭。席间，父亲放下筷子：「孩子，你也长大了，该自己立起来了。家里不是养不起你，是不能再这么养着你——钱给多了，人就废了。」母亲往你包里塞了点吃的，没再多说。从这顿饭起，家里不再按月贴补你。退路没了，路反倒清楚了。` });
+        }
       }
       const scene = monthlyScene(s, { total, soldAsset, broke, brokeMonths: s._brokeMonths });
       if (broke) { const m = s._brokeMonths; if (m === 1 || m === 3 || m >= 5) s.timeline.push({ age: s.age, text: scene }); }
@@ -1088,7 +1141,6 @@
     return "🧍 单身";
   }
   function careerStatus() {
-    if (s.study && s.study.active) return `🎓 留学生 · ${s.study.school || "海外高校"}`;
     if (s.startup && s.startup.fulltime && !has(s, "startup_done")) return `🚀 全职创业 · ${s.startup.name || s.startup.track || "项目"}`;
     if (s.startup && !has(s, "startup_done")) return `🚀 创业中 · ${s.startup.name || s.startup.track || "项目"}`;
     if (has(s, "civil_servant")) return `🏛️ 体制内${s.civilRank ? " · " + (["", "科员", "副科", "正科", "副处", "正处"][s.civilRank] || "干部") : ""}`;
@@ -1455,7 +1507,7 @@
     const statBars = C.STAT_KEYS.map(k => { const d = shown[k] - preview[k]; return `<div class="stat"><span class="stat-l">${SN[k]}</span><span class="stat-bar"><i class="b-${k}" data-bar="${k}" style="width:${Math.round(shown[k] / 95 * 100)}%;transition:width .16s ease"></i></span><span class="stat-v" data-val="${k}" style="transition:color .12s;color:${d > 0 ? "var(--green)" : d < 0 ? "var(--red)" : ""};font-weight:${d ? 800 : 400}">${shown[k]}</span></div>`; }).join("");
     const bp = draft.birthplace || {}; const org = bp.origin || {};
     const bpLine = bp.path ? `<div style="font-size:12px;color:var(--dim);margin-top:10px;border-top:1px solid var(--line);padding-top:8px">📍 ${bp.path}｜起手现金 ×<b style="color:var(--amber2)">${org.cashMul || 1}</b>　人脉 <b style="color:var(--amber2)">${(org.network >= 0 ? "+" : "")}${org.network || 0}</b>${(org.tags && org.tags.length) ? "　" + org.tags.map(t => "#" + t).join(" ") : ""}</div>` : "";
-    const flagLabels = { can_abroad: "🎓 解锁留学", nouveau_riche: "💰 暴发户", fallen: "📉 家道中落", startup_seed_trade: "🌱 生意苗子", startup_seed_agri: "🌱 土货生意" };
+    const flagLabels = { nouveau_riche: "💰 暴发户", fallen: "📉 家道中落", startup_seed_trade: "🌱 生意苗子", startup_seed_agri: "🌱 土货生意" };
     const tierName = { poor: "清贫", worker: "工薪", upper: "殷实", rich: "豪富" };
     const chip = (k, v) => `<span style="display:inline-block;font-size:12px;font-weight:700;padding:1px 7px;border-radius:6px;margin:3px 4px 0 0;color:#10100a;background:${v > 0 ? "var(--green)" : "var(--red)"}">${SN[k]}${v > 0 ? "+" : ""}${v}</span>`;
     const tag = (txt, col) => `<span style="display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;margin:5px 4px 0 0;color:${col};border:1px solid ${col}66;background:${col}1f">${txt}</span>`;
@@ -1524,6 +1576,16 @@
     const budget = estimateStartCash(draft);
     const spent = draft.gear.reduce((a, id) => { const g = gearById(id); return a + (g && g.price ? g.price : 0); }, 0);
     const left = budget - spent;
+    draft.startMode = draft.startMode || "campus";
+    const modeCards = [
+      { id: "campus", icon: "🎓", name: "从大三开始", tag: "校园期", desc: "先在川大望江校园过一段大三生活：上课、实习、社交、躺平都会影响毕业后的求职底牌。" },
+      { id: "society", icon: "🧳", name: "毕业未就业", tag: "快速测试", desc: "跳过校园期，22 岁本科毕业但还没找到工作，直接从成都人才服务中心进入社会线。" }
+    ].map(m => `<div class="gear-card ${draft.startMode === m.id ? "on" : ""}" data-start-mode="${m.id}">
+        <div class="gear-ic">${m.icon}</div>
+        <div class="gear-mid"><div class="gear-name">${m.name} <span class="gear-tag${draft.startMode === m.id ? " on" : ""}">${m.tag}</span></div>
+          <div class="gear-desc">${m.desc}</div></div>
+        <div class="gear-buy"><div class="gear-check">${draft.startMode === m.id ? "✓" : "＋"}</div></div>
+      </div>`).join("");
     const cards = GEAR_ITEMS.map(g => {
       const on = draft.gear.indexOf(g.id) >= 0;
       const afford = on || g.price <= left;
@@ -1540,6 +1602,8 @@
       <h2 style="margin-top:0">🎒 收拾行囊</h2>
       <p class="sub">出门闯荡前，挑挑随身要带的家伙。手机人人都有；<b style="color:var(--amber)">电脑等设备勾上就带走，花费从开局家底里扣</b>。带了笔记本/台式，就能在游戏里真的用一台电脑——大屏炒股、搞钱、上网课，比手机顺手。</p>
       <div class="gear-budget">开局家底约 <b>¥${budget.toLocaleString()}</b>　·　行囊花费 <b style="color:var(--amber)">¥${spent.toLocaleString()}</b>　·　带走后剩 <b style="color:${left >= 0 ? "var(--green)" : "var(--red)"}">¥${left.toLocaleString()}</b></div>
+      <div class="gear-budget"><b>测试入口</b>　选择故事从哪里开始；两条入口后续都会接回成都城市地图和职场沉浮主线。</div>
+      <div class="gear-list">${modeCards}</div>
       <div class="gear-list">${cards}</div>
       <div class="dead-btns"><button class="btn" id="gearback">← 返回</button><button class="btn primary" id="gearto">收拾妥当，出发 →</button></div></div>`;
     document.querySelectorAll(".gear-card[data-gear]").forEach(el => el.onclick = () => {
@@ -1548,6 +1612,7 @@
       else { if (g.price > left) return; draft.gear.push(id); }
       render();
     });
+    document.querySelectorAll(".gear-card[data-start-mode]").forEach(el => el.onclick = () => { draft.startMode = el.dataset.startMode || "campus"; render(); });
     document.getElementById("gearback").onclick = () => { if (draft.legacyChild) { screen = "namepick"; } else { draft.stepIndex = C.creationSteps.length - 1; screen = "create"; } render(); };
     document.getElementById("gearto").onclick = () => {
       s = newState(draft); weekLog = [];
@@ -1570,7 +1635,11 @@
       document.getElementById("introgo").onclick = () => {
         s.age = Math.max(s.age || 18, 21);
         s.year = s.birthYear + s.age;
-        startCampus();
+        if (typeof startCampus === "function") { startCampus(); return; }   // 校园周循环（开发中）就绪后自动走它
+        // 兜底：startCampus 尚未实现时，别让开局卡死——直接进入职场主线
+        s._intro = false;
+        s.timeline.push({ age: 21, text: "大三这年，你认真过完了校园时光，准备迎接毕业季。" });
+        screen = "goalpick"; render();
       };
       return;
     }
@@ -1617,8 +1686,6 @@
     if (s._intro) return renderIntro();
     // ★月度结算单弹窗★：每月结算后优先弹出可视化收支账单（先于一切）
     if (s._pendingBill) return renderBill();
-    if (s.campus && s.campus.active) return renderCampus();   // 大三校园周推进模式接管界面
-    if (s.study && s.study.active) return renderStudy();   // 留学周推进模式接管界面
     if (s.startup && s.startup.fulltime) return renderVenture();   // 全职创业经营模式接管界面
     // 进入大阶段时的「明确选择」优先弹出
     if (window.MVP_00_CAREER && s._pendingDecision) {
@@ -1653,9 +1720,10 @@
         : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })()));
     // ★城市俯瞰图：当前选中的区域决定本周能做的行动（区域是行动入口，doc §3-§5）
     let cityMapHtml = "", curDistName = "", curDistDesc = "", districtPanelHtml = "";
+    let curDist = null;
     let avail = _weekActs;
     if (C._util.CITY_DISTRICTS && C._util.districtActions) {
-      const curDist = (s._cityDistrict && C._util.districtById(s._cityDistrict)) ? s._cityDistrict : null;
+      curDist = (s._cityDistrict && C._util.districtById(s._cityDistrict)) ? s._cityDistrict : null;
       const recDist = C._util.recommendedDistrict ? C._util.recommendedDistrict(s) : null;
       const dActs = curDist ? C._util.districtActions(s, curDist) : [];
       avail = curDist ? (dActs.length ? dActs : _weekActs) : [];
@@ -1665,7 +1733,7 @@
         const n = C._util.districtActions(s, d.id).length;
         const sig = C._util.districtSignal ? C._util.districtSignal(s, d.id) : {};
         const badges = `${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${sig.hot ? '<span class="cm-hot"></span>' : ""}`;
-        return `<button class="cm-dist-label${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-name">${d.name}</span>${badges}</button>`;
+        return `<button type="button" class="cm-dist-label${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-name">${d.name}</span>${badges}</button>`;
       }).join("");
       const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
       districtPanelHtml = "";
@@ -1736,6 +1804,7 @@
         </section>
         <aside class="play-side">
           ${dashboard()}
+          ${campusDash()}
           ${sceneAmbHtml}
           ${memHtml}${logHtml}
         </aside>
@@ -1750,10 +1819,19 @@
       if (el.dataset.dist) { s._cityDistrict = el.dataset.dist; s._cityFacility = null; render(); return; }
       if (el.dataset.fac) { s._cityFacility = el.dataset.fac; render(); }
     };
+    document.querySelectorAll(".cm-dist-label[data-dist]").forEach(el => el.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      s._cityDistrict = el.dataset.dist; s._cityFacility = null; render();
+    });
+    document.querySelectorAll(".cm-facility[data-fac]").forEach(el => el.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      s._cityFacility = el.dataset.fac; render();
+    });
     const cityRegionBackBtn = document.getElementById("cityRegionBack"); if (cityRegionBackBtn) cityRegionBackBtn.onclick = () => { s._cityFacility = null; render(); };
     const cityOverviewBtn = document.getElementById("cityOverview"); if (cityOverviewBtn) cityOverviewBtn.onclick = () => { s._cityDistrict = null; s._cityFacility = null; render(); };
     document.querySelectorAll(".track,.cm-scene-action[data-id]").forEach(el => el.onclick = () => {
       const a = C.actions.find(x => x.id === el.dataset.id);
+      if (!a) return;
       // ★行动格门槛：格子不够就不能点（决策类 slotCost=0 不受限）
       const _sc = C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;
       const _left = C._util.weekSlotsLeft ? C._util.weekSlotsLeft(s) : 99;
@@ -1773,7 +1851,7 @@
       commitAction(a);
       // 不再清空 weekLog —— 一周内多个行动的日志会累积，直到结束本周
       if (r.phone) { screen = "phone"; render(); return; }
-      if (r.commit) { if (r.commit === "abroad") startStudy(); else { startCommitment(r.commit); render(); } return; }
+      if (r.commit) { startCommitment(r.commit); render(); return; }
       if (r.venture) { enterVenture(); return; }
       if (r.minigame) { startMinigame(r.minigame); return; }
       // 常规行动日志只进「本周日志」，不进永久时间线 —— 人生回顾留给高光（事件/里程碑/转折），
@@ -1783,14 +1861,15 @@
       render();
     });
     const _ot = document.getElementById("overtime"); if (_ot) _ot.onclick = () => { s._overtimeMode = !s._overtimeMode; render(); };
-    document.getElementById("endweek").onclick = () => { if (!weekFull) return; weekLog = []; endWeek(); render(); };
+    document.getElementById("endweek").onclick = () => { if (!weekFull) return; weekLog = []; if (s.campus) campusTick(); else endWeek(); render(); };
     // 快进：自动延续「上周那套日常」连续推进，直到触发事件/结局，或最多一年——
     // 不再是空耗：上班/副业/养生这类常规行动会被自动重做，让平淡的日子一笔带过却仍有进展。
     // 仅自动重做「不打开子界面、不弹事件」的安全行动；遇到要做决策的就停下交还给玩家。
-    const SKIP_SAFE = { work: 1, sidehustle: 1, parttime: 1, exercise: 1, rest: 1, study: 1, socialize: 1, hobby: 1, startup: 1 };
+    const SKIP_SAFE = { work: 1, sidehustle: 1, parttime: 1, exercise: 1, rest: 1, study: 1, socialize: 1, hobby: 1, startup: 1, campus_lecture: 1, campus_cram: 1, campus_intern: 1, campus_club: 1 };
     document.getElementById("skip").onclick = () => {
       weekLog = []; let n = 0;
       while (n++ < 52) {
+        if (s.campus) { const cont = campusTick(); if (!cont) break; continue; }
         // 自动重做上周的安全日常（按时间预算，能塞几件塞几件）
         const plan = (s._lastPlan || []).filter(id => SKIP_SAFE[id]);
         for (const id of plan) {
@@ -1810,410 +1889,6 @@
       if (screen !== "event" && screen !== "dead") screen = "play";
       render();
     };
-  }
-
-  /* ============================ 留学：周推进子系统（参考《留学模拟器》） ============================ */
-  function startStudy(dest) {
-    const years = (C.commitments.abroad && C.commitments.abroad.years) || 4;
-    let school, flag = "🎓", country = "", destName = "异国", prestige = 2, costMul = 1.4, langHard = 0;
-    if (dest && dest.school) {
-      school = dest.school.name; flag = dest.flag || "🎓"; country = dest.country; destName = dest.name || "异国";
-      prestige = dest.school.tier || 2; costMul = dest.school.costMul || 1.4; langHard = dest.langHard || 0;
-    } else {
-      school = pick(["雾岛大学", "枫桥理工", "北境州立大学", "圣赫尔学院", "临海大学", "橡谷大学", "银湖大学"]);
-    }
-    s.study = { active: true, level: "本科", school: school, flag: flag, country: country, destName: destName, prestige: prestige, costMul: costMul, totalWeeks: years * 52, weeksDone: 0, gpa: 55, lang: Math.max(18, 32 - langHard), homesick: 30, social: 22, credits: 0, papers: 0, advisor: 50, advisorAnger: 0, hours: 40, _weekActs: {}, _worked: 0, absences: 0, examFails: 0, visaTrouble: 0, mentalNeglect: 0, warned: false, _delays: 0 };
-    s.timeline.push({ age: s.age, text: `你拖着两个行李箱落地${destName}，成了「${flag}${school}」的一名留学生。往后几年，酸甜苦辣只能自己尝。` });
-    weekLog = [`🛫 飞机落地${flag !== "🎓" ? "·" + flag + destName : ""}，陌生的语言扑面而来。在「${school}」的留学生活，开始了。`];
-    if (dest && dest.school && dest.school.tier >= 3) add(s, "reputation", 2);   // 名校光环，起手就有点名气
-    screen = "play"; render();
-  }
-  function renderStudyPick() {
-    const DESTS = window.STUDY_DESTS; if (!DESTS) { startStudy(); return; }
-    const hero = `<div class="scene-hero" style="${C.images.styleBg("create", 1200)}"><span class="scene-cap">🎓 留学 · 选择你的目的地</span></div>`;
-    const tierName = { 1: "普通", 2: "不错", 3: "名校" };
-    if (!s._studyCountry) {
-      const cards = DESTS.map(d => `<button class="btn" data-country="${d.country}" style="display:block;width:100%;text-align:left;margin:0 0 8px"><b>${d.flag} ${d.name}</b>　<span style="font-size:12px;color:var(--dim)">${d.schools.length} 所院校${d.langHard ? "　· 语言较难" : ""}</span></button>`).join("");
-      app().innerHTML = `<div class="screen">${hero}<h2 style="margin-top:8px">🎓 去哪个国家留学？</h2><p class="sub">不同国家、不同院校，<b style="color:var(--amber)">花销、声望、语言难度</b>各不相同。名校履历更亮、回报更高，但更烧钱、更卷。</p>${cards}<button class="btn" id="studyback" style="margin-top:6px">← 再想想，先不出国</button></div>`;
-      document.querySelectorAll("[data-country]").forEach(b => b.onclick = () => { s._studyCountry = b.dataset.country; render(); });
-      document.getElementById("studyback").onclick = () => { s._studyCountry = null; delete s.flags._start_abroad; s.commitment = null; screen = "play"; render(); };
-      return;
-    }
-    const d = DESTS.find(x => x.country === s._studyCountry) || DESTS[0];
-    const admitP = (sc) => { const acc = C._util.socialAccess ? C._util.socialAccess(s, "study_abroad") : 55; const mul = sc.tier >= 3 ? 0.62 : sc.tier === 2 ? 0.95 : 1.15; return Math.max(0.05, Math.min(0.97, (acc / 100) * mul)); };
-    const cards = d.schools.map((sc, i) => { const p = Math.round(admitP(sc) * 100); const pc = p >= 70 ? "var(--green)" : p >= 40 ? "var(--amber)" : "var(--red)"; return `<button class="btn" data-school="${i}" style="display:block;width:100%;text-align:left;margin:0 0 8px"><b>${sc.name}</b> ${"⭐".repeat(sc.tier)}　<span style="font-size:12px;color:var(--amber2)">声望 ${tierName[sc.tier]}</span>　<span style="font-size:12px;color:${pc}">录取概率 ${p}%</span><br><span style="font-size:12px;color:var(--dim)">${sc.blurb}　· 花销 ×${sc.costMul}</span></button>`; }).join("");
-    const rej = s._studyReject ? `<div class="tip" style="border-color:var(--red)">📪 ${s._studyReject}</div>` : "";
-    app().innerHTML = `<div class="screen">${hero}<h2 style="margin-top:8px">${d.flag} ${d.name} · 选所学校</h2><p class="sub">声望越高，毕业履历越亮（<b style="color:var(--amber)">声誉/学识更高</b>），但越贵越卷，<b style="color:var(--amber)">录取也越看你的背景</b>（学历底子/家境/能力）。</p>${rej}${cards}<button class="btn" id="studyback2" style="margin-top:6px">← 换个国家</button></div>`;
-    document.querySelectorAll("[data-school]").forEach(b => b.onclick = () => {
-      const sc = d.schools[+b.dataset.school];
-      // 名校(tier≥3)要过录取关：背景不够会被拒，可改投普通校或攒够实力再来
-      if (sc.tier >= 3 && !rnd(admitP(sc))) {
-        s._studyReject = `「${sc.name}」给你发来了拒信。名校的门槛，不只看你想不想去，也看你够不够格——先换所学校，或回头把底子(学历/能力)补硬些再来。`;
-        bumpMomentum(s, -2); render(); return;
-      }
-      s._studyReject = null; s._studyCountry = null; startStudy({ country: d.country, flag: d.flag, name: d.name, langHard: d.langHard, school: sc });
-    });
-    document.getElementById("studyback2").onclick = () => { s._studyReject = null; s._studyCountry = null; render(); };
-  }
-  // 继续深造：从「本科毕业」决定读硕、或「硕士毕业」决定读博时调用。沿用同一套周推进，但切到研究型节奏。
-  function continueStudy(level) {
-    const cfg = DEGREE_LEVELS[level]; if (!cfg) { screen = "play"; render(); return; }
-    const carry = s._degCarry || {}; delete s._degCarry;
-    s.study = {
-      active: true, level, school: carry.school || "本校研究生院",
-      totalWeeks: cfg.years * 52, weeksDone: 0,
-      gpa: 64, lang: (carry.lang != null ? carry.lang : 42), homesick: 26,
-      social: (carry.social != null ? carry.social : 30), credits: 0,
-      papers: 0, advisor: 50, advisorAnger: 0,
-      hours: 40, _weekActs: {}, _worked: 0, absences: 0, examFails: 0, visaTrouble: 0, mentalNeglect: 0, warned: false, _delays: 0
-    };
-    const intro = level === "硕士"
-      ? `你换上研究生的身份，走进「${s.study.school}」。从此告别满课表，迎来组会、文献、和一个叫「导师」的人——读硕的日子，是另一种修行。`
-      : `你戴上了准博士的帽子。前方是一条窄而长的路：课题、论文、答辩，还有那个传说中「不延毕都不好意思说自己读过博」的江湖。`;
-    s.timeline.push({ age: s.age, text: intro });
-    weekLog = [cfg.emoji + " " + (level === "硕士" ? "研究生开学。导师把你领进实验室，指了指那张属于你的工位。" : "博士入学。导师拍拍你肩膀：「做出东西，才能毕业。」")];
-    screen = "play"; render();
-  }
-  function drawStudyEvent() {
-    if (!rnd(0.2)) return null;
-    s._cd = s._cd || {};
-    const pool = C.events.filter(e => e.module === "study" && (!e.once || !has(s, "ev_" + e.id)) && (!s._cd[e.id] || s.week - s._cd[e.id] >= 60) && (() => { try { return !e.cond || e.cond(s); } catch (x) { return false; } })());
-    return pool.length ? pick(pool) : null;
-  }
-  // —— 留学「本周必做」清单：按当前处境动态生成。未完成会在过完这周时结算后果，决定后续走向 ——
-  function studyDuties(st, s) {
-    const wk = st.weeksDone;                 // 正在过的这一周（0-based）
-    const sem = wk % 26;                     // 学期内周序（每 26 周一学期）
-    const did = st._weekActs || {};
-    const cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
-    const D = [];
-    if (cfg.research) {
-      // 研究型阶段（硕士/博士）：科研产出与导师关系才是命根子
-      D.push({ id: "research", emoji: "🔬", label: "推进课题 · 别让导师空等", done: !!(did.research || did.paper || did.meetadvisor),
-        miss: "本周科研零产出：导师渐渐不满，攒多了会被「请」出组、甚至延毕" });
-      if (st.level === "博士" && wk > st.totalWeeks * 0.55 && (st.papers || 0) < (cfg.needPapers || 60))
-        D.push({ id: "pubpush", emoji: "📄", label: "冲毕业论文 · 指标告急", done: !!did.paper,
-          miss: "论文数离毕业线还差一截：延毕的阴影一周近过一周" });
-    } else {
-      D.push({ id: "attend", emoji: "📚", label: "出勤 · 跟上课业", done: !!(did.lecture || did.cram),
-        miss: "旷课：绩点下滑＋记一次缺勤，攒到 3 次吃学术警告、6 次直接劝退" });
-      if (sem >= 24) D.push({ id: "exam", emoji: "📝", label: "考试周 · 备考冲刺", done: !!did.cram,
-        miss: "弃考：这门多半要挂，绩点与学分双双重创" });
-    }
-    if (wk > 0 && sem === 0) D.push({ id: "visa", emoji: "🛂", label: "学期注册 · 续签证", done: !!did.visa,
-      miss: "逾期不办：签证亮红灯，再拖一次就被遣返" });
-    if (st.homesick >= 70) D.push({ id: "mind", emoji: "🫂", label: "疏解思乡 · 心理调节", done: !!(did.callhome || did.srest || did.explore || did.langx || did.campuslove),
-      miss: "硬扛思乡：情绪持续崩坏，攒到 3 周会抑郁休学" });
-    if (s.cash < 1500) D.push({ id: "money", emoji: "💰", label: "打工 · 维持生计", done: !!did.ptjob,
-      miss: "揭不开锅：被催缴、压力飙升" });
-    return D;
-  }
-  // 结算刚过去这周未完成的必做事项，累加后果计数，必要时触发强制中断（劝退/遣返/休学）
-  function checkStudyDuties(st, s) {
-    const duties = studyDuties(st, s);
-    let forcedEnd = null;
-    for (const d of duties) {
-      if (d.done) continue;
-      if (d.id === "attend") {
-        st.absences = (st.absences || 0) + 1; st.gpa = _cl(st.gpa - 5); st.credits = _cl(st.credits - 1);
-        weekLog.push(`🚷 这周翘了课——绩点下滑，记一次缺勤（累计 ${st.absences} 次）。`);
-        if (st.absences === 3 && !st.warned) { st.warned = true; flag(s, "study_warned"); weekLog.push("⚠️ 学校下达【学术警告】：再放任下去，就等着被劝退。"); s.timeline.push({ age: s.age, text: "屡屡旷课，吃了学校的学术警告。" }); }
-        if (st.absences >= 6) forcedEnd = "expelled";
-      } else if (d.id === "exam") {
-        st.examFails = (st.examFails || 0) + 1; st.gpa = _cl(st.gpa - 9); st.credits = _cl(st.credits - 2); add(s, "mood", -5); add(s, "stress", 5);
-        weekLog.push(`📕 你没去备考，考试崩了——挂了一门（累计挂科 ${st.examFails} 门），绩点学分双双下滑。`);
-      } else if (d.id === "visa") {
-        st.visaTrouble = (st.visaTrouble || 0) + 1; add(s, "stress", 9); add(s, "mood", -4);
-        weekLog.push(`🛂 你忘了按时注册/续签——学籍系统亮起红灯（第 ${st.visaTrouble} 次）。`);
-        if (st.visaTrouble >= 2) forcedEnd = "deported";
-      } else if (d.id === "mind") {
-        st.mentalNeglect = (st.mentalNeglect || 0) + 1; add(s, "mood", -8); add(s, "stress", 6); st.homesick = _cl(st.homesick + 4);
-        weekLog.push(`🫥 你硬扛着思乡，情绪一周比一周沉（累计忽视 ${st.mentalNeglect} 周）。`);
-        if (st.mentalNeglect >= 3) forcedEnd = "medical";
-      } else if (d.id === "research") {
-        st.advisorAnger = (st.advisorAnger || 0) + 1; st.papers = _cl((st.papers || 0) - 1); st.advisor = _cl((st.advisor || 50) - 5); add(s, "mood", -4); add(s, "stress", 4);
-        weekLog.push(`🔬 这周课题毫无进展，导师的脸色又沉了几分（累计 ${st.advisorAnger} 次）。`);
-        if (st.advisorAnger === 3 && !st.warned) { st.warned = true; flag(s, "study_warned"); weekLog.push("⚠️ 导师把你单独叫去谈话：「再这样下去，就别怪我撒手不管了。」"); s.timeline.push({ age: s.age, text: "课题长期停滞，被导师严厉警告。" }); }
-        if (st.advisorAnger >= 5) forcedEnd = "advisor_drop";
-      } else if (d.id === "pubpush") {
-        add(s, "stress", 5); add(s, "mood", -3);
-        weekLog.push("📄 论文数还差得远，毕业指标像块石头压在胸口。");
-      } else if (d.id === "money") {
-        add(s, "cash", -800); add(s, "stress", 6); add(s, "mood", -4);
-        weekLog.push("💸 这周没腾出手挣钱，账单逼上门，只能刷卡顶着。");
-      }
-    }
-    return { forcedEnd };
-  }
-  // 被必做事项拖垮 → 提前中断留学，结局分叉（劝退 / 遣返 / 休学回国）
-  function studyForceEnd(reason) {
-    flag(s, "abroad_done"); flag(s, "abroad_dropout");
-    let txt;
-    if (reason === "expelled") { add(s, "knowledge", 1); add(s, "mood", -14); add(s, "stress", 8); add(s, "reputation", -5); flag(s, "study_expelled"); txt = "旷课太多、绩点崩盘，一纸【劝退通知】把你送上回国的飞机。几十万学费打了水漂，履历上也留了道疤。"; }
-    else if (reason === "deported") { add(s, "mood", -12); add(s, "stress", 10); add(s, "reputation", -3); flag(s, "study_deported"); txt = "签证逾期失效，移民局找上门。你在慌乱中仓促离境——留学梦，碎在了一张过期的纸上。"; }
-    else if (reason === "advisor_drop") { add(s, "mood", -14); add(s, "stress", 10); add(s, "reputation", -4); flag(s, "study_expelled"); flag(s, "acad_washout"); txt = "导师终于对你彻底失望，撤了课题、停了补助。系里没有第二个老师肯接手——你的学位，停在了答辩门外。多年青春，换来一句「肄业」。"; }
-    else { add(s, "mood", -10); add(s, "health", -4); flag(s, "study_medical"); txt = "长期的孤独与高压把你压垮。在医生和家人的劝说下你办了休学、提前回国——有些仗，得先把自己救回来。"; }
-    s.timeline.push({ age: s.age, text: txt }); weekLog.push("🎓 " + txt);
-    s.study = null; screen = "play";
-  }
-  function studyTick() {   // 返回 true=继续留学；false=被事件/毕业/死亡打断
-    const st = s.study; if (!st) return false;
-    // 先结算刚过去这周的「本周必做」：没做的扣分记账，攒够了直接中断学业
-    const _neg = checkStudyDuties(st, s);
-    if (_neg.forcedEnd) { studyForceEnd(_neg.forcedEnd); return false; }
-    st.weeksDone++; s.week++;
-    const na = s.startAge + Math.floor(s.week / 52); const aged = na !== s.age;
-    s.age = na; s.year = s.birthYear + s.age; s.eraWind = C.windAt(s.year);
-    st.credits = _cl(st.credits + 0.35);                 // 到课基线学分
-    const _cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
-    if (_cfg.research) st.advisor = _cl((st.advisor || 50) - 0.3);   // 师生关系不维护就自然冷却
-    st.homesick = _cl(st.homesick + 1.1);                // 思乡随时间缓升
-    if (st.homesick > 75) add(s, "mood", -3);
-    if (s.mood < 36) add(s, "mood", 1);                  // 心情韧性回弹（同主循环）
-    if (s.stress < 42 && s.health < 92) add(s, "health", 1);
-    s._moodLowWeeks = (s.mood < 18) ? (s._moodLowWeeks || 0) + 1 : 0;
-    if (s.week % 4 === 0) {                               // 每月：房租+伙食+学费分摊（留学烧钱）
-      const cost = Math.round((4000 + st.weeksDone * 4) * (s.world ? s.world.priceIndex : 1) * ((DIFFS[s.difficulty] || DIFFS["标准"]).costMul));
-      add(s, "cash", -cost);
-      if (s.cash < 0) { add(s, "stress", 4); add(s, "mood", -3); }
-    }
-    if (aged && s.age > 35) add(s, "health", -1);
-    if (s.age >= 16 && rollDeath()) { s.ending = s._deathRecap || "你走完了这一生。"; finishGame(); return false; }
-    st._weekActs = {}; st.hours = 40;                    // 新一周，时间重置
-    if (st.weeksDone >= st.totalWeeks) { graduateStudy(); return false; }
-    const ev = drawStudyEvent();
-    if (ev) { enterEvent(ev); screen = "event"; return false; }
-    return true;
-  }
-  function graduateStudy() {
-    const st = s.study; const cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
-    flag(s, "abroad_done");
-    // —— 博士延毕：论文不够 / 导师关系太差，且还有延毕额度 → 续一年继续熬 ——
-    if (st.level === "博士") {
-      const enough = (st.papers || 0) >= (cfg.needPapers || 60) && (st.advisor || 0) >= 22;
-      if (!enough && (st._delays || 0) < 2) {
-        st._delays = (st._delays || 0) + 1; st.totalWeeks += 52; flag(s, "phd_delayed");
-        s.timeline.push({ age: s.age, text: `博士读到第 ${Math.round(st.totalWeeks / 52)} 年——论文还差口气，毕业又往后推了一年。` });
-        const dev = C.events.find(x => x.id === "ev_deg_phd_delay");
-        if (dev) { enterEvent(dev); screen = "event"; render(); return; }
-        weekLog = ["⏳ 延毕一年。实验室的灯，又得多陪你一程。"]; screen = "play"; render(); return;
-      }
-    }
-    // —— 是否合格毕业 ——
-    const pass = cfg.research
-      ? ((st.papers || 0) >= (cfg.needPapers || 30) * 0.75 && (st.advisor || 0) >= 20)
-      : (st.credits >= (cfg.gradCredits || 60));
-    const clean = (st.absences || 0) <= 1 && (st.examFails || 0) === 0 && (st.visaTrouble || 0) === 0;
-    let txt;
-    if (st.level === "本科") {
-      flag(s, "edu_bachelor");
-      if (pass && st.gpa >= 70 && clean) { add(s, "knowledge", 8); add(s, "insight", 5); add(s, "charm", 3); add(s, "reputation", 8); add(s, "network", 6); flag(s, "abroad_honors"); flag(s, "can_emigrate"); txt = `毕业典礼上，你以优异成绩拨穗。一纸名校文凭、一口流利外语、一身见识——本科这几年，没白熬。`; }
-      else if (pass) { add(s, "knowledge", 5); add(s, "insight", 4); add(s, "charm", 2); add(s, "network", 3); flag(s, "can_emigrate"); txt = `你顺利本科毕业。成绩不算耀眼，但文凭到手、视野打开，这趟远行总归值回票价。`; }
-      else { add(s, "knowledge", 2); add(s, "mood", -10); add(s, "stress", 6); flag(s, "abroad_dropout"); txt = `挂科太多、学分没修够，你没能等到毕业典礼，灰头土脸地收拾行李——这几十万学费，买了个教训。`; }
-    } else if (st.level === "硕士") {
-      if (pass) { add(s, "knowledge", 7); add(s, "insight", 5); add(s, "strategy", 3); add(s, "reputation", 5); add(s, "network", 4); flag(s, "edu_top"); flag(s, "edu_master"); flag(s, "can_emigrate"); txt = `硕士答辩通过！你戴上硕士帽，手里多了一篇属于自己的论文。比本科更深一层的训练，让你看问题的眼光都不一样了。`; }
-      else { add(s, "knowledge", 3); add(s, "mood", -8); add(s, "stress", 5); flag(s, "edu_bachelor"); flag(s, "acad_washout"); txt = `课题烂尾、论文没攒够，硕士读成了「肄业」。这几年像一场没考完的试，你不太想再提起。`; }
-    } else { // 博士
-      if (pass) { add(s, "knowledge", 11); add(s, "insight", 8); add(s, "strategy", 4); add(s, "reputation", 9); flag(s, "edu_top"); flag(s, "edu_phd"); flag(s, "phd_done"); txt = `博士帽穗子拨到左边的那一刻，台下导师红了眼眶。${st._delays ? "延了" + st._delays + "年，" : ""}你终于熬出了头——「博士」这两个字，是用无数个不眠之夜换来的。`; }
-      else { add(s, "knowledge", 5); add(s, "mood", -12); add(s, "stress", 8); flag(s, "edu_master"); flag(s, "acad_washout"); txt = `熬到延毕上限，论文还是没能凑齐。你办了结业、拿了个硕士学位走人——读博这一仗，终究没能打赢。`; }
-    }
-    if (has(s, "abroad_romance")) txt += "（你还在异国留下了一段心动，能不能走到最后，是另一个故事。）";
-    s.timeline.push({ age: s.age, text: txt }); weekLog = ["🎓 " + txt];
-    // 给「深造」分支留底（沿用语言/融入/学校）
-    s._degCarry = { lang: st.lang, social: st.social, school: st.school, level: st.level, passed: pass };
-    s._lastDegree = st.level;
-    s.study = null;
-    // —— 触发该阶段的「去向抉择」关键事件（含深造/就业/学术职业分叉）——
-    const nextId = st.level === "本科" ? "ev_deg_ug_next" : st.level === "硕士" ? "ev_deg_ms_next" : "ev_deg_phd_next";
-    const ev = C.events.find(x => x.id === nextId);
-    if (ev) { enterEvent(ev); screen = "event"; render(); return; }
-    screen = "play"; render();
-  }
-  function studyDash() {
-    const st = s.study; const cfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
-    const yr = Math.floor(st.weeksDone / 52) + 1, totalYr = Math.round(st.totalWeeks / 52), weeksLeft = st.totalWeeks - st.weeksDone;
-    const bar = (label, v, cls, warn) => `<div class="sd-bar"><span class="sd-l">${label}</span><span class="sd-track"><i class="${cls}" style="width:${Math.round(v)}%"></i></span><span class="sd-v ${warn ? "sd-warn" : ""}">${Math.round(v)}</span></div>`;
-    // 研究型阶段看论文/导师；本科看绩点/学分
-    const stats = cfg.research
-      ? bar("论文", st.papers || 0, "b-knowledge", st.level === "博士" && (st.papers || 0) < (cfg.needPapers || 60) * 0.5) + bar("导师", st.advisor || 50, "b-happy", (st.advisor || 50) < 30) + bar("语言", st.lang, "b-tech") + bar("融入", st.social, "b-net") + bar("思乡", st.homesick, "b-rep", st.homesick > 70)
-      : bar("绩点", st.gpa, "b-happy", st.gpa < 40) + bar("学分", st.credits, "b-knowledge") + bar("语言", st.lang, "b-tech") + bar("融入", st.social, "b-net") + bar("思乡", st.homesick, "b-rep", st.homesick > 70);
-    return `<div class="dash">
-      <div class="dash-top">
-        <div><div class="age">第${yr}<small> /${totalYr} 学年</small></div><div class="cls">${cfg.emoji} ${st.school} · ${st.level} · 距毕业 ${weeksLeft} 周${st._delays ? "（已延毕" + st._delays + "年）" : ""}</div></div>
-        <div class="worth"><small>${s.year} 年 · 现金</small><b>¥${Math.round(s.cash).toLocaleString()}</b><div class="res">❤️${Math.round(s.health)}　🙂${Math.round(s.mood)}　😣${Math.round(s.stress)}</div></div>
-      </div>
-      <div class="sd-bars">${stats}</div></div>`;
-  }
-  function renderStudy() {
-    const st = s.study; const done = st._weekActs || {};
-    const acts = STUDY_ACTIONS.filter(a => !a.avail || a.avail(st));   // 研究型行动仅硕士/博士可见
-    const rows = acts.map(a => { const dis = a.hours > st.hours || done[a.id];
-      return `<div class="track ${dis ? "dis" : ""}" data-sid="${a.id}"><div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span><span class="ap-cost">${done[a.id] ? "✓ 本周已做" : a.hours + "h"}</span></div><div class="tk-desc">${a.desc}</div>${a.hint ? `<div class="tk-hint">${a.hint}</div>` : ""}</div>`; }).join("");
-    const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
-    const duties = studyDuties(st, s);
-    const undone = duties.filter(d => !d.done);
-    const dutyHtml = `<div style="background:rgba(240,167,60,.05);border:1px solid var(--line);border-left:3px solid ${undone.length ? "var(--amber)" : "var(--green)"};border-radius:10px;padding:10px 12px;margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;color:${undone.length ? "var(--amber2)" : "var(--green)"};margin-bottom:6px">📋 本周必做 ${duties.length - undone.length}/${duties.length}${undone.length ? " —— 没做完会影响你毕业的去向" : " —— 全部完成，稳住了"}</div>
-      ${duties.map(d => `<div style="font-size:12px;line-height:1.7;color:${d.done ? "var(--dim)" : "var(--txt)"}">${d.done ? "✅" : "⬜"} ${d.emoji} ${d.label}${d.done ? "" : ` <span style="color:var(--amber)">— ${d.miss}</span>`}</div>`).join("")}
-    </div>`;
-    const _rcfg = DEGREE_LEVELS[st.level] || DEGREE_LEVELS["本科"];
-    const stageTxt = _rcfg.research
-      ? `${_rcfg.emoji} ${st.level}在读 · 在「${st.school}」的第 ${st.weeksDone + 1} 周。论文产出和导师关系决定你能否按时毕业——别熬成「延毕老博士」。`
-      : `🛫 留学进行中 · 在「${st.school}」的第 ${st.weeksDone + 1} 周。绩点决定能否体面毕业，思乡与钱包决定你撑不撑得住。`;
-    app().innerHTML = `<div class="screen play">${studyDash()}
-      <div class="stagebar">${stageTxt}</div>${logHtml}
-      ${dutyHtml}
-      <div class="alloc-h">本周可支配时间：剩余 <b>${st.hours}</b> / 40 小时</div>
-      <div class="tracks">${rows}</div>
-      <div class="weekbtns"><button class="btn" id="sskip">⏭ 快进（遇事即停）</button><button class="btn primary" id="sweek">${undone.length ? `⚠️ 仍有 ${undone.length} 项必做没做，硬过这周 →` : "过完这周 →"}</button></div></div>`;
-    document.querySelectorAll(".track[data-sid]").forEach(el => el.onclick = () => {
-      const a = STUDY_ACTIONS.find(x => x.id === el.dataset.sid);
-      if (a.hours > st.hours || (st._weekActs && st._weekActs[a.id])) return;
-      st.hours -= a.hours; st._weekActs = st._weekActs || {}; st._weekActs[a.id] = true;
-      const log = a.run(st, s); if (log) weekLog.push(`${a.emoji} ${log}`);
-      render();
-    });
-    document.getElementById("sweek").onclick = () => { weekLog = []; studyTick(); render(); };
-    document.getElementById("sskip").onclick = () => { weekLog = []; let n = 0; while (n++ < 52) { if (!studyTick()) break; } render(); };
-  }
-
-  /* ============================ 大三校园：开局「在校周」子循环 ============================ */
-  // 游戏从大三宿舍开始：先在校园里过一段（绩点/实习/人脉/恋爱自己分配），
-  // 到学期末的毕业季分流，再带着这段积累走进「立志选主线 → 求职」的主流程。
-  const CAMPUS_TOTAL_WEEKS = 14;
-  function startCampus() {
-    s._intro = false;
-    s.campus = {
-      active: true, school: (s.education && s.education.school) || "本校",
-      totalWeeks: CAMPUS_TOTAL_WEEKS, weeksDone: 0,
-      gpa: 70, intern: 0, social: 25, love: false,
-      hours: 40, _weekActs: {}, absences: 0, examFails: 0, warned: false,
-      attendW: 0, internW: 0
-    };
-    s.timeline.push({ age: 21, text: "大三下学期。清晨六平米的宿舍里，上铺的室友还在打呼，你被早八的闹钟叫醒——毕业季的影子，已经悄悄压上来。故事，从这间宿舍开始。" });
-    weekLog = ["🛏️ 又是一个普通的大三早晨：泡面味、键盘声、外卖盒，和一张写着「还没想好以后干嘛」的脸。这一学期，怎么过，你说了算。"];
-    screen = "play"; render();
-  }
-  // 校园「本周必做」：出勤是底线，期末考是大考。没做完会折损绩点（但大三不会被劝退，只伤起跑线）。
-  function campusDuties(cp, s) {
-    const did = cp._weekActs || {};
-    const wk = cp.weeksDone;
-    const D = [];
-    D.push({ id: "attend", emoji: "📝", label: "出勤 · 别挂科", done: !!(did.lecture || did.cram),
-      miss: "翘了一周课：绩点下滑、记一次缺勤，攒多了期末容易挂科" });
-    if (wk >= cp.totalWeeks - 3) D.push({ id: "exam", emoji: "✍️", label: "期末考周 · 冲刺复习", done: !!did.cram,
-      miss: "裸考：这门多半要挂，绩点重创、毕业起跑线塌一截" });
-    return D;
-  }
-  function checkCampusDuties(cp, s) {
-    for (const d of campusDuties(cp, s)) {
-      if (d.done) continue;
-      if (d.id === "attend") {
-        cp.absences = (cp.absences || 0) + 1; cp.gpa = _cl(cp.gpa - 4);
-        weekLog.push(`🚷 这周课基本没去——绩点下滑，记一次缺勤（累计 ${cp.absences} 次）。`);
-        if (cp.absences === 3 && !cp.warned) { cp.warned = true; weekLog.push("⚠️ 辅导员找你谈话：「再这么旷下去，挂科、清考、影响毕业，可别怪没提醒你。」"); s.timeline.push({ age: s.age, text: "屡屡翘课，吃了辅导员的口头警告。" }); }
-      } else if (d.id === "exam") {
-        cp.examFails = (cp.examFails || 0) + 1; cp.gpa = _cl(cp.gpa - 9); add(s, "mood", -5); add(s, "stress", 4);
-        weekLog.push(`📕 你没复习就上了考场——这门挂了（累计 ${cp.examFails} 门），绩点狠狠掉了一截。`);
-      }
-    }
-  }
-  function campusTick() {   // 返回 true=继续在校；false=学期结束（毕业季分流）
-    const cp = s.campus; if (!cp) return false;
-    checkCampusDuties(cp, s);
-    cp.weeksDone++; s.week++;
-    const na = s.startAge + Math.floor(s.week / 52); s.age = na; s.year = s.birthYear + s.age;
-    s.eraWind = C.windAt(s.year);
-    // 心情/健康的温和回弹（同主循环，避免一跌到底）
-    if (s.mood < 46) add(s, "mood", 1);
-    if (s.stress < 42 && s.health < 92) add(s, "health", 1);
-    add(s, "stress", -2);
-    // 每月一次：学生生活费（房租水电由学校/家里兜底，开销很轻）；扣完只是紧一紧，不会破产
-    if (s.week % 4 === 0) {
-      const cost = Math.round((900 + Math.random() * 500) * (s.world ? s.world.priceIndex : 1));
-      add(s, "cash", -cost);
-      weekLog.push(`🍚 这个月的食堂饭卡、话费、零碎开销，去了 ¥${cost.toLocaleString()}。`);
-      if (s.cash < 0) { add(s, "stress", 3); add(s, "mood", -2); weekLog.push("💸 生活费见底了，得想办法接点单子贴补——或者厚着脸皮跟家里要。"); }
-    }
-    cp._weekActs = {}; cp.hours = 40;
-    if (cp.weeksDone >= cp.totalWeeks) { campusGraduate(); return false; }
-    // 学期中段的一个固定节点：毕业季的分流问题第一次砸到脸上（只播一次，纯叙事提醒）
-    if (cp.weeksDone === Math.floor(cp.totalWeeks / 2) && !has(s, "campus_midbeat")) {
-      flag(s, "campus_midbeat");
-      weekLog.push("📣 期中过了。室友群里有人晒大厂实习offer，有人开始背考研政治，也有人投了选调——「以后到底干嘛」这道题，绕不过去了。");
-      s.timeline.push({ age: s.age, text: "大三过半，同龄人各奔东西的岔路口，第一次清晰地摆在面前：秋招、考研、出国、还是搏一把？" });
-    }
-    return true;
-  }
-  // 学期结束：把这段校园积累折算成真实的属性/旗标（绩点→学识声誉、实习→求职筹码、人脉→人脉），
-  // 然后推进到「立志选主线」——毕业季的分流，由玩家在 goalpick 里正式拍板。
-  function campusGraduate() {
-    const cp = s.campus; s.campus = null;
-    flag(s, "campus_done");
-    const clean = (cp.absences || 0) <= 1 && (cp.examFails || 0) === 0;
-    let txt;
-    if (cp.gpa >= 82 && clean) { add(s, "knowledge", 6); add(s, "insight", 4); add(s, "charm", 2); add(s, "reputation", 5); flag(s, "campus_honor"); txt = `绩点稳居前列、一门没挂——大三这一年，你把「学生」这个身份做到了体面。保研、求职、出国的门，都为你多开了一道缝。`; }
-    else if (cp.gpa >= 65) { add(s, "knowledge", 3); add(s, "insight", 2); txt = `绩点不算耀眼，但稳稳及格、学分修齐。大三这一年，平平淡淡地交了卷。`; }
-    else { add(s, "knowledge", 1); add(s, "mood", -6); add(s, "stress", 4); flag(s, "campus_lowgpa"); txt = `绩点滑到了尴尬的位置，挂了科、补考清考折腾了一通。大三这年过得有点狼狈，起跑线塌了半截。`; }
-    if (cp.intern >= 55) { flag(s, "had_internship"); add(s, "network", 5); add(s, "strategy", 2); add(s, "reputation", 2); txt += " 更要紧的是——几段扎实的大厂实习让你的简历不再空白，毕业季的筹码，比同龄人厚了一截。"; }
-    else if (cp.intern >= 25) { flag(s, "had_internship"); add(s, "network", 2); txt += " 你也攒下了一两段实习经历，简历上不至于一片空白。"; }
-    else { txt += " 只是这几年光顾着上课/躺平，简历上「实习经历」那一栏，还空着。"; }
-    if (cp.social >= 55) { add(s, "network", 5); add(s, "charm", 2); }
-    else if (cp.social >= 35) { add(s, "network", 2); }
-    s.timeline.push({ age: s.age, text: `大三结束（绩点 ${Math.round(cp.gpa)}${cp.intern >= 25 ? "、有实习经历" : ""}${cp.love ? "、还谈了场恋爱" : ""}）。${txt}` });
-    s._campusRecap = txt;
-    screen = "campusend"; render();
-  }
-  function campusDash() {
-    const cp = s.campus;
-    const wk = cp.weeksDone + 1, total = cp.totalWeeks, weeksLeft = cp.totalWeeks - cp.weeksDone;
-    const bar = (label, v, cls, warn) => `<div class="sd-bar"><span class="sd-l">${label}</span><span class="sd-track"><i class="${cls}" style="width:${Math.round(v)}%"></i></span><span class="sd-v ${warn ? "sd-warn" : ""}">${Math.round(v)}</span></div>`;
-    const stats = bar("绩点", cp.gpa, "b-happy", cp.gpa < 50) + bar("实习", cp.intern, "b-knowledge") + bar("人脉", cp.social, "b-net");
-    return `<div class="dash">
-      <div class="dash-top">
-        <div><div class="age">大三<small> · 第${wk}/${total}周</small></div><div class="cls">🎓 ${cp.school} · 距毕业季 ${weeksLeft} 周${cp.love ? " · 💕恋爱中" : ""}</div></div>
-        <div class="worth"><small>${s.year} 年 · 现金</small><b>¥${Math.round(s.cash).toLocaleString()}</b><div class="res">❤️${Math.round(s.health)}　🙂${Math.round(s.mood)}　😣${Math.round(s.stress)}</div></div>
-      </div>
-      <div class="sd-bars">${stats}</div></div>`;
-  }
-  function renderCampus() {
-    const cp = s.campus; const done = cp._weekActs || {};
-    const rows = CAMPUS_ACTIONS.map(a => { const dis = a.hours > cp.hours || done[a.id];
-      return `<div class="track ${dis ? "dis" : ""}" data-cid="${a.id}"><div class="tk-head"><span class="tk-name">${a.emoji} ${a.name}</span><span class="ap-cost">${done[a.id] ? "✓ 本周已做" : a.hours + "h"}</span></div><div class="tk-desc">${a.desc}</div>${a.hint ? `<div class="tk-hint">${a.hint}</div>` : ""}</div>`; }).join("");
-    const logHtml = weekLog.length ? `<div class="logbox"><div class="logbox-h">📓 本周纪事</div>${weekLog.map(l => `<div class="log">${l}</div>`).join("")}</div>` : "";
-    const duties = campusDuties(cp, s);
-    const undone = duties.filter(d => !d.done);
-    const dutyHtml = `<div style="background:rgba(240,167,60,.05);border:1px solid var(--line);border-left:3px solid ${undone.length ? "var(--amber)" : "var(--green)"};border-radius:10px;padding:10px 12px;margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;color:${undone.length ? "var(--amber2)" : "var(--green)"};margin-bottom:6px">📋 本周必做 ${duties.length - undone.length}/${duties.length}${undone.length ? " —— 没做完会拖累毕业起跑线" : " —— 稳住了"}</div>
-      ${duties.map(d => `<div style="font-size:12px;line-height:1.7;color:${d.done ? "var(--dim)" : "var(--txt)"}">${d.done ? "✅" : "⬜"} ${d.emoji} ${d.label}${d.done ? "" : ` <span style="color:var(--amber)">— ${d.miss}</span>`}</div>`).join("")}
-    </div>`;
-    const stageTxt = `🎓 大三在校 · 「${cp.school}」第 ${cp.weeksDone + 1} 周。绩点、实习、人脉——你在这几周里怎么分配，决定毕业季你站在什么样的起跑线上。`;
-    app().innerHTML = `<div class="screen play">${campusDash()}
-      <div class="stagebar">${stageTxt}</div>${logHtml}
-      ${dutyHtml}
-      <div class="alloc-h">本周可支配时间：剩余 <b>${cp.hours}</b> / 40 小时</div>
-      <div class="tracks">${rows}</div>
-      <div class="weekbtns"><button class="btn" id="cpskip">⏭ 快进到毕业季</button><button class="btn primary" id="cpweek">${undone.length ? `⚠️ 仍有 ${undone.length} 项必做没做，硬过这周 →` : "过完这周 →"}</button></div></div>`;
-    document.querySelectorAll(".track[data-cid]").forEach(el => el.onclick = () => {
-      const a = CAMPUS_ACTIONS.find(x => x.id === el.dataset.cid);
-      if (a.hours > cp.hours || (cp._weekActs && cp._weekActs[a.id])) return;
-      cp.hours -= a.hours; cp._weekActs = cp._weekActs || {}; cp._weekActs[a.id] = true;
-      const log = a.run(cp, s); if (log) weekLog.push(`${a.emoji} ${log}`);
-      render();
-    });
-    document.getElementById("cpweek").onclick = () => { weekLog = []; campusTick(); render(); };
-    document.getElementById("cpskip").onclick = () => { weekLog = []; let n = 0; while (n++ < 60) { if (!campusTick()) break; } render(); };
-  }
-  // 毕业季分流卡：校园期结束 → 一屏过场 → 进入「立志选主线」
-  function renderCampusEnd() {
-    app().innerHTML = `<div class="screen"><div class="ev-card" style="max-width:640px;margin:6vh auto 0">
-      <div class="ev-tag">${s.year} 年 · ${s.age} 岁 · 毕业季</div>
-      <div class="ev-title">🎓 大三结束 · 站在岔路口</div>
-      <div class="ev-text">${s._campusRecap || "大三这一年，就这么过去了。"}<br><br>
-      宿舍楼下的栏杆上晒着学位服的预订单，群里有人开始倒计时秋招，有人把考研倒计时贴在书桌前，也有人攥着出国的语言成绩单。没有谁能替你选——<b style="color:var(--amber2)">毕业后这条路，得你自己拍板</b>。</div>
-      <div class="ev-choices"><button class="btn primary choice" id="cpend2">想清楚我要的是什么 →</button></div>
-    </div></div>`;
-    document.getElementById("cpend2").onclick = () => { s._campusRecap = null; screen = "goalpick"; render(); };
   }
 
   /* ============================ 创业：全职「经营模式」周推进子系统 ============================ */
@@ -2955,11 +2630,9 @@
     document.querySelectorAll("[data-gig]").forEach(b => b.onclick = () => { pcWorkDo(b.dataset.gig); });
     document.querySelectorAll("[data-course]").forEach(b => b.onclick = () => { pcStudyDo(b.dataset.course); });
     document.querySelectorAll(".buybtn[data-buy]").forEach(b => b.onclick = () => { const it = C.consumption.find(x => x.id === b.dataset.buy); if (it) { buy(it); render(); } });
-    const pg = document.getElementById("pcGamePlay"); if (pg) pg.onclick = () => { pcGameDo(); };
-    // 电脑游戏厅：启动内置小游戏/棋牌 + 对局内交互（共用棋盘/回合面板的绑定）
-    document.querySelectorAll(".pc-gcard[data-mg]").forEach(b => b.onclick = () => startMinigame(b.dataset.mg, "pc"));
+    // 电脑棋牌室：启动内置棋类 + 对局内交互（共用棋盘面板绑定）
     document.querySelectorAll(".pc-gcard[data-bg]").forEach(b => b.onclick = () => startBoardGame(b.dataset.bg, "pc"));
-    if (activeDev === "pc" && pcApp === "games") { bindMinigamePanel(); bindBoardPanel(); }
+    if (activeDev === "pc" && pcApp === "games") { bindBoardPanel(); }
   }
 
   /* ============================ 💻 电脑（笔记本 / 台式）============================ */
@@ -2971,7 +2644,7 @@
     { id: "shop", icon: "🛒", name: "网购" },
     { id: "mail", icon: "📧", name: "邮箱" },
     { id: "data", icon: "📊", name: "数据看板" },
-    { id: "games", icon: "🎮", name: "游戏厅" },
+    { id: "games", icon: "♟️", name: "棋牌室" },
     { id: "assistant", icon: "🤖", name: "智能助手" },
     { id: "browser", icon: "🌐", name: "浏览器" },
     { id: "wechat", icon: "💬", svg: WX_ICON, name: "绿泡泡", green: true }
@@ -3085,26 +2758,18 @@
     return phoneHeader("📧 邮箱", `${list.length} 封邮件`) + `<div class="mail-list">${rows}</div>`;
   }
   // —— 游戏厅：把真·小游戏/棋牌内置进电脑，直接在这儿玩 ——
+  // —— 游戏厅：电脑上只装三款真·棋类（五子棋 / 中国象棋 / 围棋），联机对弈 ——
+  const PC_BOARD_IDS = ["gomoku", "xiangqi", "weiqi"];
   function pcGames() {
-    if (gameHost === "pc" && mgId && mg) return phoneHeader("🎮 游戏厅", "对局中") + `<div class="pc-gamewrap">${minigamePanelHTML()}</div>`;
-    if (gameHost === "pc" && bgId && bgGame && bgBoard) return phoneHeader("🎮 游戏厅", "对弈中") + `<div class="pc-gamewrap">${boardPanelHTML()}</div>`;
-    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
-    const list = (C._util.mgAvailable ? C._util.mgAvailable(s) : []);
-    const boards = (C._util.bgAvailable ? C._util.bgAvailable(s) : []);
-    const bgCards = boards.map(g => `<div class="pc-gcard" data-bg="${g.id}"><span class="pc-gc-emoji">${g.emoji}</span><div class="pc-gc-mid"><b>${g.name} <span class="real-tag">真·对弈</span></b><small>${g.where} · 与${g.opponent}对弈</small></div><span class="pc-gc-go">下 →</span></div>`).join("");
-    const mgCards = list.map(g => `<div class="pc-gcard" data-mg="${g.id}"><span class="pc-gc-emoji">${g.emoji}</span><div class="pc-gc-mid"><b>${g.name}</b><small>${g.where} · 拼${SN[g.statKey] || g.statKey}　${g.stake ? "💸约¥" + g.stake.toLocaleString() : "免费"}</small></div><span class="pc-gc-go">玩 →</span></div>`).join("");
-    const games = (bgCards + mgCards) || `<div class="ph-empty">这个年纪、这个地方，暂时没什么好玩的去处。</div>`;
-    return phoneHeader("🎮 游戏厅", "真·小游戏，在电脑上随便玩") + msg
-      + `<div class="pc-glist">${games}</div>`
-      + `<div class="stk-sec">摸鱼放松</div><div class="ap-foot"><button class="btn primary" id="pcGamePlay">🕹️ 随便玩一会（解压）</button></div>`
-      + `<p class="ap-note">标「真·对弈」的是真棋盘，自己动手下；其余赢了有彩头、输了也解压。打太久心情红利递减、人也更累。</p>`;
-  }
-  function pcGameDo() {
-    s._pcGameN = (s._pcGameN || 0) + 1;
-    const moodGain = s._pcGameN <= 2 ? 3 : s._pcGameN <= 5 ? 1 : 0;
-    add(s, "mood", moodGain); add(s, "stress", -Math.max(1, 3 - Math.floor(s._pcGameN / 2)));
-    if (s._pcGameN >= 7) add(s, "health", -1);
-    render();
+    if (gameHost === "pc" && bgId && bgGame && bgBoard) return phoneHeader("🎮 棋牌室", "对弈中") + `<div class="pc-gamewrap">${boardPanelHTML()}</div>`;
+    const boards = PC_BOARD_IDS.map(id => (C._util.bgById ? C._util.bgById(id) : null)).filter(Boolean);
+    const cards = boards.map(g => `<div class="pc-gcard" data-bg="${g.id}">
+      <span class="pc-gc-emoji">${g.emoji}</span>
+      <div class="pc-gc-mid"><b>${g.name}</b><small>🌐 联机对弈 · AI 对手「${g.opponent}」</small></div>
+      <span class="pc-gc-go">对弈 →</span></div>`).join("");
+    return phoneHeader("🎮 棋牌室", "三款经典棋，落子见真章")
+      + `<div class="pc-glist">${cards || '<div class="ph-empty">棋盘还没装好。</div>'}</div>`
+      + `<p class="ap-note">点击棋盘交叉点/棋子落子，与 AI 对弈。赢了长心气、添名声，输了也是磨练。</p>`;
   }
   // —— 智能助手：根据当前处境给出可操作建议（只读参谋）——
   function pcAssistant() {
@@ -3133,22 +2798,32 @@
     activeDev = "pc";
     const kind = activeComputerKind();
     const onHome = pcApp === "home";
-    const title = kind === "desktop" ? "🖥️ 台式电脑" : "💻 笔记本电脑";
-    let inner;
-    if (!kind) {
-      inner = `<div class="pc-unavail">🚪 你正出门在外，家里的台式机够不着。<br><br>想随时随地办公，得带上一台 <b>笔记本电脑</b>。</div>`;
-    } else {
-      inner = `<div class="pc-screen ${onHome ? "is-home" : ""}">${pcScreenBody()}</div>`;
-    }
+    const curApp = PC_APPS.find(a => a.id === pcApp);
+    const appName = onHome ? "访达" : (curApp ? curApp.name : "桌面");
     const nw = Math.round(netWorth(s));
+    if (!kind) {
+      app().innerHTML = `<div class="screen">${navBar("pc")}
+        <div class="pc-stage laptop">
+          <div class="pcdev laptop"><div class="pc-lid"><div class="pc-cam"></div>
+            <div class="pc-screen-area"><div class="pc-unavail">🚪 你正出门在外，家里的台式机够不着。<br><br>想随时随地办公，得带上一台 <b>笔记本电脑</b>。</div></div></div></div>
+          <div class="pc-deck"><div class="pc-keys"></div><div class="pc-pad"></div></div>
+        </div></div>`;
+      bindNav(); return;
+    }
+    // 顶栏（仿 macOS 菜单栏）+ 程序坞
+    const menubar = `<div class="pc-menubar">
+        <span class="pc-mb-l"> <b>荒诞人生 OS</b>　<span class="pc-mb-app">${appName}</span></span>
+        <span class="pc-mb-r"><span class="pc-mb-stat">💰¥${Math.round(s.cash || 0).toLocaleString()}　❤️${Math.round(s.health)}</span>📶 <span class="pc-batt"><i style="width:${Math.max(10, 100 - s.age)}%"></i></span> ${phoneClock()}　<button class="pc-power" id="pcClose" title="关机回到生活">⏻</button></span>
+      </div>`;
+    const dock = `<div class="pc-dock">${PC_APPS.map(a => `<button class="pc-dockapp ${pcApp === a.id ? "on" : ""}" data-app="${a.id}" title="${a.name}"><span class="pc-dock-ic${a.green ? " ph-ic-wx" : ""}">${a.svg || a.icon}</span><i class="pc-dock-dot" style="${pcApp === a.id ? "" : "opacity:0"}"></i></button>`).join("")}</div>`;
+    const screenArea = `<div class="pc-screen-area">${menubar}<div class="pc-body ${onHome ? "is-home" : ""}">${pcScreenBody()}</div>${dock}</div>`;
+    const lidOrMon = kind === "desktop"
+      ? `<div class="pcdev desktop"><div class="pc-bezel"><div class="pc-cam"></div>${screenArea}</div></div><div class="pc-neck"></div><div class="pc-base"></div>`
+      : `<div class="pcdev laptop"><div class="pc-lid"><div class="pc-cam"></div>${screenArea}</div></div><div class="pc-deck"><div class="pc-keys"></div><div class="pc-pad"></div></div>`;
     app().innerHTML = `<div class="screen">${navBar("pc")}
-      <div class="pc-stage">
-        <div class="pcdev ${kind === "desktop" ? "desktop" : "laptop"}">
-          <div class="pc-topbar"><span class="pc-dots"><i></i><i></i><i></i></span><span class="pc-wtitle">${title} · 荒诞人生 OS</span><button class="pc-close" id="pcClose">✕</button></div>
-          <div class="pc-body">${inner}</div>
-        </div>
-        ${kind === "laptop" ? `<div class="pc-deck"></div>` : `<div class="pc-stand"></div><div class="pc-foot"></div>`}
-        <div class="pc-statusline">📅 ${s.year}年${seasonName()} · ${s.age}岁　💰 现金 ¥${Math.round(s.cash || 0).toLocaleString()}　📊 身价 ¥${nw.toLocaleString()}　❤️ ${Math.round(s.health)}　🙂 ${Math.round(s.mood)}</div>
+      <div class="pc-stage ${kind}">
+        ${lidOrMon}
+        <div class="pc-statusline">${kind === "desktop" ? "🖥️ 台式电脑" : "💻 笔记本电脑"} · ${s.year}年${seasonName()} · ${s.age}岁　📊 身价 ¥${nw.toLocaleString()}</div>
       </div></div>`;
     bindNav();
     const close = document.getElementById("pcClose"); if (close) close.onclick = () => { screen = "play"; render(); };
@@ -3234,8 +2909,6 @@
       // 由行动触发的事件：选了「先不做」(cancel) → 退还时间不计；否则落账这次行动的耗时
       if (c.cancel) clearPendingAct(); else commitPendingAct();
       pendingEvent = null; eventNode = null;
-      if (s.flags._start_abroad) { delete s.flags._start_abroad; startStudy(); return; }  // 青年抉择选了留学 → 启动留学周推进
-      if (s._pendingDegree) { const lv = s._pendingDegree; delete s._pendingDegree; continueStudy(lv); return; }  // 毕业去向选了深造 → 续读硕/博
       if (s._enterVenture) { delete s._enterVenture; if (s.startup && !has(s, "startup_done")) { enterVenture(); return; } }  // 下海经商/成果转化 → 进创业经营子循环
       if (s._mg) { const id = s._mg; delete s._mg; tickMs(); if (s.alive) { startMinigame(id); return; } }  // 事件里拉起的对话小游戏
       if (s._bg) { const id = s._bg; delete s._bg; tickMs(); if (s.alive) { startBoardGame(id); return; } }  // 事件里拉起的真棋盘游戏
@@ -4145,7 +3818,7 @@
   let _lastScreen = null;
   function render() {
     const changed = screen !== _lastScreen; _lastScreen = screen;
-    ({ title: renderTitle, cohort: renderCohort, birthplace: renderBirthplace, namepick: renderNamePick, legacykids: renderLegacyKids, create: renderCreate, gear: renderGear, goalpick: renderGoalPick, campusend: renderCampusEnd, play: renderPlay, event: renderEvent, phone: renderPhone, pc: renderPc, shop: renderShop, market: renderMarket, social: renderSocial, map: renderMap, travel: renderTravel, dead: renderDead, gallery: renderGallery, mgmenu: renderMgMenu, minigame: renderMinigame, boardgame: renderBoardGame }[screen] || renderTitle)();
+    ({ title: renderTitle, cohort: renderCohort, birthplace: renderBirthplace, namepick: renderNamePick, legacykids: renderLegacyKids, create: renderCreate, gear: renderGear, goalpick: renderGoalPick, play: renderPlay, event: renderEvent, phone: renderPhone, pc: renderPc, shop: renderShop, market: renderMarket, social: renderSocial, map: renderMap, travel: renderTravel, dead: renderDead, gallery: renderGallery, mgmenu: renderMgMenu, minigame: renderMinigame, boardgame: renderBoardGame }[screen] || renderTitle)();
     // 只有真正切换页面时才放入场动画；同一页内（点行动/导航刷新）不再整页闪一下
     if (changed) { const sc = app().querySelector(".screen"); if (sc) sc.classList.add("screen-enter"); }
   }
