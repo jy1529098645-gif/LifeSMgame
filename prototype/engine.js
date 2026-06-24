@@ -39,6 +39,7 @@
   let phoneReels = { n: 0, txt: "" };           // 短视频「摸鱼」状态：刷过几个
   let phoneWx = { tab: "chats", peer: null };   // 微信（绿泡泡）：当前子页 chats/moments/me + 正在聊的对象 pid
   let phoneBoss = { job: null };                // 老大直聘：当前正在沟通的岗位 id（null=岗位列表）
+  let phoneSms = { open: null };                // 短信：当前打开的会话 id（null=短信列表）
   let pcApp = "home";                           // 电脑（笔记本/台式）当前打开的 app
   let activeDev = "phone";                       // 当前正在操作的设备：phone / pc（决定 app 内跳转改哪个状态）
   // 开局随身物品：手机人人都有；电脑等设备「勾选+少量花钱」带上，贵的从开局家底里扣
@@ -2057,6 +2058,7 @@
   const PHONE_APPS = [
     { id: "wechat", icon: "💬", svg: WX_ICON, name: "绿泡泡", green: true },
     { id: "boss", icon: "💼", svg: BOSS_ICON, name: "老大直聘", teal: true },
+    { id: "sms", icon: "✉️", name: "短信" },
     { id: "news", icon: "📰", name: "头条" },
     { id: "msg", icon: "🔔", name: "通知" },
     { id: "contacts", icon: "📇", name: "通讯录" },
@@ -2089,6 +2091,7 @@
     if (s.cast) wx += Object.keys(s.cast).filter(k => s.cast[k] && s.cast[k].crisis).length;
     if (wx) b.wechat = wx;
     if (has(s, "starving")) b.msg = 1;
+    const su = smsUnread(); if (su) b.sms = su;
     return b;
   }
   // 顶部 app 标题栏 + 返回主屏
@@ -2237,6 +2240,39 @@
       s._famSeed[pid] = true;
     }
     return s._wxlog[pid];
+  }
+  // 爸/妈的聊天历史：用现成的开场/回话拼一段过去的对话，首次打开灌进 _wxlog（保留已有的转账/聊天）
+  function famParentHist(key) {
+    const D = FAM_DATA[famArch()][key] || FAM_DATA.worker.mom;
+    const me1 = key === "mom" ? "妈我挺好的，你别担心。" : "爸我这边还行，就是有点忙。";
+    return [
+      { me: false, text: D.open[0] },
+      { me: true, text: me1 },
+      { me: false, text: D.reply[0] },
+      { me: true, text: "嗯，你们也照顾好自己，别太累。" },
+      { me: false, text: D.open[1 % D.open.length] },
+      { me: true, text: "知道啦，得空我回去看你们。" },
+      { me: false, text: D.reply[1 % D.reply.length] }
+    ];
+  }
+  function famParentSeed(pid, key) {
+    s._wxlog = s._wxlog || {}; s._famSeed = s._famSeed || {};
+    if (!s._famSeed[pid]) { const existing = s._wxlog[pid] || []; s._wxlog[pid] = famParentHist(key).concat(existing); s._famSeed[pid] = true; }
+    return s._wxlog[pid];
+  }
+  // 社交圈：按性格(kind)+关系塑造的开场白，不再千篇一律「在吗」
+  function wxSocialOpen(p, fav, crisis) {
+    if (crisis) return (CAST_CRISIS_LABEL[crisis] || "有急事找你") + "……在吗？";
+    const o = p.obj || {}; const kind = o.kind || "普通";
+    const byKind = {
+      "势利": fav >= 65 ? ["哟，最近混得风生水起啊，带带兄弟呗～", "听说你最近不错？改天一起搓一顿。"] : ["嗯……你最近混得咋样？", "有事？没事我先忙了哈。"],
+      "清高": fav >= 65 ? ["最近在读什么书？想听听你的看法。", "难得有人聊得来，最近可好？"] : ["嗯。", "你最近……在忙些有意义的事吗？"],
+      "仗义": fav >= 55 ? ["兄弟！好久不见，有事尽管开口！", "想你了！啥时候喝一杯？"] : ["在呢，咋啦？说！", "有困难言语一声，别跟我客气。"],
+      "亲情": ["最近吃好睡好没？别太累着。", "想你了，啥时候回来看看。"],
+      "普通": fav >= 60 ? ["好久没联系了，最近还好吧？", "哈，想起你了，最近忙啥呢？"] : fav >= 40 ? ["在吗？最近怎么样？", "有阵子没聊了。"] : ["嗯。", "……"]
+    };
+    const pool = byKind[kind] || byKind["普通"];
+    return pool[wxSeed(p.name + (p.role || "")) % pool.length];
   }
   // 没领的家里转账/红包自动到账（生活费不白丢），返回到账总额
   function famAutoCollect() {
@@ -2477,9 +2513,12 @@
     if (p.fam && p.group) {
       const log = famGroupLog(p.famKey);   // 对话式群聊（含可领红包），存在 _wxlog 里
       bubbles = log.map((m, i) => wxRenderMsg(m, "🧑", p.id + "|" + i)).join("");
+    } else if (p.fam) {
+      const log = famParentSeed(p.id, p.famKey);   // 爸/妈：带聊天历史
+      bubbles = log.map((m, i) => wxRenderMsg(m, av, p.id + "|" + i)).join("");
     } else {
       const log = (s._wxlog && s._wxlog[p.id]) || [];
-      bubbles = wxRenderMsg({ me: false, text: p.fam ? famOpener(p) : wxOpenLine(p.name, fav, meta.crisis) }, av, "");
+      bubbles = wxRenderMsg({ me: false, text: wxSocialOpen(p, fav, meta.crisis) }, av, "");
       bubbles += log.map((m, i) => wxRenderMsg(m, av, p.id + "|" + i)).join("");
     }
     // 群聊不出现金钱面板，只能发言；爸妈/好友有快捷回复
@@ -2678,7 +2717,11 @@
     const job = bossJobById(jid);
     if (!job) { phoneBoss.job = null; return appBoss(); }
     const bi = bossInfo(job); const st = bossEnsure(jid);
-    let bubbles = `<div class="wxb them"><span class="wxb-av">${bi.av}</span><div class="wxb-col"><span class="wxb-who">${bi.hr} · ${bi.co}</span><div class="wxb-txt">你好，看到你在找工作。我们在招「${job.name}」，${bossPay(job)}，有兴趣聊聊吗？投份简历过来呗。</div></div></div>`;
+    const fp = bossFitP(job);
+    const greet = fp >= 0.5 ? `你好！看你背景挺对口，我们在招「${job.name}」，${bossPay(job)}，方便的话投份简历，咱详聊。`
+      : fp >= 0.3 ? `你好，看到你在找工作。「${job.name}」还在招，${bossPay(job)}，你条件够得着，合适就投。`
+        : `你好。我们「${job.name}」要求偏高一些（${bossPay(job)}），你先了解下，觉得有把握再投简历。`;
+    let bubbles = `<div class="wxb them"><span class="wxb-av">${bi.av}</span><div class="wxb-col"><span class="wxb-who">${bi.hr} · ${bi.co}</span><div class="wxb-txt">${greet}</div></div></div>`;
     bubbles += (st.log || []).map(m => m.me
       ? `<div class="wxb me"><div class="wxb-txt">${m.text}</div><span class="wxb-av">🙂</span></div>`
       : `<div class="wxb them"><span class="wxb-av">${bi.av}</span><div class="wxb-txt">${m.text}</div></div>`).join("");
@@ -2693,25 +2736,75 @@
       <div class="wxc-thread">${bubbles}</div>
       ${actions}</div>`;
   }
+  // 投简历：HR 态度严格按「匹配度」走，不会前后不一致
   function bossApply(jid) {
     const job = bossJobById(jid); if (!job) return;
     const st = bossEnsure(jid);
-    st.log.push({ me: true, text: `[简历] 投递了《${job.name}》岗位，请您过目。` });
+    st.log.push({ me: true, text: `[简历] 投了《${job.name}》，请您过目。` });
     if (s.job && s.job.id === job.id) { st.log.push({ me: false, text: "你已经在我们这儿了呀，哈哈。" }); render(); return; }
-    let res; try { res = C._util.applyJob(s, job); } catch (e) { res = { ok: Math.random() < bossFitP(job) }; }
-    if (!res || !res.ok) {
+    const p = bossFitP(job);
+    if (p >= 0.5) {                                  // 匹配度高 → 积极，直接约面试
+      st.stage = "meeting";
+      st.log.push({ me: false, text: pick(["你的背景挺对口，硬条件够，约个线上面试吧——方便现在视频聊不？", "简历看着不错，咱直接走个线上面试流程，时间你定。", "条件挺合适，安排个视频面，准备一下。"]) });
+    } else if (p >= 0.3) {                           // 匹配度中 → 谨慎，给机会 或 先加微信
+      if (wxSeed(job.id + s.playerName) % 2 === 0) {
+        st.stage = "meeting";
+        st.log.push({ me: false, text: pick(["有几项还差点，不过我看好你这个人，给你个线上面试的机会，好好准备。", "条件不算特别突出，面一面看你临场，约个视频面？"]) });
+      } else {
+        st.stage = "wxoffer";
+        st.log.push({ me: false, text: "条件有点够呛，不过聊得来。加个绿泡泡，有更合适的我第一个想到你。" });
+        st.log.push({ me: false, text: "[名片] " + bossInfo(job).hr + " 想加你为好友。" });
+      }
+    } else {                                         // 匹配度低 → 一致地婉拒（不会先夸后拒）
       st.stage = "rejected";
-      st.log.push({ me: false, text: pick(["简历看了，跟岗位匹配度不太够，先这样吧，有合适的再联系你。", "感谢投递，这个岗位要求高一些，再积累积累？", "HR 已读……（半天没下文）", "不好意思，这个坑刚被填了。"]) });
-    } else {
-      // 通过初筛 → 邀请：约面试 或 加绿泡泡
-      const wantWx = Math.random() < 0.45;
-      if (wantWx) { st.stage = "wxoffer"; st.log.push({ me: false, text: "聊得来！加个绿泡泡深入聊呗，方便随时沟通。" }); st.log.push({ me: false, text: "[名片] " + bossInfo(job).hr + " 想加你为好友。" }); }
-      else { st.stage = "meeting"; st.log.push({ me: false, text: pick(["简历不错！约个线上面试吧，时间你方便就行。", "感觉挺合适，安排个面试聊聊？", "通过初筛啦，咱视频面一下？"]) }); }
+      st.log.push({ me: false, text: pick(["说实话，你的硬条件离这个岗位差得有点多，建议再积累积累。", "匹配度不太够，这岗位要求挺高的，先这样吧。", "你的背景和我们要的方向有差距，这次不太合适，抱歉。"]) });
+      st.log.push({ me: false, text: "门槛低一些的岗位可以先看看，别气馁。" });
     }
     if (st.log.length > 40) st.log = st.log.slice(-40);
     render();
   }
-  // wxoffer 阶段：点「申请安排面试」既加好友也安排面试；或直接走面试
+  // 线上面试题（自我介绍 / 专业题 / 薪资），视频面框架；选项按数值打分
+  const BOSS_IV = [
+    { q: "先做个简短的自我介绍吧。", opts: [{ label: "踏实摆经历，讲做过的事", stat: "knowledge", base: 4 }, { label: "自信开麦，主动秀亮点", stat: "charm", base: 2, hi: 8 }, { label: "讲个打动人的真实故事", stat: "insight", base: 5 }] },
+    { q: "针对这个岗位，问你一道专业/情景题。", opts: [{ label: "凭真本事正面硬刚", stat: "knowledge", base: 3, hi: 10 }, { label: "坦诚不会，但当场拆解思路给方案", stat: "strategy", base: 6 }, { label: "扯点行业见解，四两拨千斤", stat: "charm", base: 1, hi: 7 }] },
+    { q: "薪资和发展你怎么看？还有什么想问我们的？", opts: [{ label: "表诚意，薪资好商量，先求上车", stat: "charm", base: 5 }, { label: "自信要价，亮明你的价值", stat: "strategy", base: 2, hi: 8 }, { label: "反问团队与方向，显出思考深度", stat: "insight", base: 6 }] }
+  ];
+  function bossIvScore(opt) {
+    let pts = opt.base || 0;
+    const e = C._util.statEdge ? C._util.statEdge(s, opt.stat) : (((s.stats[opt.stat] || 35) - 35) / 110);
+    if (opt.hi != null) pts += e > 0.12 ? opt.hi : (e < -0.05 ? -4 : Math.round(opt.hi / 2));
+    else pts += Math.round(e * 14);
+    return pts;
+  }
+  function bossIvNode(jid, n, score) {
+    const job = bossJobById(jid); const bi = bossInfo(job); const R = BOSS_IV[n];
+    return {
+      text: () => `${n === 0 ? `你戴上耳机点开会议链接，摄像头亮起。另一头「${bi.co}」的 ${bi.hr} 出现在画面里：「能听到吧？网络还行就开始啦。」` : "「嗯，我们继续。」"}\n\n${R.q}`,
+      choices: R.opts.map(opt => ({
+        label: opt.label, next: (s) => {
+          const g = bossIvScore(opt); const ns = score + g;
+          const react = g >= 8 ? "对面眼睛一亮，飞快记了一笔。" : g >= 3 ? "屏幕那头微微点头，气氛还行。" : g <= -3 ? "那边卡了一两秒，低头翻了下你的简历。" : "面无表情，看不出深浅。";
+          if (n + 1 < BOSS_IV.length) { const nx = bossIvNode(jid, n + 1, ns); return { text: () => `${react}\n\n${BOSS_IV[n + 1].q}`, choices: nx.choices }; }
+          return bossIvResult(jid, ns, react);
+        }
+      }))
+    };
+  }
+  function bossIvResult(jid, score, react) {
+    const job = bossJobById(jid); const bi = bossInfo(job);
+    const passP = Math.max(0.05, Math.min(0.95, bossFitP(job) * 0.6 + score / 100 + 0.12));
+    const hired = Math.random() < passP;
+    if (hired) {
+      return {
+        text: () => `${react}\n\n面试官互相看了一眼，${bi.hr} 笑着说：「欢迎加入，offer 我让 HR 发你邮箱。」`,
+        choices: [{ label: "太好了，入职！", effect: (s) => { const st = bossEnsure(jid); st.stage = "hired"; st.log.push({ me: false, text: `面试通过，欢迎加入${bi.co}！🎉` }); let ok = false; try { if (C._util.hireJob && !(s.job && s.job.id === job.id)) { C._util.hireJob(s, job); ok = true; } } catch (e) { } add(s, "mood", 12); s.timeline.push({ age: s.age, text: `通过老大直聘的线上面试，入职「${bi.co}·${job.name}」。` }); return ok ? `🎉 你拿下了「${bi.co}·${job.name}」，正式入职！` : `🎉 「${job.name}」线上面试通过！（你已有工作，先记下这机会。）`; } }]
+      };
+    }
+    return {
+      text: () => `${react}\n\n短暂沉默后，${bi.hr}：「今天先聊到这，后续有结果会通知你。」`,
+      choices: [{ label: "好的，谢谢。", effect: (s) => { const st = bossEnsure(jid); st.stage = "rejected"; st.log.push({ me: false, text: "综合考虑后，这次不太合适，感谢你的时间。" }); add(s, "mood", -2); return `「${job.name}」这场线上面试没过——临场没扛住，或硬条件确实还差点。再练练。`; } }]
+    };
+  }
   function bossInterview(jid) {
     const job = bossJobById(jid); if (!job) return;
     const st = bossEnsure(jid);
@@ -2722,33 +2815,60 @@
       st.log.push({ me: false, text: "👌 已通过好友，面试给你约上了，准备一下。" });
       st.stage = "meeting"; render(); return;
     }
-    // meeting → 真面试：二次门槛
-    const p = Math.min(0.9, bossFitP(job) * 1.05);
-    st.log.push({ me: false, text: "面试官：简单聊聊你的经历和能力吧。" });
-    if (Math.random() < p) {
-      let hired = false; try { if (C._util.hireJob && !(s.job && s.job.id === job.id)) { C._util.hireJob(s, job); hired = true; } } catch (e) { hired = false; }
-      st.stage = "hired";
-      st.log.push({ me: false, text: `面试通过！欢迎加入${bossInfo(job).co}，offer 随后发你邮箱。🎉` });
-      s._phoneMsg = hired ? `🎉 你拿下了「${job.name}」的 offer，正式入职！` : `🎉 「${job.name}」面试通过！（你目前已有工作，先记下这个机会。）`;
-      s.timeline.push({ age: s.age, text: `通过老大直聘拿到「${job.name}」offer。` });
-    } else {
-      st.stage = "rejected";
-      st.log.push({ me: false, text: pick(["面试聊下来，经验还差点意思，先这样，有机会再合作。", "感谢参加面试，综合考虑后这次不太合适。", "你很不错，但岗位只有一个名额，抱歉。"]) });
-      s._phoneMsg = "😕 面试没过。攒攒能力，下次再战。";
-      add(s, "mood", -2);
-    }
-    if (st.log.length > 40) st.log = st.log.slice(-40);
-    render();
+    // meeting → 拉起「线上面试」事件（接上游戏的面试问答流程，视频面版本）
+    pendingEvent = { id: "boss_iv", module: "work", title: "🎥 线上面试" };
+    try { gotoNode(() => bossIvNode(jid, 0, 0)); screen = "event"; render(); } catch (e) { render(); }
   }
-  // —— 通讯录：关键角色 + 社交圈，按亲疏排，点开去走动 ——
+  /* ============================ ✉️ 短信（运营商 / 猎头 / 诈骗，仿真）============================ */
+  function smsEnsure() {
+    s._sms = s._sms || [];
+    if (!s._smsSeeded) { s._sms.push({ id: "op0", from: "10001 电信", av: "📶", week: 0, body: "欢迎使用本机服务。如需退订营销短信请回复 TD。", kind: "op", read: true }); s._smsSeeded = true; }
+    const slots = Math.floor(s.week / 4);   // 每月一个猎头时段
+    for (let k = 1; k <= slots; k++) {
+      const id = "hh" + k;
+      if (s._sms.some(m => m.id === id)) continue;
+      if (wxSeed("hh" + k) % 5 === 0) continue;   // 偶尔没人来撩，别太密
+      const pool = bossPool(); if (!pool.length) continue;
+      const job = pool[wxSeed("hh" + k + (s.playerName || "")) % pool.length];
+      const bi = bossInfo(job);
+      const name = bi.hr.replace("HR · ", "");
+      s._sms.push({ id, from: "猎头·" + name, av: "🎯", week: k * 4, body: `您好，我是「${bi.co}」合作猎头。有个「${job.name}」(${bossPay(job)})的机会挺适合您，方便聊两句吗？也可上「老大直聘」直接沟通。`, kind: "headhunter", jobId: job.id, read: false });
+    }
+    const fk = Math.floor(s.week / 12);
+    if (fk >= 1 && !s._sms.some(m => m.id === "fk" + fk)) s._sms.push({ id: "fk" + fk, from: "955XX", av: "🎣", week: fk * 12, body: "【中奖通知】恭喜您被抽中一等奖¥88888，点击 t.cn/xxx 填写银行卡领取……（疑似诈骗）", kind: "spam", read: false });
+    if (s._sms.length > 30) s._sms = s._sms.slice(-30);
+  }
+  function smsUnread() { smsEnsure(); return (s._sms || []).filter(m => !m.read).length; }
+  function smsTimeOf(week) { const d = s.week - week; return d <= 0 ? "刚刚" : d < 4 ? d + "周前" : Math.floor(d / 4) + "个月前"; }
+  function appSms() {
+    smsEnsure();
+    if (phoneSms.open) {
+      const m = (s._sms || []).find(x => x.id === phoneSms.open);
+      if (!m) { phoneSms.open = null; return appSms(); }
+      m.read = true;
+      const action = m.kind === "headhunter" ? `<div class="ap-foot"><button class="btn primary" data-app="boss">去老大直聘看看 →</button></div>`
+        : m.kind === "spam" ? `<div class="ap-foot"><button class="btn" disabled>⚠️ 疑似诈骗，链接已自动拦截</button></div>` : "";
+      return `<div class="ap-head"><button class="ap-back" id="smsBack">‹ 短信</button><div class="ap-title">✉️ ${m.from}<small>${smsTimeOf(m.week)}</small></div></div>`
+        + `<div class="sms-thread"><div class="sms-bubble">${m.body}</div></div>${action}`;
+    }
+    const rows = (s._sms || []).slice().reverse().map(m => `<button class="sms-row${m.read ? "" : " unread"}" data-smsopen="${m.id}">
+        <span class="sms-av">${m.av}</span>
+        <span class="sms-mid"><span class="sms-top"><b>${m.from}</b><small>${smsTimeOf(m.week)}</small></span><span class="sms-prev">${m.body}</span></span>
+        ${m.read ? "" : '<i class="sms-dot"></i>'}
+      </button>`).join("");
+    return phoneHeader("✉️ 短信", `${(s._sms || []).length} 条 · ${smsUnread()} 未读`) + `<div class="sms-list">${rows || '<div class="ph-empty">还没有短信。</div>'}</div>`;
+  }
+  // —— 通讯录：聚合家人/关键角色/社交圈，点联系人直接进绿泡泡聊天（仿真手机通讯录）——
   function appContacts() {
-    const list = [];
-    if (s.cast) Object.keys(s.cast).forEach(k => { const c = s.cast[k]; if (c && c.name) list.push({ name: c.name, role: c.role, av: "🎭", v: Math.round(c.trust || 50), vl: "信任", star: true }); });
-    (s.social || []).slice().sort((a, b) => (b.attitude || 0) - (a.attitude || 0)).slice(0, 14).forEach(n => list.push({ name: n.name, role: n.role, av: n.attitude >= 70 ? "😊" : n.attitude >= 40 ? "🙂" : "😒", v: Math.round(n.attitude || 0), vl: "态度" }));
-    const rows = list.map(p => `<div class="ct-row" data-screen="social"><span class="ct-av">${p.av}</span><span class="ct-mid"><b>${p.star ? "⭐ " : ""}${p.name}</b><small>${p.role}</small></span><span class="ct-v">${p.vl} ${p.v}</span></div>`).join("");
-    return phoneHeader("📇 通讯录", `共 ${list.length} 位联系人`)
-      + `<div class="ct-list">${rows || '<div class="ph-empty">还没存下谁的号码。</div>'}</div>`
-      + `<div class="ap-foot"><button class="btn primary" data-screen="social">打开社交圈，主动走动 →</button></div>`;
+    const cs = wxContacts();
+    const search = `<div class="wxw-search">🔍 搜索联系人</div>`;
+    const ent = `<div class="wxw-ce" data-screen="social"><span class="wxw-ce-ic">🆕</span><span>新的朋友 / 社交圈</span><span class="wxw-ce-go">›</span></div>`;
+    const fam = cs.filter(c => c.fam), star = cs.filter(c => c.star && !c.fam), norm = cs.filter(c => !c.star);
+    const row = c => `<div class="wxw-ce contact" data-ctopen="${c.pid}"><span class="wxw-ce-av">${c.av || wxFace(c.fav, c.star)}</span><span class="wxw-ce-nm">${c.name}<small>${c.role}</small></span><span class="ct-v">${c.fam ? "💗" : Math.round(c.fav)}</span></div>`;
+    const sec = (t, arr) => arr.length ? `<div class="wxw-sec">${t}</div>` + arr.map(row).join("") : "";
+    return phoneHeader("📇 通讯录", `共 ${cs.length} 位`) + search + ent
+      + sec("💗 家人", fam) + sec("★ 关键角色", star) + sec("联系人", norm)
+      + `<div class="wxw-count">${cs.length} 位联系人 · 点击进绿泡泡聊天</div>`;
   }
   // —— 钱包：身价拆解 + 月账单 + 给联系人转账（真扣钱、真涨信任）——
   function appWallet() {
@@ -2897,7 +3017,7 @@
   // app 路由：把当前 app 渲染成手机屏幕里的内容
   function phoneScreenBody() {
     if (phoneApp === "home") return phoneHome();
-    const m = { wechat: appWechat, boss: appBoss, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, notes: appNotes, calc: appCalc, weather: appWeather, settings: appSettings };
+    const m = { wechat: appWechat, boss: appBoss, sms: appSms, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, notes: appNotes, calc: appCalc, weather: appWeather, settings: appSettings };
     return (m[phoneApp] || phoneHome)();
   }
   function renderPhone() {
@@ -2988,6 +3108,11 @@
     const bossBack = document.getElementById("bossBack"); if (bossBack) bossBack.onclick = () => { phoneBoss.job = null; s._phoneMsg = null; render(); };
     document.querySelectorAll("[data-bossapply]").forEach(b => b.onclick = () => { bossApply(b.dataset.bossapply); });
     document.querySelectorAll("[data-bossitv]").forEach(b => b.onclick = () => { bossInterview(b.dataset.bossitv); });
+    // 短信：打开会话 / 返回
+    document.querySelectorAll("[data-smsopen]").forEach(b => b.onclick = () => { phoneSms.open = b.dataset.smsopen; s._phoneMsg = null; render(); });
+    const smsBack = document.getElementById("smsBack"); if (smsBack) smsBack.onclick = () => { phoneSms.open = null; render(); };
+    // 通讯录：点联系人直接进绿泡泡聊天
+    document.querySelectorAll("[data-ctopen]").forEach(b => b.onclick = () => { openDeviceApp("wechat"); phoneWx.peer = b.dataset.ctopen; render(); });
     // 理财买卖/区间/图表
     bindMarket();
     // 电脑：搞钱工作台 / 学习充电站 / 网购 / 游戏厅
@@ -3363,7 +3488,7 @@
       if (b.id === "reincarnate") return;   // 重开按钮单独处理（带确认）
       const k = b.dataset.nav; weekLog = []; s._buyMsg = null; s._mktMsg = null; s._castMsg = null;
       s._pendingAct = null;             // 切换到别的页 = 放弃当前挂起的换城市/找乐子，不计时间
-      if (k === "phone") { phoneApp = "home"; phoneWx = { tab: "chats", peer: null }; phoneBoss = { job: null }; s._phoneMsg = null; }   // 每次点开手机都回到主屏
+      if (k === "phone") { phoneApp = "home"; phoneWx = { tab: "chats", peer: null }; phoneBoss = { job: null }; phoneSms = { open: null }; s._phoneMsg = null; }   // 每次点开手机都回到主屏
       if (k === "pc") { pcApp = "home"; phoneWx = { tab: "chats", peer: null }; s._phoneMsg = null; }          // 每次打开电脑都回到桌面
       screen = k;
       render();

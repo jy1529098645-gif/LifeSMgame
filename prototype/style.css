@@ -580,6 +580,19 @@ h2{font-size:26px;margin-bottom:6px}
 .mail-mid{flex:1;min-width:0}
 .mail-top{display:flex;justify-content:space-between;align-items:baseline}.mail-top b{font-size:14px}.mail-top small{font-size:11px;color:var(--amber2)}
 .mail-prev{display:block;font-size:12px;color:var(--dim);line-height:1.6;margin-top:3px}
+/* ✉️ 短信 */
+.sms-list{display:flex;flex-direction:column}
+.sms-row{display:flex;gap:11px;align-items:center;padding:12px 8px;border-bottom:1px solid var(--line);background:none;color:var(--txt);text-align:left;cursor:pointer;width:100%;position:relative}
+.sms-row:hover{background:rgba(255,255,255,.04)}
+.sms-av{width:40px;height:40px;border-radius:50%;background:#1d1d25;display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}
+.sms-mid{flex:1;min-width:0}
+.sms-top{display:flex;justify-content:space-between;align-items:baseline}.sms-top b{font-size:14px}.sms-top small{font-size:11px;color:var(--dim)}
+.sms-row.unread .sms-top b{font-weight:700}
+.sms-prev{display:block;font-size:12px;color:var(--dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sms-dot{position:absolute;left:2px;top:50%;transform:translateY(-50%);width:7px;height:7px;border-radius:50%;background:#fa5151}
+.sms-thread{padding:14px 8px}
+.sms-bubble{background:var(--panel2);border:1px solid var(--line);border-radius:4px 12px 12px 12px;padding:12px 14px;font-size:14px;line-height:1.7;color:var(--txt)}
+
 /* 智能助手 */
 .pc-tips{display:flex;flex-direction:column;gap:9px}
 .pc-tip-row{font-size:13px;line-height:1.7;color:var(--txt);background:rgba(255,255,255,.03);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:10px 13px}
