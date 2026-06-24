@@ -118,7 +118,17 @@ const AI_FACILITY_ASSETS = new Set([
   "rental:f1",
   "rental:f2",
   "rental:f3",
-  "rental:f4"
+  "rental:f4",
+  "mall:f0",
+  "mall:f1",
+  "mall:f2",
+  "mall:f3",
+  "mall:f4",
+  "park:f0",
+  "park:f1",
+  "park:f2",
+  "park:f3",
+  "park:f4"
 ]);
 
 function cityAsset(name, ext) { return "assets/img/city/" + name + "." + ext; }
