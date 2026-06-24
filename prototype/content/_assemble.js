@@ -24,7 +24,7 @@ window.CONTENT = {
     jobSalary, jobById, applyJob, hireJob,
     MAJORS, majorById, majorName, majorFit, majorBlocks,
     ensureJobhunt, newGradJobsFor, NEW_GRAD_JOBS,
-    CITY_DISTRICTS, districtById, districtActions, districtForStage, recommendedDistrict, districtForScene,
+    CITY_DISTRICTS, districtById, districtActions, districtForStage, recommendedDistrict, districtForScene, cityMapSVG, districtSignal,
     generateOpportunities, oppCardFor,
     generateLifeOpportunities, lifeOppApply, LIFE_OPP_TYPE_NAME,
     getWeekActions, getActionPreview, canRunAction, STAGE_ACTIONS, SCENE_ACTIONS,

@@ -461,6 +461,7 @@
     }
     if (Object.keys(_acts).length) s._lastPlan = Object.keys(_acts);  // 记下上周做了什么 → 「快进」自动延续这套routine
     s._weekActs = {};                 // 新的一周：清空「本周已做」记录，行动重新可用
+    s._cityVisited = {};              // 新的一周：清空「本周去过的区域」标记
     s._actCount = {};                 // 清空本周行动次数（可多次行动用）
     s._pendingAct = null;             // 跨周清掉未落地的挂起行动，避免脏数据
     s.away = null;                    // 旅行结束，回到定居城市
@@ -1499,7 +1500,7 @@
         ? C._util.routeFilterActions(s, C.actions, st)
         : C.actions.filter(a => (st.actions.includes(a.id) || a.anyStage) && (() => { try { return !a.require || a.require(s); } catch (e) { return false; } })()));
     // ★城市俯瞰图：当前选中的区域决定本周能做的行动（区域是行动入口，doc §3-§5）
-    let cityMapHtml = "", curDistName = "";
+    let cityMapHtml = "", curDistName = "", curDistDesc = "";
     let avail = _weekActs;
     if (C._util.CITY_DISTRICTS && C._util.districtActions) {
       const curDist = C._util.districtForStage(s);
@@ -1507,13 +1508,16 @@
       const recDist = C._util.recommendedDistrict ? C._util.recommendedDistrict(s) : null;
       const dActs = C._util.districtActions(s, curDist);
       avail = dActs.length ? dActs : _weekActs;
-      const curD = C._util.districtById(curDist); curDistName = curD ? `${curD.icon} ${curD.name}` : "";
+      const curD = C._util.districtById(curDist); curDistName = curD ? `${curD.icon} ${curD.name}` : ""; curDistDesc = curD ? curD.desc : "";
       const dots = C._util.CITY_DISTRICTS.map(d => {
         const sel = d.id === curDist, rec = d.id === recDist;
         const n = C._util.districtActions(s, d.id).length;
-        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-ico">${d.icon}</span><span class="cm-name">${d.name}</span>${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${n ? `<span class="cm-n">${n}</span>` : ""}</button>`;
+        const sig = C._util.districtSignal ? C._util.districtSignal(s, d.id) : {};
+        const badges = `${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${sig.hot ? '<span class="cm-hot"></span>' : ""}${n ? `<span class="cm-n">${n}</span>` : ""}`;
+        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-ico">${d.icon}</span><span class="cm-name">${d.name}</span>${badges}</button>`;
       }).join("");
-      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 点一个地方去做事${recDist ? "（⭐ 主线建议去处）" : ""}</div><div class="citymap-grid">${dots}</div></div>`;
+      const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
+      cityMapHtml = `<div class="citymap"><div class="citymap-h">🗺️ ${s.city ? s.city.name : "成都"} · ${s.year} —— 点一个地方去做事${recDist ? "（⭐ 主线建议 · 🔴 有故事）" : ""}</div><div class="citymap-grid">${svg}${dots}</div></div>`;
     }
     const done = s._weekActs || {};
     // ★行动格（slots）真正接管周回合（doc §2）：用完格子即可结束本周；hours 退为体力/过劳的次级成本。
@@ -1584,7 +1588,7 @@
           ${tipHtml}
           ${allocHtml}
           ${weekBudgetHtml}
-          ${cityMapHtml ? `<div class="tracks-h">📍 在「${curDistName}」你可以做：</div>` : ""}
+          ${cityMapHtml ? `<div class="tracks-h">📍 在「${curDistName}」你可以做：${curDistDesc ? `<span class="td-desc">${curDistDesc}</span>` : ""}</div>` : ""}
           <div class="tracks">${rows}</div>
           ${lockedHtml}
           <div class="weekbtns"><button class="btn" id="skip">⏭ 快进（遇事即停）</button><button class="btn primary ${weekFull ? "" : "dis"}" id="endweek" ${weekFull ? "" : "disabled"} title="${weekFull ? "" : "本周还有行动格没用，安排满了才能过完这周"}">${weekFull ? "结束本周 →" : `⏳ 还剩 ${slotsLeft} 格`}</button></div>
@@ -1608,6 +1612,7 @@
       const _left = C._util.weekSlotsLeft ? C._util.weekSlotsLeft(s) : 99;
       if (_sc > 0 && _left < _sc) return;
       if (!a.repeatWeek && s._weekActs && s._weekActs[a.id]) return;   // 默认每周一次；repeatWeek 行动(如投简历)可反复做
+      if (s._cityDistrict) { s._cityVisited = s._cityVisited || {}; s._cityVisited[s._cityDistrict] = true; }   // 标记本周去过该区域
       // 先看这件事会通向哪——这些「打开子界面」的行动 resolve 本身无副作用，可先试探再决定是否计时
       let r; try { r = a.resolve(s) || {}; } catch (e) { r = {}; }
       // —— 会打开「可取消子界面」的行动（换城市/旅行/找乐子）：先挂起不计时间，等真在里面落地了再结算；

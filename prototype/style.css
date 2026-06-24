@@ -703,3 +703,18 @@ h2{font-size:26px;margin-bottom:6px}
   min-width:14px;height:14px;line-height:14px;border-radius:7px;text-align:center}
 .tracks-h{font-size:13px;font-weight:700;color:var(--amber2);margin:4px 0 8px;padding-top:4px;border-top:1px dashed var(--line)}
 @media(max-width:560px){.citymap-grid{height:200px}.cm-dist .cm-name{display:none}.cm-dist{min-width:0}}
+
+/* 城市俯瞰图·前端深化：SVG 背景 + 区域状态 */
+.citymap-grid{background-image:none}
+.cm-svg{position:absolute;inset:0;width:100%;height:100%;border-radius:10px;pointer-events:none}
+.cm-dist{backdrop-filter:blur(1px)}
+.cm-dist.visited{opacity:.5}
+.cm-dist.visited .cm-ico{filter:grayscale(.6)}
+.cm-dist .cm-hot{position:absolute;top:-6px;right:-6px;width:9px;height:9px;border-radius:50%;
+  background:var(--red);box-shadow:0 0 0 2px rgba(22,22,28,.9),0 0 7px var(--red);animation:cmPulse 1.4s ease-in-out infinite}
+.cm-dist.rec .cm-star{animation:cmFloat 1.8s ease-in-out infinite}
+@keyframes cmPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.35);opacity:.6}}
+@keyframes cmFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.cm-dist.sel{z-index:7}
+
+.tracks-h .td-desc{display:block;font-weight:400;font-size:11px;color:var(--dim);margin-top:2px}

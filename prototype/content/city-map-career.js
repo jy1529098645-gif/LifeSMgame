@@ -88,4 +88,64 @@ if (typeof actions !== "undefined") {
   );
 }
 
+/* ===== 前端：成都俯瞰图 SVG 背景（环路 + 锦江 + 楼群 + 绿地）。viewBox 0 0 100 100，
+ *       preserveAspectRatio=none 拉伸铺满，坐标与区域按钮的 x%/y% 对齐。 ===== */
+function cityMapSVG(s) {
+  // 楼群：在写字楼/产业园/商圈一带铺密一点，城中村矮一点
+  const bld = [];
+  const cluster = (cx, cy, n, maxH, hue) => {
+    for (let i = 0; i < n; i++) {
+      const a = (i * 2.39996) % (Math.PI * 2);           // 黄金角散布（确定性，无随机）
+      const r = 3 + (i % 4) * 1.7;
+      const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * 0.6;
+      const w = 1.6 + (i % 3) * 0.7, h = 2 + ((i * 7) % maxH);
+      bld.push(`<rect x="${(x - w / 2).toFixed(1)}" y="${(y - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="0.3" fill="${hue}" opacity="${(0.5 + (i % 3) * 0.16).toFixed(2)}"/>`);
+    }
+  };
+  cluster(60, 42, 16, 11, "#3a4a6e");   // 写字楼 CBD：高楼
+  cluster(76, 50, 13, 9, "#34506b");    // 产业园
+  cluster(64, 66, 10, 5, "#3d3f56");    // 商圈
+  cluster(16, 70, 9, 4, "#3a3a48");     // 学校
+  cluster(28, 80, 11, 3, "#34343f");    // 城中村：矮密
+  cluster(14, 30, 6, 4, "#3a3a48");     // 家
+  const buildings = bld.join("");
+  // 主线推荐区域：在其脚下打一束高亮光圈
+  const rec = recommendedDistrict(s); const rd = districtById(rec);
+  const recGlow = rd ? `<circle cx="${rd.x}" cy="${rd.y}" r="11" fill="url(#cmGlow)"/>` : "";
+  return `<svg class="cm-svg" viewBox="0 0 100 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="cmGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#f0a73c" stop-opacity="0.5"/><stop offset="100%" stop-color="#f0a73c" stop-opacity="0"/></radialGradient>
+      <linearGradient id="cmRiver" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2a5a8a"/><stop offset="100%" stop-color="#1e4368"/></linearGradient>
+    </defs>
+    <rect width="100" height="100" fill="#11131c"/>
+    <!-- 成都环路：二环 / 三环 -->
+    <rect x="9" y="9" width="82" height="82" rx="40" fill="none" stroke="#2c3550" stroke-width="1.6"/>
+    <rect x="24" y="24" width="52" height="52" rx="26" fill="none" stroke="#2c3550" stroke-width="1.3"/>
+    <!-- 放射主干道 -->
+    <g stroke="#222a40" stroke-width="0.8"><line x1="50" y1="2" x2="50" y2="98"/><line x1="2" y1="50" x2="98" y2="50"/><line x1="16" y1="16" x2="84" y2="84"/><line x1="84" y1="16" x2="16" y2="84"/></g>
+    <!-- 锦江 -->
+    <path d="M -4 26 C 26 38, 34 58, 58 62 S 96 86, 108 78" fill="none" stroke="url(#cmRiver)" stroke-width="3.4" stroke-linecap="round" opacity="0.85"/>
+    <!-- 公园绿地 -->
+    <ellipse cx="20" cy="45" rx="9" ry="6" fill="#2c4a32" opacity="0.7"/>
+    <circle cx="18" cy="44" r="1.4" fill="#3a6b46"/><circle cx="23" cy="46" r="1.6" fill="#3a6b46"/><circle cx="21" cy="42" r="1.2" fill="#3a6b46"/>
+    ${recGlow}
+    ${buildings}
+  </svg>`;
+}
+
+// 区域状态信号：hot=有正在进行的故事/人物，afford=该区域的花钱行动是否还掏得起
+function districtSignal(s, distId) {
+  const visited = !!(s._cityVisited && s._cityVisited[distId]);
+  let hot = false;
+  if (distId === "arbitration") hot = !!(s.workChains && s.workChains.arb > 0 && s.workChains.arb < 9);
+  else if (distId === "clinic") hot = !!(s.healthChain && s.healthChain.stage > 0) || (s.health || 100) < 45;
+  else if (distId === "phone") hot = !!(s.fraud && s.fraud.stage > 0 && s.fraud.stage < 9) || ((s.cash || 0) < 8000 && !s.job);
+  else if (distId === "park") hot = !!(s.people && (s.people.chess_exec || s.people.chess_fallen));
+  else if (distId === "metro" || distId === "rental") hot = !!(s.commute && s.commute.far);
+  else if (distId === "office_cbd" || distId === "tech_park") hot = !!(s.workChains && (s.workChains.blame || s.workChains.credit || s.workChains.sever));
+  else if (distId === "home") hot = (typeof threadLevel === "function" && threadLevel(s, "family_pressure") >= 30);
+  const broke = (s.cash || 0) < 100;   // 连便利店都吃不起
+  return { visited, hot, broke };
+}
+
 if (typeof window !== "undefined") window.CITY_DISTRICTS = CITY_DISTRICTS;
