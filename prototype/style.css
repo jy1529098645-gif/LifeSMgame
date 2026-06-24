@@ -250,6 +250,36 @@ h2{font-size:26px;margin-bottom:6px}
 
 /* 💬 微信（绿泡泡）*/
 .ph-ic-wx{background:linear-gradient(160deg,#1fd25f,#07a84e)!important;border-color:#0b8b43!important}
+.ph-ic-boss{background:linear-gradient(160deg,#1ed3cf,#0a9b98)!important;border-color:#0a8a87!important}
+/* 老大直聘 */
+.boss-jm{font-size:12px;color:var(--dim);background:rgba(11,179,176,.08);border:1px solid rgba(11,179,176,.3);border-radius:9px;padding:8px 11px;margin-bottom:10px}
+.boss-list{display:flex;flex-direction:column;gap:10px}
+.boss-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel2);cursor:pointer;transition:.15s}
+.boss-card:hover{border-color:#0bb3b0;transform:translateY(-1px)}
+.boss-r1{display:flex;justify-content:space-between;align-items:baseline}
+.boss-r1 b{font-size:15px}
+.boss-pay{color:#13c2c2;font-weight:700;font-size:14px}
+.boss-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.boss-tag{font-size:11px;color:var(--dim);background:rgba(255,255,255,.05);border-radius:5px;padding:2px 7px}
+.boss-fit{font-size:11px;border-radius:5px;padding:2px 7px}
+.boss-fit.hi{color:#5fd38b;background:rgba(95,211,139,.14)}
+.boss-fit.mid{color:var(--amber2);background:rgba(240,167,60,.14)}
+.boss-fit.lo{color:var(--dim);background:rgba(255,255,255,.05)}
+.boss-r2{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);flex-wrap:wrap}
+.boss-co{color:var(--txt)}
+.boss-hr{color:#13c2c2}
+.boss-st{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin-left:auto}
+.boss-st.hired{color:#5fd38b;border-color:#5fd38b}.boss-st.meet{color:var(--amber2);border-color:var(--amber)}
+.boss-go{margin-top:10px;width:100%;padding:9px;border:none;border-radius:9px;background:linear-gradient(180deg,#1ed3cf,#0a9b98);color:#fff;font-weight:600;font-size:13px;cursor:pointer}
+.boss-go:hover{filter:brightness(1.06)}
+/* 老大直聘 · 沟通 */
+.boss-job-bar{font-size:12px;color:var(--dim);padding:8px 12px;background:#171c22;border-bottom:1px solid #1c2228}
+.boss-job-bar b{color:#13c2c2}
+.boss-act{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1b2026;border-top:1px solid #000;position:sticky;bottom:0}
+.boss-abtn{flex:1;padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--txt);font-size:14px;cursor:pointer}
+.boss-abtn.primary{border:none;background:linear-gradient(180deg,#1ed3cf,#0a9b98);color:#fff;font-weight:600}
+.boss-abtn:disabled{opacity:.5;cursor:default}
+.boss-tip{font-size:11px;color:var(--dim);flex:1}
 .wx-tabs{display:flex;gap:6px;margin-bottom:10px}
 .wx-tab{flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--dim);font-size:12px;cursor:pointer}
 .wx-tab.on{background:rgba(7,193,96,.16);border-color:#07c160;color:#3ee07f}
