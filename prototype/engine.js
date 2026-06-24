@@ -1597,8 +1597,7 @@
         const n = C._util.districtActions(s, d.id).length;
         const sig = C._util.districtSignal ? C._util.districtSignal(s, d.id) : {};
         const badges = `${rec && !sel ? '<span class="cm-star">⭐</span>' : ""}${sig.hot ? '<span class="cm-hot"></span>' : ""}`;
-        const shape = d.shape ? `clip-path:polygon(${d.shape});-webkit-clip-path:polygon(${d.shape});` : `left:${d.x}%;top:${d.y}%;width:${d.w || 18}%;height:${d.h || 14}%`;
-        return `<button class="cm-dist${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="${shape}" title="${d.desc}"><span class="cm-name" style="left:${d.x}%;top:${d.y}%">${d.name}</span>${badges}</button>`;
+        return `<button class="cm-dist-label${sel ? " sel" : ""}${rec ? " rec" : ""}${sig.visited ? " visited" : ""}" data-dist="${d.id}" style="left:${d.x}%;top:${d.y}%" title="${d.desc}"><span class="cm-name">${d.name}</span>${badges}</button>`;
       }).join("");
       const svg = C._util.cityMapSVG ? C._util.cityMapSVG(s) : "";
       districtPanelHtml = "";
@@ -1675,9 +1674,11 @@
       </div></div>`;
     bindNav();
     // ★城市俯瞰图：点区域 → 切换到该区域（行动随之变化）
-    document.querySelectorAll(".cm-dist").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; render(); });
-    const cityOverviewBtn = document.getElementById("cityOverview"); if (cityOverviewBtn) cityOverviewBtn.onclick = () => { s._cityDistrict = null; render(); };
-    document.querySelectorAll(".track,.cm-facility[data-id]").forEach(el => el.onclick = () => {
+    document.querySelectorAll(".cm-dist-label").forEach(el => el.onclick = () => { s._cityDistrict = el.dataset.dist; s._cityFacility = null; render(); });
+    document.querySelectorAll(".cm-facility[data-fac]").forEach(el => el.onclick = () => { s._cityFacility = el.dataset.fac; render(); });
+    const cityRegionBackBtn = document.getElementById("cityRegionBack"); if (cityRegionBackBtn) cityRegionBackBtn.onclick = () => { s._cityFacility = null; render(); };
+    const cityOverviewBtn = document.getElementById("cityOverview"); if (cityOverviewBtn) cityOverviewBtn.onclick = () => { s._cityDistrict = null; s._cityFacility = null; render(); };
+    document.querySelectorAll(".track,.cm-scene-action[data-id]").forEach(el => el.onclick = () => {
       const a = C.actions.find(x => x.id === el.dataset.id);
       // ★行动格门槛：格子不够就不能点（决策类 slotCost=0 不受限）
       const _sc = C._util.actionSlotCost ? C._util.actionSlotCost(a) : 1;

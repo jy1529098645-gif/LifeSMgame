@@ -9,8 +9,8 @@
  *       recommendedDistrict(s), districtForScene(s)
  * ===================================================================== */
 
-// 成都·区域表：总览用不规则 shape 勾区域，放大后只显示真实设施点。
-// x/y 是名称位置；shape 是 CSS polygon 百分比；facilities 是区域放大图上的可点击设施。
+// 成都·区域表：总览只显示可点击地名标签；点击后放大到同一角度的区域图，再显示真实设施点。
+// x/y 是地名标签位置；facilities 是区域放大图上的可点击设施。
 const CITY_DISTRICTS = [
   { id: "campus", name: "川大望江校园", icon: "🎓", x: 18, y: 24, w: 27, h: 22, shape: "8% 24%, 18% 10%, 36% 14%, 43% 31%, 33% 46%, 14% 43%", zoomX: 18, zoomY: 24, desc: "校园、宿舍、自习室和毕业前的焦虑。", actions: ["study", "prep_interview", "parttime", "rest", "browse"], facilities: [
     { name: "校门", icon: "🏫", x: 24, y: 23, action: "browse" },
@@ -77,9 +77,33 @@ const CITY_DISTRICTS = [
   ] }
 ];
 function districtById(id) { return CITY_DISTRICTS.find(d => d.id === id) || null; }
+function facilityById(d, fid) { return d && d.facilities ? d.facilities.find((f, i) => (f.id || ("f" + i)) === fid) : null; }
 
 function _legalAct(s, a) { if (!a) return false; if (a.require) { try { return !!a.require(s); } catch (e) { return false; } } return true; }
 function _actById(id) { return (typeof actions !== "undefined") ? actions.find(a => a.id === id) : null; }
+function _img(id) { return "assets/img/" + id + ".jpg"; }
+function facilityArtKey(d, f) {
+  const n = (f && f.name) || "";
+  if (n.indexOf("医院") >= 0 || n.indexOf("门诊") >= 0 || n.indexOf("体检") >= 0 || n.indexOf("急诊") >= 0 || n.indexOf("药房") >= 0) return "1470770841072-f978cf4d019e";
+  if (n.indexOf("公司") >= 0 || n.indexOf("工位") >= 0 || n.indexOf("会议") >= 0 || d.id === "office_cbd") return "1497366216548-37526070297c";
+  if (n.indexOf("招聘") >= 0 || n.indexOf("面试") >= 0 || n.indexOf("打印") >= 0 || d.id === "talent_market") return "1486406146926-c627a92ad1ab";
+  if (n.indexOf("出租") >= 0 || n.indexOf("中介") >= 0 || n.indexOf("菜市场") >= 0 || d.id === "rental") return "1502920917128-1aa500764cbd";
+  if (n.indexOf("商场") >= 0 || n.indexOf("餐饮") >= 0 || n.indexOf("便利") >= 0 || n.indexOf("酒吧") >= 0 || d.id === "mall") return "1556745757-8d76bdb6984b";
+  if (n.indexOf("公园") >= 0 || n.indexOf("茶馆") >= 0 || n.indexOf("棋牌") >= 0 || n.indexOf("湖边") >= 0 || d.id === "park") return "1470770841072-f978cf4d019e";
+  if (n.indexOf("校") >= 0 || n.indexOf("自习") >= 0 || n.indexOf("食堂") >= 0 || d.id === "campus") return "1493809842364-78817add7ffb";
+  if (n.indexOf("仲裁") >= 0 || n.indexOf("法律") >= 0 || n.indexOf("调解") >= 0 || d.id === "arbitration") return "1486406146926-c627a92ad1ab";
+  if (n.indexOf("地铁") >= 0) return "1542051841857-5f90071e7989";
+  return "1516541196182-6bdb0516ed27";
+}
+function facilityDefaultText(s, d, f, a, ok) {
+  const n = f.name || "这里";
+  if (f.action === "city_back") return `你走到${n}口，扶梯下方的人流一阵一阵涌出来。站牌、闸机、外卖骑手和赶时间的上班族挤在一起。你看了眼路线，决定先回到城市总览。`;
+  if ((d.id === "clinic" || n.indexOf("医院") >= 0 || n.indexOf("门诊") >= 0 || n.indexOf("体检") >= 0) && (s.health || 100) >= 78 && (s.stress || 0) < 50 && !(s.healthChain && s.healthChain.stage > 0)) {
+    return `${n}里人群熙熙攘攘，挂号屏一排排滚动。你现在身体还算健康，没必要凑这个热闹。路过时一股强烈的消毒水味儿冲过来，你下意识加快脚步离开。`;
+  }
+  if (!ok || !a) return `你进了${n}。这里确实有人来人往，但现在没有什么与你直接相关的事。你看了一圈，记下这个地方，等真正有需要时再来。`;
+  return `你进入${n}。场景里的声音、气味和人流一下子具体起来：这里不是抽象菜单，而是这座城市真实运转的一小块。你可以在这里选择「${a.name}」。`;
+}
 
 // 某区域当前可做的行动（区域 actions ∩ 合法/处境）
 function districtActions(s, distId) {
@@ -173,11 +197,25 @@ if (typeof actions !== "undefined") {
 function cityMapSVG(s) {
   const selected = s && s._cityDistrict ? districtById(s._cityDistrict) : null;
   if (selected) {
+    const active = facilityById(selected, s._cityFacility);
+    if (active) {
+      const a = active.action === "city_back" ? null : _actById(active.action);
+      const legal = active.action !== "city_back" && _legalAct(s, a);
+      const healthyHospital = selected.id === "clinic" && (s.health || 100) >= 78 && (s.stress || 0) < 50 && !(s.healthChain && s.healthChain.stage > 0);
+      const canAct = legal && !healthyHospital;
+      const text = facilityDefaultText(s, selected, active, a, canAct);
+      const bg = _img(facilityArtKey(selected, active));
+      return `<div class="cm-facility-scene" style="background-image:linear-gradient(180deg,rgba(9,12,18,.22),rgba(9,12,18,.86)),url('${bg}')">
+        <button class="btn tiny cm-back-region" id="cityRegionBack">← 返回${selected.name}</button>
+        <div class="cfs-card"><div class="cfs-kicker">${selected.icon} ${selected.name}</div><h3>${active.icon || ""} ${active.name}</h3><p>${text}</p>
+          <div class="cfs-actions">${canAct ? `<button class="btn primary cm-scene-action" data-id="${a.id}">${a.emoji} ${a.name}</button>` : ""}<button class="btn" id="cityOverview">返回城市图</button></div></div>
+      </div>`;
+    }
     const facs = (selected.facilities || []).map(f => {
+      const fid = f.id || ("f" + (selected.facilities || []).indexOf(f));
       const a = f.action === "city_back" ? null : _actById(f.action);
       const ok = f.action === "city_back" || _legalAct(s, a);
-      const attrs = f.action === "city_back" ? `id="cityOverview"` : (ok && a ? `data-id="${a.id}"` : "");
-      return `<button class="cm-facility${ok ? "" : " locked"}" ${attrs} style="left:${f.x}%;top:${f.y}%" title="${a ? a.desc : selected.name}">
+      return `<button class="cm-facility${ok ? "" : " locked"}" data-fac="${fid}" style="left:${f.x}%;top:${f.y}%" title="${a ? a.desc : selected.name}">
         <span class="cf-ic">${f.icon}</span><span class="cf-name">${f.name}</span>${a ? `<small>${a.name}</small>` : `<small>返回城市图</small>`}
       </button>`;
     }).join("");
