@@ -1354,8 +1354,9 @@
     return out;
   }
   function geoProv(id) { return C.geo.provinces.find(p => p.id === id); }
+  const BP_PROV = "sichuan";   // 目前只开放蜀中省（成都2026地图）；其余省份地图未做
   function bpRandom() {
-    const prov = pick(C.geo.provinces);
+    const prov = geoProv(BP_PROV) || C.geo.provinces[0];
     const city = pick(prov.cities || []);
     const county = city ? pick(city.counties || []) : null;
     const village = county ? pick(county.villages || []) : null;
@@ -1364,15 +1365,18 @@
   function renderBirthplace() {
     const provs = C.geo.provinces;
     bpSel = bpSel || {};
-    const prov = bpSel.provinceId ? geoProv(bpSel.provinceId) : null;
-    // —— 真实中国省界 SVG（geo-svg.js）：34 真实省级区按 fid 归并着色，点击选中虚构省 ——
+    // 锁定蜀中省：清掉任何非蜀中省的旧选择，直接进入选市
+    if (bpSel.provinceId !== BP_PROV) bpSel = { provinceId: BP_PROV };
+    const prov = geoProv(BP_PROV);
+    // —— 真实中国省界 SVG（geo-svg.js）：仅蜀中省可选，其余地图灰锁 ——
     const gs = C.geoSvg;
     const selId = prov ? prov.id : null;
     const pathEls = gs.paths.map(pp => {
-      const pv = geoProv(pp.fid); const color = pv ? geoEconColor(pv.econ) : "#5b7290";
-      return `<path class="bp-rp ${selId === pp.fid ? "sel" : ""}" data-prov="${pp.fid}" d="${pp.d}" fill="${color}"></path>`;
+      const open = pp.fid === BP_PROV;
+      const pv = geoProv(pp.fid); const color = open ? geoEconColor(pv ? pv.econ : "普通") : "#33404f";
+      return `<path class="bp-rp ${selId === pp.fid ? "sel" : ""}${open ? " bp-open" : " bp-locked"}" data-prov="${pp.fid}" d="${pp.d}" fill="${color}" ${open ? "" : 'opacity="0.4"'}></path>`;
     }).join("");
-    const labelEls = gs.labels.map(l => `<text class="bp-rlabel ${selId === l.fid ? "sel" : ""}" data-prov="${l.fid}" x="${l.x}" y="${l.y}">${l.name}</text>`).join("");
+    const labelEls = gs.labels.map(l => `<text class="bp-rlabel ${selId === l.fid ? "sel" : ""}${l.fid === BP_PROV ? "" : " bp-locked"}" data-prov="${l.fid}" x="${l.x}" y="${l.y}" ${l.fid === BP_PROV ? "" : 'opacity="0.35"'}>${l.fid === BP_PROV ? l.name : "🔒"}</text>`).join("");
     const svg = `<svg class="bp-map" viewBox="${gs.viewBox}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <radialGradient id="bpOcean" cx="50%" cy="36%" r="78%">
@@ -1416,11 +1420,11 @@
         </div>`;
     }
     app().innerHTML = `<div class="screen bp-screen">
-      <h2>选择出生地</h2><p class="sub">投胎是门玄学。点开地图，省 → 市 → 县 → 村，看看命运把你丢在了哪里。</p>
+      <h2>选择出生地</h2><p class="sub">投胎是门玄学。<b style="color:var(--amber)">目前只开放「蜀中省」（成都 2026）</b>——其余地区的地图还在路上，先在天府之国安个家。市 → 县 → 村，看看命运把你丢在了哪里。</p>
       <div class="bp-layout"><div class="bp-mapwrap">${svg}${legend}</div><div class="bp-panel">${panel}</div></div>
-      <div class="bp-foot"><button class="btn" id="bprand">🎲 随机投胎</button><button class="btn" id="bpback">← 返回</button></div></div>`;
-    // 事件绑定
-    document.querySelectorAll("[data-prov]").forEach(g => g.onclick = () => { bpSel = { provinceId: g.dataset.prov }; render(); });
+      <div class="bp-foot"><button class="btn" id="bprand">🎲 随机投胎（蜀中省）</button><button class="btn" id="bpback">← 返回</button></div></div>`;
+    // 事件绑定：只有蜀中省可点，其余地区灰锁
+    document.querySelectorAll("[data-prov]").forEach(g => g.onclick = () => { if (g.dataset.prov !== BP_PROV) return; bpSel = { provinceId: BP_PROV }; render(); });
     document.querySelectorAll("[data-city]").forEach(b => b.onclick = () => { bpSel.city = prov.cities[+b.dataset.city]; bpSel.county = null; bpSel.village = null; render(); });
     document.querySelectorAll("[data-county]").forEach(b => b.onclick = () => { bpSel.county = bpSel.city.counties[+b.dataset.county]; bpSel.village = null; render(); });
     document.querySelectorAll("[data-village]").forEach(b => b.onclick = () => { bpSel.village = bpSel.county.villages[+b.dataset.village]; render(); });
@@ -2370,11 +2374,22 @@
     { id: "calendar", icon: "📅", name: "日历" },
     { id: "album", icon: "🖼️", name: "相册" },
     { id: "reels", icon: "🎬", name: "短视频" },
+    { id: "notes", icon: "📝", name: "备忘录" },
     { id: "calc", icon: "🧮", name: "计算器" },
     { id: "weather", icon: "⛅", name: "天气" },
     { id: "settings", icon: "⚙️", name: "设置" }
   ];
   function seasonName() { const w = s.week % 52; return w < 13 ? "春" : w < 26 ? "夏" : w < 39 ? "秋" : "冬"; }
+  // 壁纸：手机主屏 / 电脑桌面共用一套（在手机「设置」里换）
+  const WALLPAPERS = [
+    { id: "deep", name: "深空", css: "radial-gradient(120% 90% at 50% 0%,#1c2030 0%,#0b0c12 60%)" },
+    { id: "aurora", name: "极光", css: "linear-gradient(160deg,#0b3d3a,#0a2540 55%,#231047)" },
+    { id: "dusk", name: "晚霞", css: "linear-gradient(160deg,#2a1840,#7a2e5d 55%,#c25e3a)" },
+    { id: "forest", name: "森野", css: "linear-gradient(160deg,#0e2a1e,#13361f 60%,#241f10)" },
+    { id: "sakura", name: "樱粉", css: "linear-gradient(160deg,#2e1c2a,#5a2b3e 55%,#8a4a63)" },
+    { id: "mono", name: "极简", css: "linear-gradient(160deg,#1c1c22,#0b0b0f)" }
+  ];
+  function wallCss() { const w = WALLPAPERS.find(x => x.id === (s._wall || "deep")) || WALLPAPERS[0]; return w.css; }
   // 各 app 的红点角标（微信=关键角色危机；通知=系统提醒）
   function phoneBadges() {
     const b = {};
@@ -2397,7 +2412,7 @@
       const bd = badges[a.id] || 0;
       return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : ""}">${a.svg || a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
     }).join("");
-    return `<div class="ph-home">
+    return `<div class="ph-home" style="background:${wallCss()}">
       <div class="ph-widgets">
         <div class="ph-w ph-w-clock"><div class="ph-clock">${phoneClock()}</div><div class="ph-date">${s.year}年${seasonName()} · 周${["日","一","二","三","四","五","六"][s.week % 7]}</div></div>
         <div class="ph-w ph-w-worth"><small>当前身价</small><b>¥${nw.toLocaleString()}</b><span>${s.age}岁 · ${C.CLASS_NAMES[classTier(s)]}</span></div>
@@ -2726,7 +2741,7 @@
       </div>
       ${msg}
       ${give ? `<div class="wl-sec">🧧 给重要的人转账（攒交情）</div><div class="wl-gives">${give}</div>` : ""}
-      <div class="ap-foot"><button class="btn" data-screen="shop">🛒 去消费</button><button class="btn" data-screen="market">📈 去理财</button></div>`;
+      <div class="ap-foot"><button class="btn" data-screen="shop">🛒 去消费</button><button class="btn" data-app="market">📈 去理财</button></div>`;
   }
   // —— 自选股：持仓 + 大盘速览，一键去交易 ——
   function appStocks() {
@@ -2812,8 +2827,18 @@
         <div class="wl-r"><span>🏠 定居</span><b>${s.city ? C._util.cityFull(s.city) : "—"}</b></div>
         <div class="wl-r"><span>⚙️ 难度</span><b>${DIFFS[gameDiff] ? DIFFS[gameDiff].emoji + " " + gameDiff : gameDiff}</b></div>
       </div>
+      <div class="wl-sec">🖼️ 壁纸（手机 / 电脑通用）</div>
+      <div class="wall-grid">${WALLPAPERS.map(w => `<button class="wall-sw ${(s._wall || "deep") === w.id ? "on" : ""}" data-wall="${w.id}" style="background:${w.css}"><span>${w.name}</span></button>`).join("")}</div>
       <div class="wl-sec">关于本机</div>
       <div class="ph-about">荒诞人生 OS · 一台陪你过完这辈子的手机。<br>电量 87%，但你的人生电量还剩 ${Math.max(0, 100 - s.age)}%。</div>`;
+  }
+  // —— 备忘录：随手记，真存进存档 ——
+  function appNotes() {
+    const v = (s._notes || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const msg = s._phoneMsg ? `<div class="wl-msg">${s._phoneMsg}</div>` : "";
+    return phoneHeader("📝 备忘录", "随手记下来") + msg
+      + `<textarea id="noteArea" class="note-area" placeholder="待办、灵感、想对自己说的话……写下来就不会忘。">${v}</textarea>`
+      + `<div class="ap-foot"><button class="btn primary" id="noteSave">💾 保存</button></div>`;
   }
   // —— 计算器：真能算 ——
   function calcDisp() { return phoneCalc.cur.length > 12 ? Number(phoneCalc.cur).toPrecision(8) : phoneCalc.cur; }
@@ -2840,7 +2865,7 @@
   // app 路由：把当前 app 渲染成手机屏幕里的内容
   function phoneScreenBody() {
     if (phoneApp === "home") return phoneHome();
-    const m = { wechat: appWechat, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, calc: appCalc, weather: appWeather, settings: appSettings };
+    const m = { wechat: appWechat, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, notes: appNotes, calc: appCalc, weather: appWeather, settings: appSettings };
     return (m[phoneApp] || phoneHome)();
   }
   function renderPhone() {
@@ -2906,6 +2931,10 @@
     };
     // 计算器
     document.querySelectorAll(".cl-k[data-k]").forEach(b => b.onclick = () => { calcInput(b.dataset.k); render(); });
+    // 壁纸切换（手机/电脑通用）
+    document.querySelectorAll("[data-wall]").forEach(b => b.onclick = () => { s._wall = b.dataset.wall; render(); });
+    // 备忘录：保存
+    const ns = document.getElementById("noteSave"); if (ns) ns.onclick = () => { const a = document.getElementById("noteArea"); s._notes = a ? a.value : ""; s._phoneMsg = "📝 已保存。"; render(); };
     // 绿泡泡（仿微信）
     document.querySelectorAll("[data-wxtab]").forEach(b => b.onclick = () => { phoneWx.tab = b.dataset.wxtab; phoneWx.peer = null; phoneWx.sub = null; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); });
     document.querySelectorAll("[data-wxopen]").forEach(b => b.onclick = () => { phoneWx.peer = b.dataset.wxopen; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); });
@@ -2985,7 +3014,7 @@
   function pcHome() {
     const nw = Math.round(netWorth(s));
     const icons = PC_APPS.map(a => `<button class="pc-app" data-app="${a.id}"><span class="pc-ic${a.green ? " ph-ic-wx" : ""}">${a.svg || a.icon}</span><span class="pc-nm">${a.name}</span></button>`).join("");
-    return `<div class="pc-home">
+    return `<div class="pc-home" style="background:${wallCss()}">
       <div class="pc-widgets">
         <div class="pc-w pc-w-clock"><div class="pc-clock">${phoneClock()}</div><div class="pc-date">${s.year}年${seasonName()} · ${s.age}岁</div></div>
         <div class="pc-w"><small>身价</small><b>¥${nw.toLocaleString()}</b></div>
@@ -3281,7 +3310,8 @@
 
   /* ============================ 顶部导航 + 商城 + 社交圈 ============================ */
   function navBar(cur) {
-    const tabs = [["play", "🎮 人生"], ["shop", "🛒 消费"], ["market", "📈 理财"], ["social", "👥 社交圈"], ["phone", "📱 手机"]];
+    // 理财→已并入手机/电脑；社交圈→已并入绿泡泡/通讯录，故不再单列导航
+    const tabs = [["play", "🎮 人生"], ["shop", "🛒 消费"], ["phone", "📱 手机"]];
     if (hasComputer()) tabs.push(["pc", "💻 电脑"]);
     return `<div class="nav">${tabs.map(([k, t]) => `<button class="navbtn ${cur === k ? "on" : ""}" data-nav="${k}">${t}</button>`).join("")}<button class="navbtn" id="reincarnate" title="放弃这一生，回到投胎页重开" style="margin-left:auto;border-color:rgba(255,107,107,.5);color:var(--red)">🔄 重开</button></div>`;
   }

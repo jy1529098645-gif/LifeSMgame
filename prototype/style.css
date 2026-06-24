@@ -131,7 +131,19 @@ h2{font-size:26px;margin-bottom:6px}
 .dev-homebtn:hover{background:var(--amber)}
 
 /* 主屏 */
-.ph-home{padding:4px 6px}
+.ph-home{padding:10px 8px;border-radius:0 0 20px 20px;min-height:100%}
+/* 壁纸选择 */
+.wall-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px}
+.wall-sw{height:54px;border-radius:10px;border:2px solid transparent;cursor:pointer;position:relative;overflow:hidden;color:#fff}
+.wall-sw span{position:absolute;left:6px;bottom:4px;font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.7)}
+.wall-sw.on{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+/* 备忘录 */
+.note-area{width:100%;min-height:240px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.04);color:var(--txt);font-family:inherit;font-size:14px;line-height:1.7;padding:12px;resize:vertical;box-sizing:border-box}
+.note-area:focus{outline:none;border-color:var(--amber)}
+/* 出生地：未开放省份灰锁 */
+.bp-rp.bp-locked{pointer-events:none}
+.bp-rp.bp-open{cursor:pointer}
+.bp-rlabel.bp-locked{pointer-events:none}
 .ph-widgets{display:flex;gap:10px;margin-bottom:16px}
 .ph-w{flex:1;border:1px solid var(--line);border-radius:16px;padding:12px 14px;background:rgba(255,255,255,.04)}
 .ph-w-clock .ph-clock{font-size:30px;font-weight:800;letter-spacing:1px}
