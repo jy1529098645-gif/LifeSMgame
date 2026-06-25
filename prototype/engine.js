@@ -1155,7 +1155,7 @@
     if (s.startup && s.startup.fulltime && !has(s, "startup_done")) return `🚀 全职创业 · ${s.startup.name || s.startup.track || "项目"}`;
     if (s.startup && !has(s, "startup_done")) return `🚀 创业中 · ${s.startup.name || s.startup.track || "项目"}`;
     if (has(s, "civil_servant")) return `🏛️ 体制内${s.civilRank ? " · " + (["", "科员", "副科", "正科", "副处", "正处"][s.civilRank] || "干部") : ""}`;
-    if (s.job) return `💼 ${s.job.name}${s.job.level ? " · Lv." + s.job.level : ""}${s.workScene ? " · " + s.workScene.name : ""}`;
+    if (s.job) { const sal = (C._util.jobSalary ? C._util.jobSalary(s) : (s.job.pay || 0)); return `💼 ${s.job.name}${s.job.level ? " · Lv." + s.job.level : ""}${s.workScene ? " · " + s.workScene.name : ""}${sal > 0 ? ` · <b style="color:var(--green)">月薪 ¥${Math.round(sal).toLocaleString()}</b>` : ""}`; }
     if (has(s, "lie_flat")) return "🛋️ 躺平生活";
     return "💼 无正式工作";
   }
