@@ -2192,6 +2192,10 @@
     if (pid.indexOf("cast:") === 0) { const k = pid.slice(5); const c = s.cast && s.cast[k]; return c ? { id: pid, obj: c, isCast: true, name: c.name, role: c.role } : null; }
     const i = +pid.slice(4); const n = (s.social || [])[i]; return n ? { id: pid, obj: n, isCast: false, idx: i, name: n.name, role: n.role } : null;
   }
+  // —— 备注：玩家可自定义任何联系人的备注名（仿微信「设置备注」），存在 s._wxRemark[pid] ——
+  function wxRemarkOf(pid) { return (pid && s._wxRemark && s._wxRemark[pid]) || ""; }
+  function wxShowName(c) { if (!c) return ""; return wxRemarkOf(c.pid || c.id) || c.name; }   // 有备注用备注，否则用原名/昵称
+  function wxSetRemark(pid, val) { s._wxRemark = s._wxRemark || {}; const v = (val || "").trim().slice(0, 16); if (v) s._wxRemark[pid] = v; else delete s._wxRemark[pid]; }
   function wxFavVal(p) { if (p.fam) return Math.round(famTrust(p.group ? "avg" : p.famKey)); return Math.round(p.isCast ? (p.obj.trust || 50) : (p.obj.attitude || 50)); }
   function wxFav(p, d) { if (p.fam) { if (!p.group) famAdjust(p.famKey, d); return; } if (p.isCast) p.obj.trust = Math.max(0, Math.min(100, (p.obj.trust || 50) + d)); else p.obj.attitude = Math.max(0, Math.min(100, (p.obj.attitude || 50) + d)); }
   function wxFace(fav, cast) { return cast ? "🎭" : fav >= 70 ? "😊" : fav >= 40 ? "🙂" : "😒"; }
@@ -2400,7 +2404,21 @@
     const fav = wxFavVal(p);
     const lines = wxNote(p);
     const more = fav < 85 ? `<div class="wx-note-tip">再熟一点，你会知道更多关于 ta 的事。</div>` : "";
+    const pid = p.id || p.pid;
+    const rmk = wxRemarkOf(pid);
+    const esc = s => (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    const remarkRow = phoneWx.remarkEdit
+      ? `<div class="wx-remark-edit">
+          <input id="wxRemarkInput" class="wx-remark-in" maxlength="16" placeholder="给「${esc(p.name)}」起个备注名" value="${esc(rmk)}">
+          <button class="wx-remark-save" id="wxRemarkSave">保存</button>
+          <button class="wx-remark-cancel" id="wxRemarkCancel">取消</button>
+        </div>`
+      : `<div class="wx-remark-row">
+          <span class="wx-remark-cur">📝 备注名 · ${rmk ? `<b>${esc(rmk)}</b><small>（原名 ${esc(p.name)}）</small>` : `<span class="wx-remark-none">未设置</span>`}</span>
+          <button class="wx-remark-btn" id="wxRemarkEdit">✏️ ${rmk ? "改备注" : "设置备注"}</button>
+        </div>`;
     return `<div class="wx-note"><div class="wx-note-h"><span>📒 备注资料</span><span class="wx-fam">${wxFamLabel(fav)} · ${fav}</span></div>
+      ${remarkRow}
       ${lines.map(l => `<div class="wx-note-l">${l}</div>`).join("")}${more}</div>`;
   }
   // 快捷回复表：真改好感 / 心情 / 现金
@@ -2436,7 +2454,7 @@
       const ur = wxUnread(c);
       return `<div class="wxw-chat${c.fam ? " fam" : ""}" data-wxopen="${c.pid}">
         <span class="wxw-av${c.group ? " grp" : ""}">${wxAvatarOf(c)}${ur ? `<i class="wxw-badge">${ur}</i>` : ""}</span>
-        <span class="wxw-cmid"><span class="wxw-crow"><b>${c.name}</b><small>${wxTime(c)}</small></span><span class="wxw-cprev">${wxLastLine(c)}</span></span>
+        <span class="wxw-cmid"><span class="wxw-crow"><b>${wxShowName(c)}</b><small>${wxTime(c)}</small></span><span class="wxw-cprev">${wxLastLine(c)}</span></span>
       </div>`;
     }).join("");
     return search + `<div class="wxw-list">${rows}</div>`;
@@ -2447,7 +2465,7 @@
     const ents = [["🆕", "新的朋友", "screen", "social"], ["👨‍👩‍👧", "群聊", "", ""], ["🏷️", "标签", "", ""], ["📣", "公众号", "app", "news"]];
     const head = `<div class="wxw-search">🔍 搜索</div>` + ents.map(([ic, nm, kind, to]) => `<div class="wxw-ce" ${kind ? `data-${kind === "screen" ? "screen" : "app"}="${to}"` : ""}><span class="wxw-ce-ic">${ic}</span><span>${nm}</span><span class="wxw-ce-go">›</span></div>`).join("");
     const fam = cs.filter(c => c.fam), star = cs.filter(c => c.star && !c.fam), norm = cs.filter(c => !c.star);
-    const sec = (title, arr) => arr.length ? `<div class="wxw-sec">${title}</div>` + arr.map(c => `<div class="wxw-ce contact" data-wxopen="${c.pid}"><span class="wxw-ce-av">${wxAvatarOf(c)}</span><span class="wxw-ce-nm">${c.name}<small>${c.role}</small></span></div>`).join("") : "";
+    const sec = (title, arr) => arr.length ? `<div class="wxw-sec">${title}</div>` + arr.map(c => `<div class="wxw-ce contact" data-wxopen="${c.pid}"><span class="wxw-ce-av">${wxAvatarOf(c)}</span><span class="wxw-ce-nm">${wxShowName(c)}<small>${wxRemarkOf(c.pid) ? "昵称：" + c.name : c.role}</small></span></div>`).join("") : "";
     return head + sec("💗 家人", fam) + sec("★ 关键角色", star) + sec("联系人", norm) + `<div class="wxw-count">${cs.length} 位联系人</div>`;
   }
   // —— 发现：朋友圈 + 各功能入口（部分可跳转，部分仅展示）——
@@ -2495,7 +2513,7 @@
       const sd = wxSeed(c.name + c.role);
       const liked = s._wxLiked && s._wxLiked[c.pid + ":" + s.week];
       const likes = (sd % 28) + 2 + (liked ? 1 : 0);
-      return `<div class="mo-post"><span class="mo-av">${wxFace(c.fav, c.star)}</span><div class="mo-body"><b class="mo-name">${c.name}</b><div class="mo-txt">${wxMomentText(c)}</div>${wxMoPics(sd)}
+      return `<div class="mo-post"><span class="mo-av">${wxFace(c.fav, c.star)}</span><div class="mo-body"><b class="mo-name">${wxShowName(c)}</b><div class="mo-txt">${wxMomentText(c)}</div>${wxMoPics(sd)}
         <div class="mo-foot"><span class="mo-time">${wxTime(c)}</span><button class="mo-like ${liked ? "on" : ""}" data-wxlike="${c.pid}">${liked ? "❤️" : "🤍"} ${likes}</button></div></div></div>`;
     }).join("") : `<div class="ph-empty">朋友圈静悄悄的。</div>`;
     return `<div class="wxw-subtop"><button class="wxw-back" id="wxSubBack">‹ 发现</button><span class="wxw-title">朋友圈</span><span style="width:40px"></span></div>
@@ -2557,9 +2575,9 @@
       return `<button class="wxc-pa" data-wxrep="${r.id}" ${dis ? "disabled" : ""}><span class="wxc-pa-ic">${ic}</span><small>${nm}</small></button>`;
     }).join("")}</div>` : "";
     return `<div class="wxc">
-      <div class="wxc-top"><button class="wxw-back" id="wxBack">‹</button><b class="wxc-name" id="wxInfo">${p.name}</b><button class="wxc-more" id="wxInfo2">⋯</button></div>
+      <div class="wxc-top"><button class="wxw-back" id="wxBack">‹</button><b class="wxc-name" id="wxInfo">${wxShowName(p)}</b><button class="wxc-more" id="wxInfo2">⋯</button></div>
       ${phoneWx.info ? wxNoteCard(p) : ""}
-      ${meta.crisis ? `<div class="wx-crisis">⚠️ ${p.name} 正遇上难处，点开 ＋ 里的「关心近况」当面回应。</div>` : ""}
+      ${meta.crisis ? `<div class="wx-crisis">⚠️ ${wxShowName(p)} 正遇上难处，点开 ＋ 里的「关心近况」当面回应。</div>` : ""}
       <div class="wxc-thread">${bubbles}</div>
       <div class="wxc-input">
         <button class="wxc-ibtn">🎙️</button>
@@ -3224,14 +3242,19 @@
     // 备忘录：保存
     const ns = document.getElementById("noteSave"); if (ns) ns.onclick = () => { const a = document.getElementById("noteArea"); s._notes = a ? a.value : ""; s._phoneMsg = "📝 已保存。"; render(); };
     // 绿泡泡（仿微信）
-    document.querySelectorAll("[data-wxtab]").forEach(b => b.onclick = () => { phoneWx.tab = b.dataset.wxtab; phoneWx.peer = null; phoneWx.sub = null; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); });
-    document.querySelectorAll("[data-wxopen]").forEach(b => b.onclick = () => { phoneWx.peer = b.dataset.wxopen; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); });
+    document.querySelectorAll("[data-wxtab]").forEach(b => b.onclick = () => { phoneWx.tab = b.dataset.wxtab; phoneWx.peer = null; phoneWx.sub = null; phoneWx.plus = false; phoneWx.info = false; phoneWx.remarkEdit = false; s._phoneMsg = null; render(); });
+    document.querySelectorAll("[data-wxopen]").forEach(b => b.onclick = () => { phoneWx.peer = b.dataset.wxopen; phoneWx.plus = false; phoneWx.info = false; phoneWx.remarkEdit = false; s._phoneMsg = null; render(); });
     document.querySelectorAll("[data-wxsub]").forEach(b => b.onclick = () => { phoneWx.sub = b.dataset.wxsub; s._phoneMsg = null; render(); });
-    const wxb = document.getElementById("wxBack"); if (wxb) wxb.onclick = () => { phoneWx.peer = null; phoneWx.plus = false; phoneWx.info = false; s._phoneMsg = null; render(); };
+    const wxb = document.getElementById("wxBack"); if (wxb) wxb.onclick = () => { phoneWx.peer = null; phoneWx.plus = false; phoneWx.info = false; phoneWx.remarkEdit = false; s._phoneMsg = null; render(); };
     const wxsb = document.getElementById("wxSubBack"); if (wxsb) wxsb.onclick = () => { phoneWx.sub = null; phoneWx.tab = "discover"; s._phoneMsg = null; render(); };
     const wxAdd = document.getElementById("wxAdd"); if (wxAdd) wxAdd.onclick = () => { phoneWx.tab = "contacts"; s._phoneMsg = null; render(); };
     const wxPlus = document.getElementById("wxPlus"); if (wxPlus) wxPlus.onclick = () => { phoneWx.plus = !phoneWx.plus; render(); };
-    ["wxInfo", "wxInfo2"].forEach(id => { const el = document.getElementById(id); if (el) el.onclick = () => { phoneWx.info = !phoneWx.info; render(); }; });
+    ["wxInfo", "wxInfo2"].forEach(id => { const el = document.getElementById(id); if (el) el.onclick = () => { phoneWx.info = !phoneWx.info; phoneWx.remarkEdit = false; render(); }; });
+    // 备注：进入编辑 / 取消 / 保存（手机端与电脑端共用 wxNoteCard，所以一处接线两端通用）
+    const wxRE = document.getElementById("wxRemarkEdit"); if (wxRE) wxRE.onclick = () => { phoneWx.remarkEdit = true; render(); const i = document.getElementById("wxRemarkInput"); if (i) { i.focus(); try { i.select(); } catch (e) {} } };
+    const wxRC = document.getElementById("wxRemarkCancel"); if (wxRC) wxRC.onclick = () => { phoneWx.remarkEdit = false; render(); };
+    const wxRS = document.getElementById("wxRemarkSave"); if (wxRS) wxRS.onclick = () => { const i = document.getElementById("wxRemarkInput"); const p = wxPeer(phoneWx.peer); if (p) { const v = i ? i.value : ""; wxSetRemark(p.id, v); s._phoneMsg = v.trim() ? `✅ 已把备注设为「${v.trim().slice(0, 16)}」` : "已清除备注，恢复原名。"; } phoneWx.remarkEdit = false; render(); };
+    const wxRI = document.getElementById("wxRemarkInput"); if (wxRI) wxRI.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); const b = document.getElementById("wxRemarkSave"); if (b) b.click(); } else if (e.key === "Escape") { phoneWx.remarkEdit = false; render(); } };
     const wxSend = document.getElementById("wxSend"); if (wxSend) wxSend.onclick = () => { const inp = document.getElementById("wxInput"); wxSendText(inp ? inp.value : ""); };
     const wxInput = document.getElementById("wxInput"); if (wxInput) wxInput.onkeydown = (e) => { if (e.key === "Enter") { wxSendText(wxInput.value); } };
     document.querySelectorAll("[data-wxrep]").forEach(b => b.onclick = () => { phoneWx.plus = false; wxReply(b.dataset.wxrep); });
@@ -3441,7 +3464,7 @@
     const active = phoneWx.peer === c.pid ? " on" : ""; const ur = wxUnread(c);
     return `<div class="wd-li${active}" data-wxopen="${c.pid}">
       <span class="wd-av">${wxAvatarOf(c)}${ur ? `<i class="wd-libadge">${ur}</i>` : ""}</span>
-      <span class="wd-li-mid"><span class="wd-li-top"><b>${c.name}</b><small>${wxTime(c)}</small></span><span class="wd-li-prev">${wxLastLine(c)}</span></span>
+      <span class="wd-li-mid"><span class="wd-li-top"><b>${wxShowName(c)}</b><small>${wxTime(c)}</small></span><span class="wd-li-prev">${wxLastLine(c)}</span></span>
     </div>`;
   }
   function pcWxConvo() {
@@ -3451,7 +3474,7 @@
     const bubbles = wxBuildBubbles(p, fav, meta);
     const tools = !p.group ? `<div class="wd-tools">${WX_REPLIES.map(r => { const dis = r.cost && s.cash < r.cost; const parts = r.label.split(" "); return `<button class="wd-tool" data-wxrep="${r.id}" ${dis ? "disabled" : ""}>${parts[0]}<small>${parts.slice(1).join("")}</small></button>`; }).join("")}</div>` : `<div class="wd-tools dim">群里发个言吧～</div>`;
     return `<div class="wd-convo">
-      <div class="wd-convo-top"><b id="wxInfo">${p.name}</b><span class="wd-convo-sub">${p.role || ""}${p.fam ? "" : " · " + wxFamLabel(fav)}</span><button class="wd-more" id="wxInfo2">资料 ⌄</button></div>
+      <div class="wd-convo-top"><b id="wxInfo">${wxShowName(p)}</b><span class="wd-convo-sub">${p.role || ""}${p.fam ? "" : " · " + wxFamLabel(fav)}</span><button class="wd-more" id="wxInfo2">资料 ⌄</button></div>
       ${phoneWx.info ? wxNoteCard(p) : ""}
       <div class="wd-thread wxc-thread">${bubbles}</div>
       <div class="wd-inputwrap">${tools}
