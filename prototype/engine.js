@@ -2063,6 +2063,17 @@
     + '<ellipse cx="50" cy="66" rx="13" ry="9.5" fill="#e9d7c3"/>'
     + '<ellipse cx="50" cy="61" rx="4.2" ry="3.2" fill="#1a1a1a"/>'
     + '</svg>';
+  // 「淘粑」购物图标：白色购物袋（橙底由 .ph-ic-taoba 提供）
+  const TAOBA_ICON = '<svg class="appsvg" viewBox="0 0 100 100" aria-hidden="true">'
+    + '<path d="M28 38 h44 l-4 40 a6 6 0 0 1 -6 5 h-24 a6 6 0 0 1 -6 -5 z" fill="#fff"/>'
+    + '<path d="M38 40 v-6 a12 12 0 0 1 24 0 v6" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>'
+    + '<text x="50" y="68" font-size="20" fill="#ff6a00" text-anchor="middle" font-weight="900" font-family="sans-serif">淘</text>'
+    + '</svg>';
+  // 「抖声」短视频图标：白色音符（黑底由 .ph-ic-dou 提供）
+  const DOUSHENG_ICON = '<svg class="appsvg" viewBox="0 0 100 100" aria-hidden="true">'
+    + '<path d="M58 22 q10 4 18 4 v14 q-10 0 -18 -4 v26 a18 18 0 1 1 -12 -17 v-23 z" fill="#fff"/>'
+    + '<path d="M58 22 q10 4 18 4 v14 q-10 0 -18 -4 v26 a18 18 0 1 1 -12 -17 v-23 z" fill="none" stroke="#25f4ee" stroke-width="1.5" opacity="0.6"/>'
+    + '</svg>';
   // app 注册表：主屏图标网格按此顺序排列（电话/浏览器/短信/音乐放进底部 Dock，不进网格）
   const PHONE_APPS = [
     { id: "wechat", icon: "💬", svg: WX_ICON, name: "绿泡泡", green: true },
@@ -2072,10 +2083,10 @@
     { id: "contacts", icon: "📇", name: "通讯录" },
     { id: "wallet", icon: "💰", name: "钱包" },
     { id: "market", icon: "🐻", svg: BEAR_ICON, name: "穷途熊熊", bear: true },
-    { id: "stocks", icon: "📊", name: "自选股" },
+    { id: "taoba", icon: "🛍️", svg: TAOBA_ICON, name: "淘粑", taoba: true },
     { id: "calendar", icon: "📅", name: "日历" },
     { id: "album", icon: "🖼️", name: "相册" },
-    { id: "reels", icon: "🎬", name: "短视频" },
+    { id: "reels", icon: "🎵", svg: DOUSHENG_ICON, name: "抖声", dou: true },
     { id: "notes", icon: "📝", name: "备忘录" },
     { id: "calc", icon: "🧮", name: "计算器" },
     { id: "weather", icon: "⛅", name: "天气" },
@@ -2121,7 +2132,8 @@
     const nw = Math.round(netWorth(s));
     const icons = PHONE_APPS.map(a => {
       const bd = badges[a.id] || 0;
-      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${a.green ? " ph-ic-wx" : a.teal ? " ph-ic-boss" : a.bear ? " ph-ic-bear" : ""}">${a.svg || a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
+      const tile = a.green ? " ph-ic-wx" : a.teal ? " ph-ic-boss" : a.bear ? " ph-ic-bear" : a.taoba ? " ph-ic-taoba" : a.dou ? " ph-ic-dou" : "";
+      return `<button class="ph-app" data-app="${a.id}"><span class="ph-ic${tile}">${a.svg || a.icon}${bd ? `<i class="ph-badge">${bd > 9 ? "9+" : bd}</i>` : ""}</span><span class="ph-nm">${a.name}</span></button>`;
     }).join("");
     const dock = DOCK_APPS.map(a => {
       const bd = badges[a.id] || 0;
@@ -2968,18 +2980,31 @@
       <div class="ap-foot"><button class="btn" data-screen="shop">🛒 去消费</button><button class="btn" data-app="market">📈 去理财</button></div>`;
   }
   // —— 自选股：持仓 + 大盘速览，一键去交易 ——
-  function appStocks() {
-    const m = s.market;
-    if (!m) return phoneHeader("📈 自选股", "") + '<div class="ph-empty">行情尚未开盘。</div>';
-    const pv = C._util.stockValue(s);
-    const stkRow = st => { const chg = C._util.stockChange(s, st.id); const cls = chg > 0.05 ? "up" : chg < -0.05 ? "down" : "flat"; const hot = st.sector && st.sector === s.eraWind; const h = m.hold[st.id] || 0; return `<div class="stk-row"><span class="stk-nm">${st.emoji} ${st.name}${hot ? " 🔥" : ""}</span><span class="stk-px">¥${m.prices[st.id].toFixed(2)}</span><span class="stk-chg ${cls}">${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%</span>${h ? `<span class="stk-hold">${h}股</span>` : ""}</div>`; };
-    const held = C.stocks.filter(st => (m.hold[st.id] || 0) > 0).map(stkRow).join("");
-    const watch = C.stocks.slice(0, 6).map(stkRow).join("");
-    return phoneHeader("📊 自选股", `持仓市值 ¥${Math.round(pv).toLocaleString()}`)
-      + (held ? `<div class="stk-sec">我的持仓</div>${held}` : '<div class="ph-empty">还没有持仓。</div>')
-      + `<div class="stk-sec">大盘速览</div>${watch}`
-      + `<div class="ap-foot"><button class="btn primary" data-app="market">打开理财，去交易 →</button></div>`;
+  // —— 淘粑（仿淘宝）：搜索条 + 分类 + 商品瀑布卡（复用消费品库，真能买）——
+  const TB_GRADS = ["linear-gradient(135deg,#ffecd2,#fcb69f)", "linear-gradient(135deg,#a1c4fd,#c2e9fb)", "linear-gradient(135deg,#d4fc79,#96e6a1)", "linear-gradient(135deg,#fbc2eb,#a6c1ee)", "linear-gradient(135deg,#fdcbf1,#e6dee9)", "linear-gradient(135deg,#f6d365,#fda085)", "linear-gradient(135deg,#84fab0,#8fd3f4)", "linear-gradient(135deg,#fccb90,#d57eeb)"];
+  function taobaPanelHTML() {
+    const owned = id => has(s, "bought_" + id);
+    const kinds = [...new Set(C.consumption.map(i => i.kind))];
+    const cat = s._taobaCat && (cat0 => kinds.indexOf(cat0) >= 0 ? cat0 : "全部")(s._taobaCat) || "全部";
+    const items = C.consumption.filter(i => cat === "全部" || i.kind === cat);
+    const chips = ["全部", ...kinds].map(c => `<button class="tb-chip${cat === c ? " on" : ""}" data-taobacat="${c}">${c}</button>`).join("");
+    const cards = items.map(it => {
+      const can = s.cash >= it.price, got = owned(it.id);
+      const salesN = (wxSeed(it.name) % 9000) + 200; const sales = salesN >= 10000 ? (salesN / 10000).toFixed(1) + "万" : salesN >= 1000 ? (salesN / 1000).toFixed(1) + "千" : salesN;
+      const rate = (4 + (wxSeed(it.name + "r") % 10) / 10).toFixed(1);
+      return `<div class="tb-card">
+        <div class="tb-img" style="background:${TB_GRADS[wxSeed(it.name) % TB_GRADS.length]}">${it.emoji}</div>
+        <div class="tb-info"><div class="tb-name">${it.name}</div>
+          <div class="tb-meta">⭐${rate} · 月销 ${sales}</div>
+          <div class="tb-bot"><span class="tb-price"><small>¥</small>${it.price.toLocaleString()}</span>
+            <button class="btn buybtn tb-buy${got ? " got" : can ? "" : " poor"}" data-buy="${it.id}" ${got || !can ? "disabled" : ""}>${got ? "已买" : can ? "购买" : "钱不够"}</button></div></div>
+      </div>`;
+    }).join("");
+    const msg = s._buyMsg ? `<div class="wl-msg">${s._buyMsg}</div>` : "";
+    return `<div class="tb-search"><span class="tb-logo">淘粑</span><span class="tb-sbar">🔍 搜你想买的</span></div>`
+      + `<div class="tb-chips">${chips}</div>${msg}<div class="tb-grid">${cards}</div>`;
   }
+  function appTaoba() { return phoneHeader("🛍️ 淘粑", "啥都能淘到") + taobaPanelHTML(); }
   // —— 理财：完整交易（手机版）。大屏更顺手的版本在「电脑」里 ——
   function appMarket() {
     return phoneHeader("🐻 穷途熊熊", "炒股软件 · K线随人生生长 · 新闻→下周盘面")
@@ -2996,29 +3021,68 @@
       + `<div class="cal-bill">🧾 距下次月度结算（发薪 / 扣账单）：还有 <b>${wToBill}</b> 周</div>`
       + `<div class="stk-sec">最近发生</div>${recent || '<div class="ph-empty">人生刚刚开始。</div>'}`;
   }
-  // —— 相册：把高强度记忆/人生片段做成相片墙 ——
+  // —— 相册：把人生片段做成"真照片"（原创矢量场景图，非网图）——
+  const ALBUM_SCENES = [
+    '<svg class="al-svg" viewBox="0 0 120 120"><defs><linearGradient id="alA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a6b"/><stop offset="1" stop-color="#ffd089"/></linearGradient></defs><rect width="120" height="120" fill="url(#alA)"/><circle cx="60" cy="74" r="20" fill="#fff6e0"/><path d="M0 90 L30 70 L55 88 L80 64 L120 92 V120 H0Z" fill="#7a4a3a"/></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#10162b"/><circle cx="92" cy="26" r="11" fill="#f7f3d0"/><g fill="#1f2a4a"><rect x="10" y="60" width="18" height="60"/><rect x="34" y="44" width="20" height="76"/><rect x="60" y="70" width="16" height="50"/><rect x="82" y="52" width="22" height="68"/></g><g fill="#ffd86b"><rect x="14" y="66" width="4" height="4"/><rect x="38" y="50" width="4" height="4"/><rect x="44" y="62" width="4" height="4"/><rect x="88" y="58" width="4" height="4"/><rect x="96" y="72" width="4" height="4"/></g></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#f3e1c7"/><ellipse cx="60" cy="74" rx="40" ry="30" fill="#e85d4e"/><ellipse cx="60" cy="70" rx="34" ry="24" fill="#f7c873"/><path d="M48 40 q4 -10 0 -18 M60 38 q4 -10 0 -18 M72 40 q4 -10 0 -18" stroke="#cfcfcf" stroke-width="2" fill="none" opacity="0.7"/></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#d9c3a5"/><rect x="38" y="48" width="44" height="38" rx="6" fill="#fff"/><rect x="44" y="54" width="32" height="26" rx="3" fill="#5a3a22"/><path d="M82 56 q14 4 0 18" stroke="#fff" stroke-width="5" fill="none"/></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="60" fill="#7ec8e3"/><circle cx="96" cy="22" r="10" fill="#fff3b0"/><rect y="60" width="120" height="34" fill="#2aa3c9"/><rect y="94" width="120" height="26" fill="#f3e0a8"/></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#2c2c5a"/><rect x="34" y="40" width="52" height="10" fill="#111"/><path d="M30 40 L60 26 L90 40 L60 54Z" fill="#1a1a1a"/><rect x="56" y="40" width="8" height="22" fill="#f5d020"/><circle cx="60" cy="64" r="4" fill="#f5d020"/></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#0e0e22"/><g stroke-width="2" fill="none"><g stroke="#ff5d8f"><path d="M60 56 V32 M60 56 L44 40 M60 56 L76 40 M60 56 L40 56 M60 56 L80 56"/></g><g stroke="#5bd1ff"><path d="M34 84 V66 M34 84 L24 72 M34 84 L44 72"/></g><g stroke="#ffd86b"><path d="M90 86 V70 M90 86 L80 76 M90 86 L100 76"/></g></g></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#e9eef3"/><rect x="20" y="86" width="80" height="8" fill="#b98a5a"/><rect x="40" y="50" width="40" height="28" rx="3" fill="#2b2b33"/><rect x="44" y="54" width="32" height="20" fill="#4fa3ff"/><rect x="54" y="78" width="12" height="10" fill="#888"/></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#3a4a5a"/><g stroke="#9fbcd6" stroke-width="2"><path d="M20 20 L8 60 M40 16 L28 62 M64 22 L52 64 M88 18 L76 60 M108 22 L96 60"/></g><ellipse cx="40" cy="22" rx="22" ry="10" fill="#56697d"/><ellipse cx="84" cy="18" rx="20" ry="9" fill="#56697d"/></svg>',
+    '<svg class="al-svg" viewBox="0 0 120 120"><rect width="120" height="78" fill="#9fd8f0"/><path d="M0 90 Q40 60 70 88 T120 84 V120 H0Z" fill="#6fc36f"/><rect x="78" y="58" width="6" height="30" fill="#7a4a2a"/><circle cx="81" cy="52" r="16" fill="#3f9f4f"/></svg>'
+  ];
   function appAlbum() {
     let pics = (s.memories || []).filter(m => m && m.text).sort((a, b) => (b.intensity || 0) - (a.intensity || 0)).slice(0, 12).map(m => m.text);
     if (!pics.length) pics = (s.timeline || []).slice(-12).reverse().map(t => `${t.age}岁 · ${t.text}`);
-    const tones = ["🌅", "🎉", "🌧️", "🌃", "🏞️", "🎂", "✈️", "🏆", "🍂", "🌊", "🎓", "💼"];
-    const grid = pics.length ? pics.map((p, i) => `<div class="al-pic"><span class="al-emoji">${tones[i % tones.length]}</span><span class="al-cap">${p}</span></div>`).join("") : '<div class="ph-empty">相册还空着。去经历点什么吧。</div>';
-    return phoneHeader("🖼️ 相册", `${pics.length} 段回忆`) + `<div class="al-grid">${grid}</div>`;
+    const grid = pics.length ? pics.map((p, i) => `<div class="al-pic">${ALBUM_SCENES[wxSeed(p) % ALBUM_SCENES.length]}<span class="al-cap">${p}</span></div>`).join("") : '<div class="ph-empty">相册还空着。去经历点什么吧。</div>';
+    return phoneHeader("🖼️ 相册", `${pics.length} 张照片`) + `<div class="al-grid">${grid}</div>`;
   }
-  // —— 短视频：真·摸鱼。每刷一个 +心情，但刷多了上头 → 越来越焦虑、耗时间感 ——
-  const REELS_POOL = [
-    "🐱 一只橘猫从冰箱里偷出整根火腿，叼着跑路。", "🍳 30秒教你做出米其林摆盘的蛋炒饭。", "💃 全网都在跳的新舞，第三个动作劝退。",
-    "🤑 “普通人翻身只需三招”——结果在卖课。", "🏠 月薪三千如何把出租屋装成北欧风。", "😂 老板开会睡着，被自己的鼾声惊醒。",
-    "🚗 一脚油门，十万块的车变成废铁。", "📈 “这只票明天必涨停”——评论区已骂翻。", "🐶 狗子第一次见到雪，原地懵了五秒。",
-    "🍜 凌晨三点的城中村，一碗面治愈打工人。", "🎮 高手十连绝杀，弹幕刷满“？？？”。", "👶 萌娃金句：“爸爸的头发去旅行了。”"
+  // —— 抖声（仿抖音）：竖屏视频流，每个视频是原创动效画面 + 点赞/评论/分享侧栏 ——
+  const DS_VIDEOS = [
+    { emoji: "🐱", cap: "橘猫偷火腿现场，叼着就跑😂 #萌宠日常", author: "猫奴の日常", music: "原声 · 喵星人之歌", bg: "linear-gradient(180deg,#43c6ac,#191654)", anim: "ds-bounce" },
+    { emoji: "🍜", cap: "凌晨三点的一碗面，治愈所有打工人 🍜", author: "深夜食堂", music: "原声 · 烟火气", bg: "linear-gradient(180deg,#f7971e,#3a1c12)", anim: "ds-pulse" },
+    { emoji: "💃", cap: "全网都在跳的新舞，学到第三个动作我放弃了", author: "舞痴小美", music: "热歌 · 节奏循环", bg: "linear-gradient(180deg,#ff5d8f,#3a0d2a)", anim: "ds-shake" },
+    { emoji: "🐶", cap: "狗子第一次见到雪，原地懵了五秒❄️", author: "二哈日记", music: "原声 · 冬天的故事", bg: "linear-gradient(180deg,#a1c4fd,#1a2540)", anim: "ds-float" },
+    { emoji: "🏞️", cap: "辞职去看世界，第一站在这里发呆了一下午", author: "旅行的意义", music: "纯音乐 · 远方", bg: "linear-gradient(180deg,#2af598,#0a3a2a)", anim: "ds-zoom" },
+    { emoji: "🎮", cap: "高手十连绝杀，弹幕刷满「？？？」", author: "电竞菜鸡", music: "燃曲 · 超神时刻", bg: "linear-gradient(180deg,#7367f0,#16093a)", anim: "ds-shake" },
+    { emoji: "🍳", cap: "30秒教你把蛋炒饭做出米其林摆盘", author: "干饭研究所", music: "原声 · 滋滋作响", bg: "linear-gradient(180deg,#f6d365,#5a3a12)", anim: "ds-pulse" },
+    { emoji: "🌃", cap: "下班路上随手一拍，城市的夜也挺温柔", author: "通勤碎片", music: "氛围 · 晚风", bg: "linear-gradient(180deg,#232526,#0a0a18)", anim: "ds-float" }
   ];
   function appReels() {
-    const n = phoneReels.n;
-    const cur = phoneReels.txt || "👇 点下面的按钮，开始刷。";
-    const mood = n >= 8 ? "刷了这么久，心里空落落的，明明什么也没记住。" : n >= 4 ? "再看一个就睡……你已经这么想了好几次。" : "嗯，挺解压的。";
-    return phoneHeader("🎬 短视频", `已刷 ${n} 个`)
-      + `<div class="rl-stage"><div class="rl-clip">${cur}</div><div class="rl-mood">${mood}</div></div>`
-      + `<div class="ap-foot"><button class="btn primary" id="rlNext">👆 再刷一个</button></div>`
-      + `<p class="ap-note">刷视频确实能放松，可时间就这么没了——刷太多，心情的快乐会越来越淡，人也越来越累。</p>`;
+    const idx = (s._dsIdx || 0) % DS_VIDEOS.length;
+    const v = DS_VIDEOS[idx];
+    const liked = s._dsLiked && s._dsLiked[idx];
+    const baseL = (wxSeed(v.cap) % 90000) + 8000; const likes = baseL + (liked ? 1 : 0);
+    const fmt = n => n >= 10000 ? (n / 10000).toFixed(1) + "w" : n;
+    const prog = ((s._dsN || 0) % 5 + 1) * 20;
+    return phoneHeader("🎵 抖声", `第 ${idx + 1} / ${DS_VIDEOS.length} 个`)
+      + `<div class="ds-feed" style="background:${v.bg}">
+        <div class="ds-prog"><i style="width:${prog}%"></i></div>
+        <div class="ds-anim ${v.anim}">${v.emoji}</div>
+        <div class="ds-rail">
+          <button class="ds-rb" data-dslike="${idx}"><span class="ds-ic${liked ? " on" : ""}">❤️</span><small>${fmt(likes)}</small></button>
+          <button class="ds-rb"><span class="ds-ic">💬</span><small>${fmt((wxSeed(v.cap + "c") % 4000) + 200)}</small></button>
+          <button class="ds-rb"><span class="ds-ic">↗</span><small>分享</small></button>
+          <div class="ds-music">🎵</div>
+        </div>
+        <div class="ds-cap"><b>@${v.author}</b><div class="ds-cap-t">${v.cap}</div><div class="ds-bgm">🎵 ${v.music}</div></div>
+      </div>`
+      + `<div class="ap-foot"><button class="btn primary" id="dsNext">👆 上滑看下一个</button></div>`
+      + `<p class="ap-note">刷视频确实能放松，可时间就这么没了——刷太多，快乐越来越淡，人也越来越累。</p>`;
+  }
+  function phoneDsNext() {
+    s._dsIdx = ((s._dsIdx || 0) + 1) % DS_VIDEOS.length; s._dsN = (s._dsN || 0) + 1;
+    const g = s._dsN <= 3 ? 2 : s._dsN <= 7 ? 1 : 0; add(s, "mood", g); if (s._dsN >= 6) add(s, "stress", 1);
+    render();
+  }
+  function phoneDsLike(i) {
+    s._dsLiked = s._dsLiked || {}; if (s._dsLiked[i]) return; s._dsLiked[i] = true;
+    const ic = document.querySelector(`[data-dslike="${i}"] .ds-ic`); const cnt = document.querySelector(`[data-dslike="${i}"] small`);
+    if (ic) { ic.classList.add("on"); if (cnt) { const m = (cnt.textContent.match(/[\d.]+/) || [0])[0]; if (/w/.test(cnt.textContent)) cnt.textContent = (parseFloat(m) + 0.0001).toFixed(1) + "w"; else cnt.textContent = (parseInt(m, 10) + 1); } }
+    else render();
   }
   // —— 天气：随年代/季节/世界运势调味 ——
   function appWeather() {
@@ -3089,7 +3153,7 @@
   // app 路由：把当前 app 渲染成手机屏幕里的内容
   function phoneScreenBody() {
     if (phoneApp === "home") return phoneHome();
-    const m = { wechat: appWechat, boss: appBoss, sms: appSms, call: appCall, browser: appBrowser, music: appMusic, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, stocks: appStocks, calendar: appCalendar, album: appAlbum, reels: appReels, notes: appNotes, calc: appCalc, weather: appWeather, settings: appSettings };
+    const m = { wechat: appWechat, boss: appBoss, sms: appSms, call: appCall, browser: appBrowser, music: appMusic, news: appNews, msg: appMessages, contacts: appContacts, wallet: appWallet, market: appMarket, taoba: appTaoba, calendar: appCalendar, album: appAlbum, reels: appReels, notes: appNotes, calc: appCalc, weather: appWeather, settings: appSettings };
     return (m[phoneApp] || phoneHome)();
   }
   function renderPhone() {
@@ -3188,6 +3252,10 @@
     // 电话：拨打 / 音乐：播放
     document.querySelectorAll("[data-callto]").forEach(b => b.onclick = () => { phoneCallDo(b.dataset.callto); });
     document.querySelectorAll("[data-music]").forEach(b => b.onclick = () => { phoneMusicDo(b.dataset.music); });
+    // 淘粑：切分类 / 抖声：下一个、点赞
+    document.querySelectorAll("[data-taobacat]").forEach(b => b.onclick = () => { s._taobaCat = b.dataset.taobacat; render(); });
+    const dsN = document.getElementById("dsNext"); if (dsN) dsN.onclick = () => phoneDsNext();
+    document.querySelectorAll("[data-dslike]").forEach(b => b.onclick = () => phoneDsLike(parseInt(b.dataset.dslike, 10)));
     // 电脑浏览器：标签页 + 书签
     document.querySelectorAll("[data-bropen]").forEach(b => b.onclick = (e) => { e.stopPropagation(); brOpen(b.dataset.bropen); });
     document.querySelectorAll(".brz-tab[data-brtab]").forEach(b => b.onclick = () => { pcBrz.active = parseInt(b.dataset.brtab, 10); render(); });
@@ -3212,7 +3280,7 @@
     { id: "trade", icon: "📈", name: "交易台" },
     { id: "work", icon: "💼", name: "搞钱工作台" },
     { id: "study", icon: "📚", name: "学习充电站" },
-    { id: "shop", icon: "🛒", name: "网购" },
+    { id: "shop", icon: "🛍️", name: "淘粑" },
     { id: "mail", icon: "📧", name: "邮箱" },
     { id: "data", icon: "📊", name: "数据看板" },
     { id: "games", icon: "♟️", name: "棋牌室" },
@@ -3308,9 +3376,7 @@
   }
   // —— 网购：复用消费品库，电脑大屏一站买齐 ——
   function pcShop() {
-    const msg = s._buyMsg ? `<div class="wl-msg">${s._buyMsg}</div>` : "";
-    return phoneHeader("🛒 网购 · 一站买齐", "和「消费」同款货架，下单更方便") + msg
-      + `<div class="shop pc-shop">${shopGroupsHTML()}</div>`;
+    return phoneHeader("🛍️ 淘粑 · 网页版", "啥都能淘到，下单更方便") + `<div class="tb-pc">${taobaPanelHTML()}</div>`;
   }
   // —— 邮箱：正式来信（offer / 对账单 / 证书 / 钓鱼），随状态生成 ——
   function pcMail() {
@@ -3413,7 +3479,7 @@
     stocks: { title: "穷途熊熊", url: "qiongtu.com", icon: "🐻", render: () => marketPanelHTML(true) },
     boss: { title: "老大直聘", url: "laoda-zhipin.com", icon: "💼", render: appBoss },
     news: { title: "今日头条", url: "toutiao-news.com", icon: "📰", render: appNews },
-    shop: { title: "网购商城", url: "wangou-mall.com", icon: "🛒", render: () => `<div class="shop">${shopGroupsHTML()}</div>` },
+    shop: { title: "淘粑", url: "taoba.com", icon: "🛍️", render: () => `<div class="tb-pc">${taobaPanelHTML()}</div>` },
     reels: { title: "短视频", url: "duanshipin.tv", icon: "🎬", render: appReels },
     mail: { title: "邮箱", url: "mail.qpd.com", icon: "📧", render: pcMail }
   };
